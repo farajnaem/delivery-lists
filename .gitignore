@@ -1,0 +1,10 @@
+/vendor/
+/database/delivery.sqlite
+/database/*.sqlite
+/storage/uploads/*
+/storage/exports/*
+!storage/uploads/.gitkeep
+!storage/exports/.gitkeep
+.env
+composer-setup.php
+test1.csv

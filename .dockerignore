@@ -1,0 +1,14 @@
+.env
+.env.*
+!.env.example
+/vendor/
+/database/*.sqlite
+/storage/uploads/*
+/storage/exports/*
+.git
+.gitignore
+*.md
+!README.md
+test1.csv
+composer-setup.php
+start-local.bat
