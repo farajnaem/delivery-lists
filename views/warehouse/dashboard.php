@@ -1,3 +1,16 @@
+<?php
+$stockActions = [
+    ['label' => 'تفاصيل العملية', 'url' => '/campaigns/view?id=' . (int) $campaign['id']],
+];
+if (!empty($canDeliver)) {
+    $stockActions[] = ['label' => 'تسليم (جوال)', 'url' => '/warehouse/deliver?campaign_id=' . (int) $campaign['id'], 'primary' => true];
+}
+context_nav([
+    ['label' => 'العمليات', 'url' => '/'],
+    ['label' => $campaign['name'], 'url' => '/campaigns/view?id=' . (int) $campaign['id']],
+    ['label' => 'متابعة المخزن'],
+], $stockActions);
+?>
 <h1>متابعة المخزن — <?= e($campaign['name']) ?></h1>
 <p class="text-muted"><?= e($campaign['parcel_name']) ?> | <?= e($campaign['warehouse_name']) ?></p>
 
@@ -97,32 +110,23 @@
 </div>
 <?php endif; ?>
 
-<div class="card">
-    <h2>آخر التسليمات</h2>
-    <div class="table-wrap">
-    <table class="table">
-        <thead>
-            <tr><th>الكود</th><th>الاسم</th><th>النوع</th><th>الوقت</th><th>بواسطة</th></tr>
-        </thead>
-        <tbody>
-        <?php foreach ($recent as $r): ?>
-        <tr>
-            <td><?= e($r['disbursement_code']) ?></td>
-            <td><?= e($r['name']) ?></td>
-            <td><?= ($r['delivery_type'] ?? '') === 'late' ? 'متأخر' : 'في الموعد' ?></td>
-            <td><?= e($r['delivered_at'] ?? '') ?></td>
-            <td><?= e($r['delivered_by_name'] ?? '') ?></td>
-        </tr>
-        <?php endforeach; ?>
-        <?php if (empty($recent)): ?>
-        <tr><td colspan="5" class="text-muted">لا تسليمات بعد</td></tr>
-        <?php endif; ?>
-        </tbody>
-    </table>
-    </div>
+<?php if (!empty($canCancelDeliveries) && (int) ($stock['delivered'] ?? 0) > 0): ?>
+<div class="card" style="border-color:#f59e0b;background:#fffbeb">
+    <h2>إلغاء التسليمات (مدير النظام)</h2>
+    <p class="text-muted">يوجد <strong><?= (int) ($stock['delivered'] ?? 0) ?></strong> تسليم مسجّل. لإعادة المستفيدين لـ «قيد التسليم» وحذف العملية لاحقاً:</p>
+    <form method="post" action="<?= e(url('/campaigns/undo-deliveries')) ?>" data-confirm="إلغاء جميع التسليمات لهذه العملية؟">
+        <?= \App\Csrf::field() ?>
+        <input type="hidden" name="campaign_id" value="<?= (int) $campaign['id'] ?>">
+        <button type="submit" class="btn btn-outline" style="border-color:#d97706;color:#b45309">إلغاء جميع التسليمات</button>
+        <a href="<?= e(url('/campaigns/edit?id=' . (int) $campaign['id'])) ?>" class="btn btn-outline">تعديل / حذف العملية</a>
+    </form>
 </div>
+<?php endif; ?>
 
-<p><a href="<?= e(url('/campaigns/view?id=' . (int) $campaign['id'])) ?>">← العودة لتفاصيل العملية</a></p>
+<?php partial('partials/delivered-table', [
+    'deliveredList' => $deliveredList ?? [],
+    'totalDelivered' => $deliveredTotal ?? ($stock['delivered'] ?? 0),
+]); ?>
 
 <script>
 document.querySelectorAll('form[data-confirm]').forEach(function (f) {

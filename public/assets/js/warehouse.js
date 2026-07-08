@@ -134,15 +134,48 @@
 
     function prependRecent(b, deliveryType) {
         if (!elRecent) return;
+        var empty = document.getElementById('recentEmpty');
+        if (empty) empty.remove();
         var li = document.createElement('li');
         li.innerHTML = '<strong>' + esc(b.disbursement_code || '') + '</strong> ' + esc(b.name) +
             '<small>الآن' + (deliveryType === 'late' ? ' — متأخر' : '') + '</small>';
         elRecent.insertBefore(li, elRecent.firstChild);
     }
 
+    function refreshDeliveredList() {
+        if (!elRecent || !navigator.onLine) return;
+        api('/delivered?campaign_id=' + campaignId + '&limit=50')
+            .then(function (data) {
+                if (!data.delivered) return;
+                elRecent.innerHTML = '';
+                var empty = document.getElementById('recentEmpty');
+                if (empty) empty.remove();
+                if (data.delivered.length === 0) {
+                    var p = document.createElement('p');
+                    p.id = 'recentEmpty';
+                    p.className = 'wh-sub';
+                    p.textContent = 'لا مستلمين بعد — ستظهر القائمة هنا بعد كل تسليم.';
+                    elRecent.parentNode.appendChild(p);
+                } else {
+                    data.delivered.forEach(function (b) {
+                        var li = document.createElement('li');
+                        li.innerHTML = '<strong>' + esc(b.disbursement_code || '') + '</strong> ' + esc(b.name) +
+                            '<small>' + esc(b.delivered_at || '') +
+                            (b.delivery_type === 'late' ? ' — متأخر' : '') + '</small>';
+                        elRecent.appendChild(li);
+                    });
+                }
+                var totalEl = document.getElementById('deliveredTotal');
+                if (totalEl && data.total !== undefined) totalEl.textContent = data.total;
+            })
+            .catch(function () {});
+    }
+
     function updateStock(stock) {
         if (stock && elBalance) elBalance.textContent = stock.balance;
         if (stock && elDelivered) elDelivered.textContent = stock.delivered;
+        var totalEl = document.getElementById('deliveredTotal');
+        if (stock && totalEl) totalEl.textContent = stock.delivered;
     }
 
     function doSearch() {
@@ -238,6 +271,7 @@
             if (data.stock) updateStock(data.stock);
             if (data.synced > 0) {
                 showSuccess('تمت مزامنة ' + data.synced + ' تسليم');
+                refreshDeliveredList();
             }
         }).catch(function () {});
     }

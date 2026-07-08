@@ -49,6 +49,17 @@ final class RoleHelper
         return in_array($role, ['admin', 'coordinator', 'reviewer', 'viewer'], true);
     }
 
+    public static function canManageDatabase(string $role): bool
+    {
+        return $role === 'admin';
+    }
+
+    /** إلغاء التسليمات — مدير النظام فقط */
+    public static function canCancelDeliveries(string $role): bool
+    {
+        return $role === 'admin';
+    }
+
     public static function homePath(string $role): string
     {
         if ($role === 'warehouse_keeper') {

@@ -33,17 +33,19 @@ final class CampaignService
     public static function create(array $data, int $userId): int
     {
         $pdo = Database::getConnection();
+        $suffix = ParcelCodeHelper::normalizeSuffix($data['parcel_code_suffix'] ?? '');
         $stmt = $pdo->prepare('
             INSERT INTO campaigns (
-                name, parcel_name, parcel_code, delivery_start, delivery_end,
+                name, parcel_name, parcel_code, parcel_code_suffix, delivery_start, delivery_end,
                 warehouse_name, warehouse_location, num_days, work_start, work_end,
                 per_window_capacity, num_windows, opening_quantity, status, created_by
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ');
         $stmt->execute([
             $data['name'],
             $data['parcel_name'],
-            $data['parcel_code'],
+            ParcelCodeHelper::PREFIX,
+            $suffix,
             $data['delivery_start'],
             $data['delivery_end'],
             $data['warehouse_name'],
@@ -63,17 +65,20 @@ final class CampaignService
     public static function update(int $id, array $data): void
     {
         $pdo = Database::getConnection();
+        $suffix = ParcelCodeHelper::normalizeSuffix($data['parcel_code_suffix'] ?? '');
         $stmt = $pdo->prepare('
             UPDATE campaigns SET
-                name = ?, parcel_name = ?, parcel_code = ?, delivery_start = ?, delivery_end = ?,
+                name = ?, parcel_name = ?, parcel_code = ?, parcel_code_suffix = ?,
+                delivery_start = ?, delivery_end = ?,
                 warehouse_name = ?, warehouse_location = ?, num_days = ?,
-                work_start = ?, work_end = ?, per_window_capacity = ?, num_windows = ?
+                work_start = ?, work_end = ?, per_window_capacity = ?, opening_quantity = ?
             WHERE id = ?
         ');
         $stmt->execute([
             $data['name'],
             $data['parcel_name'],
-            $data['parcel_code'],
+            ParcelCodeHelper::PREFIX,
+            $suffix,
             $data['delivery_start'],
             $data['delivery_end'],
             $data['warehouse_name'],
@@ -82,7 +87,7 @@ final class CampaignService
             $data['work_start'],
             $data['work_end'],
             (int) $data['per_window_capacity'],
-            (int) ($data['num_windows'] ?? 4),
+            max(0, (int) ($data['opening_quantity'] ?? 0)),
             $id,
         ]);
     }
@@ -94,11 +99,39 @@ final class CampaignService
         $stmt->execute([$id]);
     }
 
+    public static function resetToDraft(int $id): void
+    {
+        $pdo = Database::getConnection();
+        $stmt = $pdo->prepare("UPDATE campaigns SET status = 'draft', generated_at = NULL WHERE id = ?");
+        $stmt->execute([$id]);
+    }
+
+    /** حذف جميع المستفيدين وإعادة العملية لمسودة (تنظيف). */
+    public static function clearBeneficiaries(int $id): int
+    {
+        $pdo = Database::getConnection();
+        $stmt = $pdo->prepare('SELECT COUNT(*) FROM beneficiaries WHERE campaign_id = ?');
+        $stmt->execute([$id]);
+        $count = (int) $stmt->fetchColumn();
+
+        $pdo->prepare('DELETE FROM beneficiaries WHERE campaign_id = ?')->execute([$id]);
+        self::resetToDraft($id);
+        return $count;
+    }
+
     public static function delete(int $id): void
     {
         $pdo = Database::getConnection();
         $stmt = $pdo->prepare('DELETE FROM campaigns WHERE id = ?');
         $stmt->execute([$id]);
+    }
+
+    public static function deliveredCount(int $id): int
+    {
+        $pdo = Database::getConnection();
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM beneficiaries WHERE campaign_id = ? AND receipt_status = 'مستلم'");
+        $stmt->execute([$id]);
+        return (int) $stmt->fetchColumn();
     }
 
     public static function beneficiaries(int $campaignId, ?int $dayIndex = null, ?int $windowNum = null): array
@@ -157,5 +190,11 @@ final class CampaignService
         $pdo = Database::getConnection();
         $stmt = $pdo->prepare('UPDATE campaigns SET opening_quantity = ? WHERE id = ?');
         $stmt->execute([max(0, $quantity), $id]);
+    }
+
+    /** كود الطرد الكامل للعرض. */
+    public static function parcelLabel(array $campaign): string
+    {
+        return ParcelCodeHelper::formatParcelCode((string) ($campaign['parcel_code_suffix'] ?? ''));
     }
 }

@@ -15,9 +15,11 @@ final class DeliveryService
     public static function activeCampaigns(): array
     {
         $pdo = Database::getConnection();
+        $delivered = $pdo->quote(self::STATUS_DELIVERED);
         $stmt = $pdo->query("
             SELECT c.*,
-                   (SELECT COUNT(*) FROM beneficiaries b WHERE b.campaign_id = c.id) AS beneficiary_count
+                   (SELECT COUNT(*) FROM beneficiaries b WHERE b.campaign_id = c.id) AS beneficiary_count,
+                   (SELECT COUNT(*) FROM beneficiaries b WHERE b.campaign_id = c.id AND b.receipt_status = {$delivered}) AS delivered_count
             FROM campaigns c
             WHERE c.status = 'generated'
             ORDER BY c.delivery_start DESC
@@ -252,21 +254,83 @@ final class DeliveryService
 
     public static function recentDeliveries(int $campaignId, int $limit = 20): array
     {
+        return self::deliveredBeneficiaries($campaignId, $limit);
+    }
+
+    /** @return list<array> */
+    public static function deliveredBeneficiaries(int $campaignId, int $limit = 100, int $offset = 0): array
+    {
         $pdo = Database::getConnection();
         $stmt = $pdo->prepare('
             SELECT b.name, b.disbursement_code, b.national_id, b.delivery_type,
-                   b.delivered_at, b.actual_delivery_date, u.name AS delivered_by_name
+                   b.delivered_at, b.actual_delivery_date, b.delivery_date, b.window_num,
+                   u.name AS delivered_by_name
             FROM beneficiaries b
             LEFT JOIN users u ON u.id = b.delivered_by
             WHERE b.campaign_id = ? AND b.receipt_status = ?
-            ORDER BY b.delivered_at DESC
-            LIMIT ?
+            ORDER BY b.delivered_at DESC, b.id DESC
+            LIMIT ? OFFSET ?
         ');
         $stmt->bindValue(1, $campaignId, PDO::PARAM_INT);
         $stmt->bindValue(2, self::STATUS_DELIVERED);
         $stmt->bindValue(3, $limit, PDO::PARAM_INT);
+        $stmt->bindValue(4, $offset, PDO::PARAM_INT);
         $stmt->execute();
         return $stmt->fetchAll();
+    }
+
+    public static function deliveredCount(int $campaignId): int
+    {
+        $pdo = Database::getConnection();
+        $stmt = $pdo->prepare('
+            SELECT COUNT(*) FROM beneficiaries
+            WHERE campaign_id = ? AND receipt_status = ?
+        ');
+        $stmt->execute([$campaignId, self::STATUS_DELIVERED]);
+        return (int) $stmt->fetchColumn();
+    }
+
+    /**
+     * إلغاء جميع تسليمات العملية وإعادة المستفيدين لـ «قيد التسليم».
+     * للمدير فقط — يتيح حذف أو تنظيف العملية لاحقاً.
+     */
+    public static function undoAllDeliveries(int $campaignId): int
+    {
+        $pdo = Database::getConnection();
+        $stmt = $pdo->prepare('SELECT COUNT(*) FROM beneficiaries WHERE campaign_id = ? AND receipt_status = ?');
+        $stmt->execute([$campaignId, self::STATUS_DELIVERED]);
+        $count = (int) $stmt->fetchColumn();
+        if ($count === 0) {
+            return 0;
+        }
+
+        $pdo->beginTransaction();
+        try {
+            $pdo->prepare('
+                UPDATE beneficiaries SET
+                    receipt_status = ?,
+                    delivered_at = NULL,
+                    delivered_by = NULL,
+                    delivery_type = NULL,
+                    actual_delivery_date = NULL
+                WHERE campaign_id = ? AND receipt_status = ?
+            ')->execute([self::STATUS_PENDING, $campaignId, self::STATUS_DELIVERED]);
+
+            $pdo->prepare("DELETE FROM delivery_events WHERE campaign_id = ? AND action = 'delivered'")
+                ->execute([$campaignId]);
+
+            $pdo->prepare("DELETE FROM sms_outbox WHERE campaign_id = ? AND status = 'pending'")
+                ->execute([$campaignId]);
+
+            $pdo->commit();
+        } catch (\Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
+        }
+
+        return $count;
     }
 
     public static function pendingLate(int $campaignId, int $limit = 50): array

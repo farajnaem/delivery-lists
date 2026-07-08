@@ -164,3 +164,39 @@ h2 { margin: 0 0 1rem; font-size: 1.15rem; }
     align-items: center;
 }
 .actions-row form { display: inline-flex; gap: 0.5rem; align-items: center; margin: 0; }
+
+.context-nav {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem 1rem;
+    margin-bottom: 1.25rem;
+    padding: 0.75rem 1rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+.context-breadcrumbs {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 0.9rem;
+    color: var(--muted);
+}
+.context-breadcrumbs li:not(:last-child)::after {
+    content: "›";
+    margin-inline-start: 0.35rem;
+    color: var(--border);
+}
+.context-breadcrumbs a { color: var(--primary); text-decoration: none; font-weight: 600; }
+.context-breadcrumbs span { color: var(--text); font-weight: 600; }
+.context-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+
+.table-wrap { overflow-x: auto; }
+.badge-delivered-inline { background: #dcfce7; color: #166534; padding: 0.15rem 0.5rem; border-radius: 6px; font-size: 0.8rem; font-weight: 600; }
+.badge-pending-inline { background: #fef3c7; color: #92400e; padding: 0.15rem 0.5rem; border-radius: 6px; font-size: 0.8rem; font-weight: 600; }

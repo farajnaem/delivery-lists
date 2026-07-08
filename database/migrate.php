@@ -9,6 +9,7 @@ use App\Database;
 $pdo = Database::getConnection();
 
 $migrations = [
+    'parcel_code_suffix' => "ALTER TABLE campaigns ADD COLUMN parcel_code_suffix TEXT NOT NULL DEFAULT ''",
     'opening_quantity' => "ALTER TABLE campaigns ADD COLUMN opening_quantity INTEGER NOT NULL DEFAULT 0",
     'delivered_at' => 'ALTER TABLE beneficiaries ADD COLUMN delivered_at TEXT',
     'delivered_by' => 'ALTER TABLE beneficiaries ADD COLUMN delivered_by INTEGER',
@@ -23,6 +24,22 @@ foreach ($migrations as $name => $sql) {
     } catch (Throwable) {
         echo "SKIP: {$name} (exists)\n";
     }
+}
+
+// ترحيل كود الطرد القديم → SOCI + ملحق منفصل
+try {
+    $rows = $pdo->query('SELECT id, parcel_code, parcel_code_suffix FROM campaigns')->fetchAll();
+    $upd = $pdo->prepare('UPDATE campaigns SET parcel_code = ?, parcel_code_suffix = ? WHERE id = ?');
+    foreach ($rows as $row) {
+        $suffix = trim((string) ($row['parcel_code_suffix'] ?? ''));
+        if ($suffix === '') {
+            $suffix = \App\ParcelCodeHelper::extractSuffixFromLegacy((string) ($row['parcel_code'] ?? ''));
+        }
+        $upd->execute([\App\ParcelCodeHelper::PREFIX, $suffix, $row['id']]);
+    }
+    echo "OK: parcel_code legacy migration\n";
+} catch (Throwable $e) {
+    echo "SKIP: parcel_code legacy migration\n";
 }
 
 $pdo->exec('

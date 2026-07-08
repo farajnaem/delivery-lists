@@ -114,3 +114,50 @@ function read_json_body(): array
     $decoded = json_decode($raw, true);
     return is_array($decoded) ? $decoded : [];
 }
+
+/** استخراج بيانات العملية من POST. */
+function parse_campaign_post(array $post): array
+{
+    return [
+        'name' => trim($post['name'] ?? ''),
+        'parcel_name' => trim($post['parcel_name'] ?? ''),
+        'parcel_code_suffix' => \App\ParcelCodeHelper::normalizeSuffix($post['parcel_code_suffix'] ?? ''),
+        'delivery_start' => $post['delivery_start'] ?? '',
+        'delivery_end' => $post['delivery_end'] ?? '',
+        'warehouse_name' => trim($post['warehouse_name'] ?? ''),
+        'warehouse_location' => trim($post['warehouse_location'] ?? ''),
+        'num_days' => (int) ($post['num_days'] ?? 1),
+        'work_start' => $post['work_start'] ?? '09:00',
+        'work_end' => $post['work_end'] ?? '15:00',
+        'per_window_capacity' => max(1, (int) ($post['per_window_capacity'] ?? 500)),
+        'opening_quantity' => max(0, (int) ($post['opening_quantity'] ?? 0)),
+    ];
+}
+
+/**
+ * شريط تنقّل سياقي: مسار + أزرار سريعة.
+ *
+ * @param list<array{label:string,url?:string}> $crumbs
+ * @param list<array{label:string,url:string,primary?:bool}> $actions
+ */
+function context_nav(array $crumbs, array $actions = []): void
+{
+    partial('partials/context-nav', ['crumbs' => $crumbs, 'actions' => $actions]);
+}
+
+function validate_campaign_data(array $data): ?string
+{
+    if ($data['name'] === '' || $data['parcel_name'] === '') {
+        return 'أكمل اسم العملية واسم الطرد.';
+    }
+    if (!\App\ParcelCodeHelper::validateSuffix($data['parcel_code_suffix'])) {
+        return 'أدخل ملحق كود الطرد (مثل R26 أو F) — الحروف الأولى SOCI ثابتة.';
+    }
+    if ($data['delivery_start'] === '' || $data['delivery_end'] === '') {
+        return 'حدد تواريخ التسليم.';
+    }
+    if ($data['warehouse_name'] === '' || $data['warehouse_location'] === '') {
+        return 'أكمل بيانات المخزن.';
+    }
+    return null;
+}

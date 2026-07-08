@@ -11,6 +11,9 @@
             <?php if (RoleHelper::canManageUsers(Auth::role() ?? '')): ?>
             <a href="<?= e(url('/users')) ?>">المستخدمون</a>
             <?php endif; ?>
+            <?php if (RoleHelper::canManageDatabase(Auth::role() ?? '')): ?>
+            <a href="<?= e(url('/admin/database')) ?>">نسخ احتياطي</a>
+            <?php endif; ?>
             <span class="user-chip"><?= e(Auth::user()['name'] ?? '') ?></span>
             <a href="<?= e(url('/logout')) ?>" class="btn btn-outline btn-sm">خروج</a>
         </nav>

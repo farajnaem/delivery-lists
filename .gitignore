@@ -1,6 +1,8 @@
 /vendor/
 /database/delivery.sqlite
 /database/*.sqlite
+/database/backups/*
+!database/backups/.gitkeep
 /storage/uploads/*
 /storage/exports/*
 !storage/uploads/.gitkeep
@@ -8,3 +10,9 @@
 .env
 composer-setup.php
 test1.csv
+
+# ملفات بيانات المستفيدين — لا تُرفع
+*.xlsx
+*.xls
+*.csv
+!storage/sample-beneficiaries.xlsx

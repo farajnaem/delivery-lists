@@ -7,6 +7,7 @@ require dirname(__DIR__) . '/src/bootstrap.php';
 use App\Auth;
 use App\CampaignService;
 use App\Csrf;
+use App\DatabaseBackupService;
 use App\DeliveryService;
 use App\DistributionService;
 use App\ExcelExportService;
@@ -138,6 +139,16 @@ if (str_starts_with($uri, '/api/warehouse')) {
         json_response(['ok' => true, 'stock' => DeliveryService::stockStats($campaignId)]);
     }
 
+    if ($uri === '/api/warehouse/delivered' && $method === 'GET') {
+        $campaignId = (int) ($_GET['campaign_id'] ?? 0);
+        $limit = min(100, max(1, (int) ($_GET['limit'] ?? 50)));
+        json_response([
+            'ok' => true,
+            'delivered' => DeliveryService::deliveredBeneficiaries($campaignId, $limit),
+            'total' => DeliveryService::deliveredCount($campaignId),
+        ]);
+    }
+
     json_response(['ok' => false, 'error' => 'غير موجود'], 404);
 }
 
@@ -147,6 +158,7 @@ if ($uri === '/warehouse' && $method === 'GET') {
     warehouse_view('warehouse/select', [
         'title' => 'تسليم المخزن',
         'campaigns' => DeliveryService::activeCampaigns(),
+        'canViewOperations' => (Auth::role() ?? '') !== 'warehouse_keeper',
     ]);
     exit;
 }
@@ -163,7 +175,8 @@ if ($uri === '/warehouse/deliver' && $method === 'GET') {
         'title' => $campaign['name'],
         'campaign' => $campaign,
         'stock' => DeliveryService::stockStats($campaignId),
-        'recent' => DeliveryService::recentDeliveries($campaignId, 15),
+        'recent' => DeliveryService::deliveredBeneficiaries($campaignId, 50),
+        'canViewStock' => RoleHelper::canViewStock(Auth::role() ?? ''),
     ]);
     exit;
 }
@@ -176,15 +189,18 @@ if ($uri === '/campaigns/stock' && $method === 'GET') {
         flash('error', 'العملية غير موجودة.');
         redirect('/');
     }
+    $deliveredTotal = DeliveryService::deliveredCount($id);
     view('warehouse/dashboard', [
         'title' => 'متابعة المخزن',
         'campaign' => $campaign,
         'stock' => DeliveryService::stockStats($id),
-        'recent' => DeliveryService::recentDeliveries($id, 30),
+        'deliveredList' => DeliveryService::deliveredBeneficiaries($id, 100),
+        'deliveredTotal' => $deliveredTotal,
         'lateList' => DeliveryService::pendingLate($id, 50),
         'canEdit' => RoleHelper::canEditCampaign(Auth::role() ?? ''),
         'canDeliver' => RoleHelper::canDeliver(Auth::role() ?? ''),
         'canExport' => RoleHelper::canViewStock(Auth::role() ?? ''),
+        'canCancelDeliveries' => RoleHelper::canCancelDeliveries(Auth::role() ?? ''),
         'smsPending' => SmsService::pendingCount($id),
         'smsEnabled' => SmsService::isEnabled(),
     ]);
@@ -211,6 +227,8 @@ if ($uri === '/' || $uri === '/campaigns') {
         'title' => 'عمليات التوزيع',
         'campaigns' => CampaignService::all(),
         'canCreate' => RoleHelper::canCreateCampaign(Auth::role() ?? ''),
+        'canEdit' => RoleHelper::canEditCampaign(Auth::role() ?? ''),
+        'canDeliver' => RoleHelper::canDeliver(Auth::role() ?? ''),
     ]);
     exit;
 }
@@ -228,24 +246,12 @@ if ($uri === '/campaigns/create' && $method === 'POST') {
         redirect('/campaigns/create');
     }
 
-    $data = [
-        'name' => trim($_POST['name'] ?? ''),
-        'parcel_name' => trim($_POST['parcel_name'] ?? ''),
-        'parcel_code' => strtoupper(trim($_POST['parcel_code'] ?? '')),
-        'delivery_start' => $_POST['delivery_start'] ?? '',
-        'delivery_end' => $_POST['delivery_end'] ?? '',
-        'warehouse_name' => trim($_POST['warehouse_name'] ?? ''),
-        'warehouse_location' => trim($_POST['warehouse_location'] ?? ''),
-        'num_days' => (int) ($_POST['num_days'] ?? 1),
-        'work_start' => $_POST['work_start'] ?? '09:00',
-        'work_end' => $_POST['work_end'] ?? '15:00',
-        'per_window_capacity' => max(1, (int) ($_POST['per_window_capacity'] ?? 500)),
-        'opening_quantity' => max(0, (int) ($_POST['opening_quantity'] ?? 0)),
-    ];
+    $data = parse_campaign_post($_POST);
 
-    if ($data['name'] === '' || $data['parcel_name'] === '' || !str_starts_with($data['parcel_code'], 'SOCI')) {
+    $error = validate_campaign_data($data);
+    if ($error !== null) {
         store_old($_POST);
-        flash('error', 'أكمل البيانات — كود الطرد يبدأ بـ SOCI.');
+        flash('error', $error);
         redirect('/campaigns/create');
     }
 
@@ -271,6 +277,165 @@ if ($uri === '/campaigns/create' && $method === 'POST') {
     }
 
     redirect('/campaigns/view?id=' . $id);
+}
+
+if ($uri === '/campaigns/edit' && $method === 'GET') {
+    Auth::requireRole(fn ($r) => RoleHelper::canEditCampaign($r));
+    $id = (int) ($_GET['id'] ?? 0);
+    $campaign = CampaignService::find($id);
+    if (!$campaign) {
+        flash('error', 'العملية غير موجودة.');
+        redirect('/');
+    }
+    view('campaigns/edit', [
+        'title' => 'تعديل العملية',
+        'campaign' => $campaign,
+        'stats' => CampaignService::stats($id),
+        'canEdit' => true,
+        'canCancelDeliveries' => RoleHelper::canCancelDeliveries(Auth::role() ?? ''),
+    ]);
+    exit;
+}
+
+if ($uri === '/campaigns/edit' && $method === 'POST') {
+    Auth::requireRole(fn ($r) => RoleHelper::canEditCampaign($r));
+    $id = (int) ($_POST['campaign_id'] ?? $_GET['id'] ?? 0);
+    if (!Csrf::verify($_POST['_csrf'] ?? null)) {
+        flash('error', 'انتهت صلاحية النموذج.');
+        redirect('/campaigns/edit?id=' . $id);
+    }
+    $campaign = CampaignService::find($id);
+    if (!$campaign) {
+        flash('error', 'العملية غير موجودة.');
+        redirect('/');
+    }
+    $data = parse_campaign_post($_POST);
+    $error = validate_campaign_data($data);
+    if ($error !== null) {
+        store_old($_POST);
+        flash('error', $error);
+        redirect('/campaigns/edit?id=' . $id);
+    }
+    CampaignService::update($id, $data);
+    flash('success', 'تم حفظ التعديلات.');
+    redirect('/campaigns/view?id=' . $id);
+}
+
+if ($uri === '/campaigns/delete' && $method === 'POST') {
+    Auth::requireRole(fn ($r) => RoleHelper::canEditCampaign($r));
+    $id = (int) ($_POST['campaign_id'] ?? 0);
+    if (!Csrf::verify($_POST['_csrf'] ?? null)) {
+        flash('error', 'انتهت صلاحية النموذج.');
+        redirect('/campaigns/view?id=' . $id);
+    }
+    $campaign = CampaignService::find($id);
+    if (!$campaign) {
+        flash('error', 'العملية غير موجودة.');
+        redirect('/');
+    }
+    if (CampaignService::deliveredCount($id) > 0) {
+        flash('error', 'لا يمكن حذف عملية فيها تسليمات مسجّلة.');
+        redirect('/campaigns/edit?id=' . $id);
+    }
+    $confirm = trim($_POST['confirm_name_input'] ?? '');
+    if ($confirm !== ($campaign['name'] ?? '')) {
+        flash('error', 'اسم التأكيد غير مطابق — لم يُحذف شيء.');
+        redirect('/campaigns/edit?id=' . $id);
+    }
+    CampaignService::delete($id);
+    flash('success', 'تم حذف العملية نهائياً.');
+    redirect('/');
+}
+
+if ($uri === '/campaigns/undo-deliveries' && $method === 'POST') {
+    Auth::requireRole(fn ($r) => RoleHelper::canCancelDeliveries($r));
+    $id = (int) ($_POST['campaign_id'] ?? 0);
+    if (!Csrf::verify($_POST['_csrf'] ?? null)) {
+        flash('error', 'انتهت صلاحية النموذج.');
+        redirect('/campaigns/edit?id=' . $id);
+    }
+    $campaign = CampaignService::find($id);
+    if (!$campaign) {
+        flash('error', 'العملية غير موجودة.');
+        redirect('/');
+    }
+    $count = DeliveryService::undoAllDeliveries($id);
+    if ($count === 0) {
+        flash('error', 'لا توجد تسليمات لإلغائها.');
+    } else {
+        flash('success', "تم إلغاء {$count} تسليم — يمكنك الآن حذف أو تنظيف العملية.");
+    }
+    redirect('/campaigns/edit?id=' . $id);
+}
+
+if ($uri === '/campaigns/clear-beneficiaries' && $method === 'POST') {
+    Auth::requireRole(fn ($r) => RoleHelper::canEditCampaign($r));
+    $id = (int) ($_POST['campaign_id'] ?? 0);
+    if (!Csrf::verify($_POST['_csrf'] ?? null)) {
+        flash('error', 'انتهت صلاحية النموذج.');
+        redirect('/campaigns/view?id=' . $id);
+    }
+    if (CampaignService::deliveredCount($id) > 0) {
+        flash('error', 'لا يمكن تنظيف عملية فيها تسليمات مسجّلة.');
+        redirect('/campaigns/edit?id=' . $id);
+    }
+    $count = CampaignService::clearBeneficiaries($id);
+    flash('success', "تم حذف {$count} مستفيد وإعادة العملية لمسودة.");
+    redirect('/campaigns/view?id=' . $id);
+}
+
+if ($uri === '/admin/database' && $method === 'GET') {
+    Auth::requireRole(fn ($r) => RoleHelper::canManageDatabase($r));
+    view('admin/database', [
+        'title' => 'نسخ احتياطي',
+        'backups' => DatabaseBackupService::list(),
+    ]);
+    exit;
+}
+
+if ($uri === '/admin/database/backup' && $method === 'POST') {
+    Auth::requireRole(fn ($r) => RoleHelper::canManageDatabase($r));
+    if (!Csrf::verify($_POST['_csrf'] ?? null)) {
+        flash('error', 'انتهت صلاحية النموذج.');
+        redirect('/admin/database');
+    }
+    try {
+        $result = DatabaseBackupService::create();
+        flash('success', 'تم إنشاء النسخة: ' . $result['filename']);
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+    }
+    redirect('/admin/database');
+}
+
+if ($uri === '/admin/database/restore' && $method === 'POST') {
+    Auth::requireRole(fn ($r) => RoleHelper::canManageDatabase($r));
+    if (!Csrf::verify($_POST['_csrf'] ?? null)) {
+        flash('error', 'انتهت صلاحية النموذج.');
+        redirect('/admin/database');
+    }
+    try {
+        DatabaseBackupService::restore($_POST['filename'] ?? '');
+        flash('success', 'تمت استعادة قاعدة البيانات بنجاح.');
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+    }
+    redirect('/admin/database');
+}
+
+if ($uri === '/admin/database/delete' && $method === 'POST') {
+    Auth::requireRole(fn ($r) => RoleHelper::canManageDatabase($r));
+    if (!Csrf::verify($_POST['_csrf'] ?? null)) {
+        flash('error', 'انتهت صلاحية النموذج.');
+        redirect('/admin/database');
+    }
+    try {
+        DatabaseBackupService::delete($_POST['filename'] ?? '');
+        flash('success', 'تم حذف النسخة الاحتياطية.');
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+    }
+    redirect('/admin/database');
 }
 
 if ($uri === '/campaigns/view' && $method === 'GET') {
@@ -303,6 +468,12 @@ if ($uri === '/campaigns/view' && $method === 'GET') {
         'deliveryStats' => ($campaign['status'] ?? '') === 'generated'
             ? DeliveryService::stockStats($id)
             : null,
+        'deliveredList' => ($campaign['status'] ?? '') === 'generated'
+            ? DeliveryService::deliveredBeneficiaries($id, 50)
+            : [],
+        'deliveredTotal' => ($campaign['status'] ?? '') === 'generated'
+            ? DeliveryService::deliveredCount($id)
+            : 0,
     ]);
     exit;
 }

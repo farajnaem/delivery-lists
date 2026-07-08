@@ -7,12 +7,17 @@ $campaignActive = !empty($stats['campaign_active']);
 ?>
 <header class="wh-header">
     <div class="wh-header-inner">
-        <a href="<?= e(url('/warehouse')) ?>" class="wh-back">←</a>
+        <a href="<?= e(url('/warehouse')) ?>" class="wh-back" title="العمليات">←</a>
         <div class="wh-header-title">
             <strong><?= e($campaign['name']) ?></strong>
             <small><?= e($campaign['warehouse_name']) ?></small>
         </div>
-        <span id="onlineStatus" class="wh-status wh-status-online">متصل</span>
+        <div class="wh-header-links">
+            <?php if (!empty($canViewStock)): ?>
+            <a href="<?= e(url('/campaigns/stock?id=' . (int) $campaign['id'])) ?>" class="wh-link">المخزن</a>
+            <?php endif; ?>
+            <span id="onlineStatus" class="wh-status wh-status-online">متصل</span>
+        </div>
     </div>
 </header>
 
@@ -42,8 +47,8 @@ $campaignActive = !empty($stats['campaign_active']);
     </div>
 
     <div class="wh-search-box">
-        <label for="searchQuery">ابحث بالكود (SOCI00001) أو رقم الهوية</label>
-        <input type="search" id="searchQuery" class="wh-input" placeholder="SOCI00001 أو 1xxxxxxxxx" autocomplete="off" inputmode="search" <?= $campaignActive ? '' : 'disabled' ?>>
+        <label for="searchQuery">ابحث بالكود (مثل SOCIR2600001) أو رقم الهوية</label>
+        <input type="search" id="searchQuery" class="wh-input" placeholder="SOCIR2600001 أو 1xxxxxxxxx" autocomplete="off" inputmode="search" <?= $campaignActive ? '' : 'disabled' ?>>
         <button type="button" id="btnSearch" class="wh-btn wh-btn-block" <?= $campaignActive ? '' : 'disabled' ?>>بحث</button>
     </div>
 
@@ -52,7 +57,7 @@ $campaignActive = !empty($stats['campaign_active']);
     <div id="searchSuccess" class="wh-alert wh-alert-success hidden"></div>
 
     <div class="wh-recent">
-        <h2>آخر التسليمات</h2>
+        <h2>المستلمون (<span id="deliveredTotal"><?= (int) $delivered ?></span>)</h2>
         <ul id="recentList" class="wh-recent-list">
             <?php foreach ($recent as $r): ?>
             <li>
@@ -63,6 +68,9 @@ $campaignActive = !empty($stats['campaign_active']);
             </li>
             <?php endforeach; ?>
         </ul>
+        <?php if (empty($recent)): ?>
+        <p id="recentEmpty" class="wh-sub">لا مستلمين بعد — ستظهر القائمة هنا بعد كل تسليم.</p>
+        <?php endif; ?>
     </div>
 </main>
 

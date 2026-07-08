@@ -61,7 +61,7 @@ final class ExcelImportService
             $status = $statusCol !== null
                 ? trim((string) ($row[$statusCol] ?? ''))
                 : 'قيد التسليم';
-            if ($status === '') {
+            if ($status === '' || $status === 'تم التسليم') {
                 $status = 'قيد التسليم';
             }
 

@@ -1,12 +1,31 @@
 <?php
+use App\CampaignService;
 $isGenerated = ($campaign['status'] ?? '') === 'generated';
+$parcelLabel = CampaignService::parcelLabel($campaign);
 $dayStats = $stats['days'] ?? [];
 $perWindow = max(1, (int) ($campaign['per_window_capacity'] ?? 500));
+
+$viewActions = [];
+if ($isGenerated && !empty($canViewStock)) {
+    $viewActions[] = ['label' => 'متابعة المخزن', 'url' => '/campaigns/stock?id=' . (int) $campaign['id'], 'primary' => true];
+}
+if ($isGenerated && !empty($canDeliver)) {
+    $viewActions[] = ['label' => 'تسليم (جوال)', 'url' => '/warehouse/deliver?campaign_id=' . (int) $campaign['id']];
+}
+if (!empty($canEdit)) {
+    $viewActions[] = ['label' => 'تعديل', 'url' => '/campaigns/edit?id=' . (int) $campaign['id']];
+}
+
+context_nav([
+    ['label' => 'العمليات', 'url' => '/'],
+    ['label' => $campaign['name']],
+], $viewActions);
 ?>
 
 <h1><?= e($campaign['name']) ?></h1>
 <p class="text-muted">
-    <?= e($campaign['parcel_name']) ?> — <?= e($campaign['parcel_code']) ?>
+    <?= e($campaign['parcel_name']) ?> — كود الطرد: <strong><?= e($parcelLabel) ?></strong>
+    (SOCI + <?= e($campaign['parcel_code_suffix'] ?? '') ?>)
     | <?= e($campaign['warehouse_name']) ?>
 </p>
 
@@ -127,6 +146,10 @@ $perWindow = max(1, (int) ($campaign['per_window_capacity'] ?? 500));
         <?php if ($isGenerated && !empty($canDeliver)): ?>
         <a href="<?= e(url('/warehouse/deliver?campaign_id=' . (int)$campaign['id'])) ?>" class="btn btn-outline">تسليم (جوال)</a>
         <?php endif; ?>
+
+        <?php if (!empty($canEdit)): ?>
+        <a href="<?= e(url('/campaigns/edit?id=' . (int)$campaign['id'])) ?>" class="btn btn-outline">تعديل / حذف</a>
+        <?php endif; ?>
     </div>
     <p class="text-muted" style="margin-top:0.75rem">
         ملف Excel: <strong>الكشف الإجمالي</strong> + <strong>يوم1_شباك1 … يوم5_شباك4</strong> (<?= (int) ($plan['total_delivery_sheets'] ?? 0) ?> كشف) + <strong>كشف الرسائل</strong>.
@@ -142,7 +165,7 @@ $perWindow = max(1, (int) ($campaign['per_window_capacity'] ?? 500));
             <tr>
                 <th>الاسم</th><th>الهوية</th><th>الجوال</th>
                 <?php if ($isGenerated): ?>
-                <th>كود</th><th>يوم</th><th>شباك</th><th>من</th><th>إلى</th>
+                <th>كود</th><th>الحالة</th><th>يوم</th><th>شباك</th><th>من</th><th>إلى</th>
                 <?php endif; ?>
             </tr>
         </thead>
@@ -154,6 +177,13 @@ $perWindow = max(1, (int) ($campaign['per_window_capacity'] ?? 500));
             <td><?= e($b['mobile']) ?></td>
             <?php if ($isGenerated): ?>
             <td><?= e($b['disbursement_code']) ?></td>
+            <td>
+                <?php if (($b['receipt_status'] ?? '') === 'مستلم'): ?>
+                <span class="badge-delivered-inline">مستلم</span>
+                <?php else: ?>
+                <span class="badge-pending-inline">قيد التسليم</span>
+                <?php endif; ?>
+            </td>
             <td><?= e($b['delivery_date']) ?></td>
             <td><?= (int) $b['window_num'] ?></td>
             <td><?= e($b['time_from']) ?></td>
@@ -164,6 +194,18 @@ $perWindow = max(1, (int) ($campaign['per_window_capacity'] ?? 500));
         </tbody>
     </table>
     </div>
+</div>
+<?php endif; ?>
+
+<?php if ($isGenerated && ($deliveredTotal ?? 0) > 0): ?>
+<?php partial('partials/delivered-table', [
+    'deliveredList' => $deliveredList ?? [],
+    'totalDelivered' => $deliveredTotal ?? 0,
+]); ?>
+<?php elseif ($isGenerated): ?>
+<div class="card">
+    <h2>المستلمون</h2>
+    <p class="text-muted">لا يوجد مستلمون بعد — ستظهر القائمة هنا بعد تسجيل التسليم من <a href="<?= e(url('/warehouse/deliver?campaign_id=' . (int)$campaign['id'])) ?>">صفحة المخزن</a>.</p>
 </div>
 <?php endif; ?>
 

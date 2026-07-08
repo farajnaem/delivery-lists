@@ -45,6 +45,8 @@ body.warehouse-app {
 .wh-header-title { flex: 1; min-width: 0; }
 .wh-header-title strong { display: block; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wh-header-title small { opacity: 0.85; font-size: 0.75rem; }
+.wh-header-links { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
+.wh-header-links .wh-link { color: #fff; font-size: 0.8rem; opacity: 0.95; }
 .wh-user { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; margin-right: auto; }
 .wh-link { color: #fff; opacity: 0.9; }
 

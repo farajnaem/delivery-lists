@@ -3,6 +3,9 @@
     <div class="wh-header-inner">
         <a href="<?= e(url('/warehouse')) ?>" class="wh-brand">تسليم المخزن</a>
         <div class="wh-user">
+            <?php if (!empty($canViewOperations)): ?>
+            <a href="<?= e(url('/')) ?>" class="wh-link">العمليات</a>
+            <?php endif; ?>
             <span><?= e(Auth::user()['name'] ?? '') ?></span>
             <a href="<?= e(url('/logout')) ?>" class="wh-link">خروج</a>
         </div>
@@ -19,6 +22,9 @@
     <?php if (empty($campaigns)): ?>
     <div class="wh-card wh-empty">
         <p>لا توجد عمليات جاهزة للتسليم حالياً.</p>
+        <?php if (!empty($canViewOperations)): ?>
+        <p><a href="<?= e(url('/')) ?>">← العودة لعمليات التوزيع</a></p>
+        <?php endif; ?>
     </div>
     <?php else: ?>
     <div class="wh-campaign-list">
@@ -27,9 +33,15 @@
             <strong><?= e($c['name']) ?></strong>
             <span><?= e($c['parcel_name']) ?></span>
             <span class="wh-meta"><?= e($c['delivery_start']) ?> — <?= e($c['delivery_end']) ?></span>
-            <span class="wh-meta"><?= (int) ($c['beneficiary_count'] ?? 0) ?> مستفيد</span>
+            <span class="wh-meta">
+                <?= (int) ($c['beneficiary_count'] ?? 0) ?> مستفيد
+                · <strong><?= (int) ($c['delivered_count'] ?? 0) ?> مُسلَّم</strong>
+            </span>
         </a>
         <?php endforeach; ?>
     </div>
+    <?php if (!empty($canViewOperations)): ?>
+    <p style="margin-top:1rem"><a href="<?= e(url('/')) ?>">← العودة لعمليات التوزيع</a></p>
+    <?php endif; ?>
     <?php endif; ?>
 </main>

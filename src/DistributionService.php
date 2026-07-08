@@ -59,9 +59,11 @@ final class DistributionService
             throw new \RuntimeException('العملية غير موجودة.');
         }
 
-        if (!str_starts_with(strtoupper(trim($campaign['parcel_code'])), 'SOCI')) {
-            throw new \RuntimeException('كود الطرد يجب أن يبدأ بـ SOCI.');
+        if (!ParcelCodeHelper::validateSuffix((string) ($campaign['parcel_code_suffix'] ?? ''))) {
+            throw new \RuntimeException('أدخل ملحق كود الطرد (مثل R26 أو F).');
         }
+
+        $codeSuffix = (string) ($campaign['parcel_code_suffix'] ?? '');
 
         $pdo = Database::getConnection();
         $stmt = $pdo->prepare('SELECT * FROM beneficiaries WHERE campaign_id = ? ORDER BY id ASC');
@@ -123,7 +125,7 @@ final class DistributionService
 
                 foreach ($windowRows as $i => $row) {
                     $slot = $slots[$i];
-                    $code = 'SOCI' . str_pad((string) $codeNum, 5, '0', STR_PAD_LEFT);
+                    $code = ParcelCodeHelper::buildDisbursementCode($codeSuffix, $codeNum);
                     $mobile = PhoneHelper::normalize($row['mobile']);
                     $message = self::buildMessage($campaign, $row['name'], $dates[$d], $slot, $code, $w + 1);
 

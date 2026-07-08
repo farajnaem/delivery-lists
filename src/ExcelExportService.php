@@ -79,7 +79,7 @@ final class ExcelExportService
         $spreadsheet = new Spreadsheet();
         $spreadsheet->getDefaultStyle()->getFont()->setName('Arial')->setSize(10);
 
-        self::buildDeliverySummarySheet($spreadsheet, $campaign, $stats);
+        self::buildDeliverySummarySheet($spreadsheet, $campaign, $stats, $all);
         self::buildDeliveryDetailSheet($spreadsheet, 'كشف_التسليمات', $all, $campaign);
         self::buildDeliveryDetailSheet($spreadsheet, 'مستلم', $delivered, $campaign);
         self::buildDeliveryDetailSheet($spreadsheet, 'بانتظار_التسليم', $pending, $campaign);
@@ -101,15 +101,16 @@ final class ExcelExportService
         return $path;
     }
 
-    private static function buildDeliverySummarySheet(Spreadsheet $spreadsheet, array $campaign, array $stats): void
+    /** @param list<array<string,mixed>> $all */
+    private static function buildDeliverySummarySheet(Spreadsheet $spreadsheet, array $campaign, array $stats, array $all): void
     {
         $sheet = $spreadsheet->getActiveSheet();
         $sheet->setTitle('ملخص_المخزن');
         $sheet->setRightToLeft(true);
 
         $sheet->setCellValue('A1', 'ملخص التسليم — ' . $campaign['name']);
-        $sheet->mergeCells('A1:D1');
-        self::styleSectionTitle($sheet, 'A1:D1');
+        $sheet->mergeCells('A1:G1');
+        self::styleSectionTitle($sheet, 'A1:G1');
 
         $rows = [
             ['تاريخ التقرير', date('Y-m-d H:i')],
@@ -132,12 +133,107 @@ final class ExcelExportService
             $sheet->fromArray($line, null, 'A' . $r);
             $r++;
         }
-        self::styleMetaBlock($sheet, 'A3:B' . ($r - 1));
-        self::borderAll($sheet, 'A3:B' . ($r - 1));
+        $summaryEnd = $r - 1;
+        self::styleMetaBlock($sheet, 'A3:B' . $summaryEnd);
+        self::borderAll($sheet, 'A3:B' . $summaryEnd);
 
-        $sheet->getColumnDimension('A')->setWidth(22);
-        $sheet->getColumnDimension('B')->setWidth(36);
-        self::applyPortraitPrint($sheet, 3, $r - 1, 'B');
+        // ── ملخص يومي ──
+        $dailyStart = $summaryEnd + 2;
+        $sheet->setCellValue('A' . $dailyStart, 'ملخص يومي لعمليات التسليم');
+        $sheet->mergeCells('A' . $dailyStart . ':G' . $dailyStart);
+        self::styleSectionTitle($sheet, 'A' . $dailyStart . ':G' . $dailyStart);
+
+        $headerRow = $dailyStart + 1;
+        $dailyHeaders = ['اليوم', 'تاريخ التسليم', 'المخطط', 'مُسلَّم', 'بانتظار التسليم', 'في الموعد', 'متأخر'];
+        self::writeHeaderRow($sheet, $headerRow, $dailyHeaders);
+
+        $daily = self::buildDailyDeliverySummary($all);
+        $row = $headerRow + 1;
+        foreach ($daily as $day) {
+            $sheet->fromArray([
+                $day['day_index'],
+                $day['date'],
+                $day['planned'],
+                $day['delivered'],
+                $day['pending'],
+                $day['on_time'],
+                $day['late'],
+            ], null, 'A' . $row);
+            $row++;
+        }
+
+        $dailyLastRow = max($headerRow, $row - 1);
+        if ($row > $headerRow + 1) {
+            self::borderAll($sheet, 'A' . $headerRow . ':G' . $dailyLastRow);
+            self::styleDataRows($sheet, 'A' . ($headerRow + 1) . ':G' . $dailyLastRow);
+        } else {
+            $sheet->setCellValue('A' . $row, 'لا توجد بيانات يومية — يجب توليد الكشوف أولاً.');
+            $sheet->mergeCells('A' . $row . ':G' . $row);
+            $dailyLastRow = $row;
+        }
+
+        $sheet->getColumnDimension('A')->setWidth(8);
+        $sheet->getColumnDimension('B')->setWidth(14);
+        $sheet->getColumnDimension('C')->setWidth(10);
+        $sheet->getColumnDimension('D')->setWidth(10);
+        $sheet->getColumnDimension('E')->setWidth(16);
+        $sheet->getColumnDimension('F')->setWidth(10);
+        $sheet->getColumnDimension('G')->setWidth(10);
+        self::applyPortraitPrint($sheet, $headerRow, $dailyLastRow, 'G');
+    }
+
+    /**
+     * @param list<array<string,mixed>> $all
+     * @return list<array{day_index:int,date:string,planned:int,delivered:int,pending:int,on_time:int,late:int}>
+     */
+    private static function buildDailyDeliverySummary(array $all): array
+    {
+        $byDate = [];
+        foreach ($all as $b) {
+            $date = (string) ($b['delivery_date'] ?? '');
+            if ($date === '') {
+                continue;
+            }
+            if (!isset($byDate[$date])) {
+                $byDate[$date] = [
+                    'day_index' => (int) ($b['day_index'] ?? 0),
+                    'date' => $date,
+                    'planned' => 0,
+                    'delivered' => 0,
+                    'pending' => 0,
+                    'on_time' => 0,
+                    'late' => 0,
+                ];
+            }
+            $byDate[$date]['planned']++;
+            if (($b['receipt_status'] ?? '') === DeliveryService::STATUS_DELIVERED) {
+                $byDate[$date]['delivered']++;
+                if (($b['delivery_type'] ?? '') === 'late') {
+                    $byDate[$date]['late']++;
+                } elseif (($b['delivery_type'] ?? '') === 'on_time') {
+                    $byDate[$date]['on_time']++;
+                }
+            } else {
+                $byDate[$date]['pending']++;
+            }
+        }
+        ksort($byDate);
+        return array_values($byDate);
+    }
+
+    /** تنسيق حالة الاستلام للتصدير — المستلم يبقى «مستلم»، والباقي «بانتظار التسليم». */
+    private static function formatReceiptStatusForExport(array $b): string
+    {
+        if (($b['receipt_status'] ?? '') === DeliveryService::STATUS_DELIVERED) {
+            return DeliveryService::STATUS_DELIVERED;
+        }
+
+        $raw = trim((string) ($b['receipt_status'] ?? ''));
+        if ($raw === '' || $raw === 'تم التسليم' || $raw === DeliveryService::STATUS_PENDING) {
+            return 'بانتظار التسليم';
+        }
+
+        return 'بانتظار التسليم';
     }
 
     /** @param list<array<string,mixed>> $items */
@@ -176,7 +272,7 @@ final class ExcelExportService
                 $b['national_id'],
                 null,
                 $b['disbursement_code'],
-                $b['receipt_status'],
+                self::formatReceiptStatusForExport($b),
                 $b['delivery_date'],
                 $b['window_num'],
                 $b['time_from'],
@@ -263,19 +359,21 @@ final class ExcelExportService
         $sheet->mergeCells('A1:N1');
         self::styleSectionTitle($sheet, 'A1:N1');
 
+        $parcelLabel = CampaignService::parcelLabel($campaign);
         $meta = [
-            ['اسم الطرد', $campaign['parcel_name'], 'كود الطرد', $campaign['parcel_code'], 'عدد المستفيدين', count($all)],
-            ['اسم المخزن', $campaign['warehouse_name'], 'من', $campaign['delivery_start'], 'إلى', $campaign['delivery_end']],
-            ['أيام التسليم', (int) $campaign['num_days'], 'مستفيد/شباك', (int) $campaign['per_window_capacity'], 'موقع المخزن', $campaign['warehouse_location']],
+            ['اسم الطرد', $campaign['parcel_name'], 'كود الطرد', $parcelLabel, 'ملحق الكود', $campaign['parcel_code_suffix'] ?? ''],
+            ['عدد المستفيدين', count($all), 'اسم المخزن', $campaign['warehouse_name'], 'من', $campaign['delivery_start']],
+            ['إلى', $campaign['delivery_end'], 'أيام التسليم', (int) $campaign['num_days'], 'مستفيد/شباك', (int) $campaign['per_window_capacity']],
+            ['موقع المخزن', $campaign['warehouse_location'], '', '', '', ''],
         ];
         $r = 2;
         foreach ($meta as $line) {
             $sheet->fromArray($line, null, 'A' . $r);
             $r++;
         }
-        self::styleMetaBlock($sheet, 'A2:F4');
+        self::styleMetaBlock($sheet, 'A2:F5');
 
-        $headerRow = 6;
+        $headerRow = 7;
         $headers = [
             '#', 'الاسم', 'رقم الهوية', 'رقم الجوال', 'حالة الاستلام', 'كود الصرف',
             'يوم التسليم', 'شباك', 'من', 'إلى',
@@ -295,7 +393,7 @@ final class ExcelExportService
                 $b['name'],
                 $b['national_id'],
                 null,
-                $b['receipt_status'],
+                self::formatReceiptStatusForExport($b),
                 $b['disbursement_code'],
                 $b['delivery_date'],
                 $b['window_num'],
@@ -359,9 +457,9 @@ final class ExcelExportService
                 self::styleSectionTitle($sheet, 'A1:F1');
 
                 $parcelMeta = [
-                    ['اسم الطرد', $campaign['parcel_name'], 'كود الطرد', $campaign['parcel_code']],
-                    ['تاريخ البداية', $campaign['delivery_start'], 'تاريخ النهاية', $campaign['delivery_end']],
-                    ['اسم المخزن', $campaign['warehouse_name'], 'موقع المخزن', $campaign['warehouse_location']],
+                    ['اسم الطرد', $campaign['parcel_name'], 'كود الطرد', CampaignService::parcelLabel($campaign), 'ملحق الكود', $campaign['parcel_code_suffix'] ?? ''],
+                    ['تاريخ البداية', $campaign['delivery_start'], 'تاريخ النهاية', $campaign['delivery_end'], 'اسم المخزن', $campaign['warehouse_name']],
+                    ['موقع المخزن', $campaign['warehouse_location'], '', '', '', ''],
                 ];
                 $r = 2;
                 foreach ($parcelMeta as $line) {
