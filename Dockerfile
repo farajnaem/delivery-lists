@@ -3,6 +3,7 @@ FROM php:8.2-apache-bookworm
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libzip-dev \
     libpng-dev \
+    libsqlite3-dev \
     curl \
     unzip \
     && docker-php-ext-install pdo pdo_mysql pdo_sqlite zip gd \
