@@ -7,6 +7,7 @@ require_once dirname(__DIR__) . '/src/bootstrap.php';
 use App\Database;
 
 $pdo = Database::getConnection();
+$isMysql = config('db_driver') === 'mysql';
 
 $migrations = [
     'parcel_code_suffix' => "ALTER TABLE campaigns ADD COLUMN parcel_code_suffix TEXT NOT NULL DEFAULT ''",
@@ -42,7 +43,9 @@ try {
     echo "SKIP: parcel_code legacy migration\n";
 }
 
-$pdo->exec('
+// جداول/فهارس إضافية بصيغة SQLite فقط. على MySQL يتكفّل schema.mysql.sql بإنشائها.
+if (!$isMysql) {
+    $pdo->exec('
 CREATE TABLE IF NOT EXISTS delivery_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     beneficiary_id INTEGER NOT NULL,
@@ -57,21 +60,21 @@ CREATE TABLE IF NOT EXISTS delivery_events (
     FOREIGN KEY (delivered_by) REFERENCES users(id)
 )
 ');
-echo "OK: delivery_events table\n";
+    echo "OK: delivery_events table\n";
 
-$indexes = [
-    'idx_beneficiaries_code' => 'CREATE INDEX IF NOT EXISTS idx_beneficiaries_code ON beneficiaries(campaign_id, disbursement_code)',
-    'idx_beneficiaries_national_id' => 'CREATE INDEX IF NOT EXISTS idx_beneficiaries_national_id ON beneficiaries(campaign_id, national_id)',
-    'idx_beneficiaries_status' => 'CREATE INDEX IF NOT EXISTS idx_beneficiaries_status ON beneficiaries(campaign_id, receipt_status)',
-    'idx_delivery_events_client' => 'CREATE UNIQUE INDEX IF NOT EXISTS idx_delivery_events_client ON delivery_events(client_id) WHERE client_id IS NOT NULL',
-];
+    $indexes = [
+        'idx_beneficiaries_code' => 'CREATE INDEX IF NOT EXISTS idx_beneficiaries_code ON beneficiaries(campaign_id, disbursement_code)',
+        'idx_beneficiaries_national_id' => 'CREATE INDEX IF NOT EXISTS idx_beneficiaries_national_id ON beneficiaries(campaign_id, national_id)',
+        'idx_beneficiaries_status' => 'CREATE INDEX IF NOT EXISTS idx_beneficiaries_status ON beneficiaries(campaign_id, receipt_status)',
+        'idx_delivery_events_client' => 'CREATE UNIQUE INDEX IF NOT EXISTS idx_delivery_events_client ON delivery_events(client_id) WHERE client_id IS NOT NULL',
+    ];
 
-foreach ($indexes as $name => $sql) {
-    $pdo->exec($sql);
-    echo "OK: {$name}\n";
-}
+    foreach ($indexes as $name => $sql) {
+        $pdo->exec($sql);
+        echo "OK: {$name}\n";
+    }
 
-$pdo->exec('
+    $pdo->exec('
 CREATE TABLE IF NOT EXISTS sms_outbox (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     campaign_id INTEGER NOT NULL,
@@ -85,8 +88,9 @@ CREATE TABLE IF NOT EXISTS sms_outbox (
     FOREIGN KEY (beneficiary_id) REFERENCES beneficiaries(id) ON DELETE CASCADE
 )
 ');
-echo "OK: sms_outbox table\n";
-$pdo->exec('CREATE INDEX IF NOT EXISTS idx_sms_outbox_campaign ON sms_outbox(campaign_id, status)');
-echo "OK: idx_sms_outbox_campaign\n";
+    echo "OK: sms_outbox table\n";
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_sms_outbox_campaign ON sms_outbox(campaign_id, status)');
+    echo "OK: idx_sms_outbox_campaign\n";
+}
 
 echo "Migration complete.\n";

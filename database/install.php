@@ -6,15 +6,23 @@ require_once dirname(__DIR__) . '/src/bootstrap.php';
 
 use App\Database;
 
-$schemaPath = __DIR__ . '/schema.sql';
+$driver = config('db_driver');
+$schemaPath = __DIR__ . ($driver === 'mysql' ? '/schema.mysql.sql' : '/schema.sql');
 if (!is_file($schemaPath)) {
-    fwrite(STDERR, "schema.sql not found.\n");
+    fwrite(STDERR, basename($schemaPath) . " not found.\n");
     exit(1);
 }
 
 $pdo = Database::getConnection();
 $sql = file_get_contents($schemaPath);
-$pdo->exec($sql);
+
+// نفّذ كل جملة على حدة لضمان التوافق مع MySQL وSQLite
+foreach (array_filter(array_map('trim', explode(";\n", $sql))) as $statement) {
+    if ($statement === '') {
+        continue;
+    }
+    $pdo->exec($statement);
+}
 
 if (PHP_SAPI !== 'cli') {
     ob_start();

@@ -23,6 +23,14 @@ has_mysql_config() {
 }
 
 uses_mysql() {
+    # أي إعداد اتصال MySQL صريح له الأولوية (يطابق منطق config في التطبيق)
+    if [ -n "${DATABASE_URL:-}" ] \
+        || [ -n "${MYSQL_URL:-}" ] \
+        || [ -n "${DB_URL:-}" ] \
+        || [ -n "${MYSQL_HOST:-}" ] \
+        || [ -n "${MYSQLHOST:-}" ]; then
+        return 0
+    fi
     if [ "${DB_DRIVER:-}" = "sqlite" ]; then
         return 1
     fi
