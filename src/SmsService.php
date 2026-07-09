@@ -134,9 +134,9 @@ final class SmsService
 
         $ok = $response !== false && $httpCode >= 200 && $httpCode < 300;
         $upd = $pdo->prepare('
-            UPDATE sms_outbox SET status = ?, sent_at = datetime(\'now\') WHERE id = ?
+            UPDATE sms_outbox SET status = ?, sent_at = ? WHERE id = ?
         ');
-        $upd->execute([$ok ? 'sent' : 'failed', $outboxId]);
+        $upd->execute([$ok ? 'sent' : 'failed', db_now(), $outboxId]);
 
         return $ok;
     }

@@ -95,8 +95,8 @@ final class CampaignService
     public static function markGenerated(int $id): void
     {
         $pdo = Database::getConnection();
-        $stmt = $pdo->prepare("UPDATE campaigns SET status = 'generated', generated_at = datetime('now') WHERE id = ?");
-        $stmt->execute([$id]);
+        $stmt = $pdo->prepare("UPDATE campaigns SET status = 'generated', generated_at = ? WHERE id = ?");
+        $stmt->execute([db_now(), $id]);
     }
 
     public static function resetToDraft(int $id): void

@@ -89,6 +89,12 @@ function format_time(string $time): string
     return substr($time, 0, 5);
 }
 
+/** وقت حالي بصيغة متوافقة مع SQLite وMySQL. */
+function db_now(): string
+{
+    return date('Y-m-d H:i:s');
+}
+
 /** عمليات Excel/توزيع كبيرة — تجاوز حد 30 ثانية الافتراضي. */
 function extend_runtime(int $seconds = 600): void
 {
