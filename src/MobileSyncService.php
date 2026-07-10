@@ -11,7 +11,7 @@ final class MobileSyncService
     /** @return list<array<string, mixed>> */
     public static function listCampaigns(): array
     {
-        $campaigns = DeliveryService::activeCampaigns();
+        $campaigns = DeliveryService::warehouseCampaigns();
         $result = [];
         foreach ($campaigns as $c) {
             $stats = DeliveryService::stockStats((int) $c['id']);

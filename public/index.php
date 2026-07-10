@@ -219,7 +219,7 @@ if (str_starts_with($uri, '/api/warehouse')) {
 // ——— صفحة أمين المخزن (PWA) ———
 if ($uri === '/warehouse' && $method === 'GET') {
     Auth::requireRole(fn ($r) => RoleHelper::canDeliver($r));
-    $campaigns = DeliveryService::activeCampaigns();
+    $campaigns = DeliveryService::warehouseCampaigns();
     foreach ($campaigns as &$c) {
         $stats = DeliveryService::stockStats((int) $c['id']);
         $c['balance'] = (int) ($stats['balance'] ?? 0);

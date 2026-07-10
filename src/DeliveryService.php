@@ -28,6 +28,22 @@ final class DeliveryService
         return $stmt->fetchAll();
     }
 
+    /** كل العمليات المُولَّدة للمخزن — حتى المُنهية يدوياً (للعرض والاستعلام) */
+    public static function warehouseCampaigns(): array
+    {
+        $pdo = Database::getConnection();
+        $delivered = $pdo->quote(self::STATUS_DELIVERED);
+        $stmt = $pdo->query("
+            SELECT c.*,
+                   (SELECT COUNT(*) FROM beneficiaries b WHERE b.campaign_id = c.id) AS beneficiary_count,
+                   (SELECT COUNT(*) FROM beneficiaries b WHERE b.campaign_id = c.id AND b.receipt_status = {$delivered}) AS delivered_count
+            FROM campaigns c
+            WHERE c.status = 'generated'
+            ORDER BY c.delivery_start DESC
+        ");
+        return $stmt->fetchAll();
+    }
+
     public static function stockStats(int $campaignId): array
     {
         $pdo = Database::getConnection();
