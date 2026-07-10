@@ -99,6 +99,11 @@ context_nav([
         <p><strong>الحالة:</strong>
             <?php if ($isGenerated): ?>
             <span class="badge badge-ok">مُولَّد <?= e($campaign['generated_at'] ?? '') ?></span>
+            <?php if (!\App\CampaignService::isDeliveryOpen($campaign)): ?>
+            <span class="badge badge-pending">التسليم مُنهى</span>
+            <?php else: ?>
+            <span class="badge badge-ok">التسليم مفتوح</span>
+            <?php endif; ?>
             <?php else: ?>
             <span class="badge badge-pending">مسودة — اضغط «توليد الكشوف»</span>
             <?php endif; ?>

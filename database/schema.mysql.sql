@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS campaigns (
     created_by INT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     generated_at DATETIME NULL,
+    delivery_closed_at DATETIME NULL,
     CONSTRAINT fk_campaigns_creator FOREIGN KEY (created_by) REFERENCES users(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

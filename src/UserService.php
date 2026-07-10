@@ -14,6 +14,14 @@ final class UserService
         return $pdo->query('SELECT id, name, email, role, is_active, created_at FROM users ORDER BY name')->fetchAll();
     }
 
+    public static function emailExists(string $email): bool
+    {
+        $pdo = Database::getConnection();
+        $stmt = $pdo->prepare('SELECT 1 FROM users WHERE email = ? LIMIT 1');
+        $stmt->execute([$email]);
+        return (bool) $stmt->fetchColumn();
+    }
+
     public static function create(string $name, string $email, string $password, string $role): void
     {
         $pdo = Database::getConnection();

@@ -43,6 +43,11 @@ if ($uri === '/setup' || $uri === '/setup.php') {
             flash('error', 'أكمل جميع الحقول — كلمة المرور 8 أحرف على الأقل.');
             redirect('/setup');
         }
+        if (UserService::emailExists($email)) {
+            store_old($_POST);
+            flash('error', 'البريد الإلكتروني مستخدم مسبقاً — سجّل الدخول أو استخدم بريداً آخر.');
+            redirect('/setup');
+        }
         UserService::create($name, $email, $password, 'admin');
         flash('success', 'تم إنشاء حساب المدير — سجّل الدخول.');
         redirect('/login');
@@ -216,6 +221,30 @@ if ($uri === '/campaigns/opening-quantity' && $method === 'POST') {
     }
     CampaignService::updateOpeningQuantity($id, (int) ($_POST['opening_quantity'] ?? 0));
     flash('success', 'تم حفظ الكمية الافتتاحية.');
+    redirect('/campaigns/stock?id=' . $id);
+}
+
+if ($uri === '/campaigns/close-delivery' && $method === 'POST') {
+    Auth::requireRole(fn ($r) => RoleHelper::canEditCampaign($r));
+    $id = (int) ($_POST['campaign_id'] ?? 0);
+    if (!Csrf::verify($_POST['_csrf'] ?? null)) {
+        flash('error', 'انتهت صلاحية النموذج.');
+        redirect('/campaigns/stock?id=' . $id);
+    }
+    CampaignService::closeDelivery($id);
+    flash('success', 'تم إنهاء عملية التسليم.');
+    redirect('/campaigns/stock?id=' . $id);
+}
+
+if ($uri === '/campaigns/reopen-delivery' && $method === 'POST') {
+    Auth::requireRole(fn ($r) => RoleHelper::canEditCampaign($r));
+    $id = (int) ($_POST['campaign_id'] ?? 0);
+    if (!Csrf::verify($_POST['_csrf'] ?? null)) {
+        flash('error', 'انتهت صلاحية النموذج.');
+        redirect('/campaigns/stock?id=' . $id);
+    }
+    CampaignService::reopenDelivery($id);
+    flash('success', 'تم إعادة فتح عملية التسليم.');
     redirect('/campaigns/stock?id=' . $id);
 }
 
@@ -586,12 +615,19 @@ if ($uri === '/users/create' && $method === 'POST') {
         flash('error', 'انتهت صلاحية النموذج.');
         redirect('/users');
     }
-    UserService::create(
-        trim($_POST['name'] ?? ''),
-        trim($_POST['email'] ?? ''),
-        $_POST['password'] ?? '',
-        $_POST['role'] ?? 'viewer'
-    );
+    $name = trim($_POST['name'] ?? '');
+    $email = trim($_POST['email'] ?? '');
+    $password = $_POST['password'] ?? '';
+    $role = $_POST['role'] ?? 'viewer';
+    if ($name === '' || $email === '' || strlen($password) < 8) {
+        flash('error', 'أكمل جميع الحقول — كلمة المرور 8 أحرف على الأقل.');
+        redirect('/users');
+    }
+    if (UserService::emailExists($email)) {
+        flash('error', 'البريد الإلكتروني مستخدم مسبقاً.');
+        redirect('/users');
+    }
+    UserService::create($name, $email, $password, $role);
     flash('success', 'تم إضافة المستخدم.');
     redirect('/users');
 }

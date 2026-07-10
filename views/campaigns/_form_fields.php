@@ -23,7 +23,7 @@ $suffix = old('parcel_code_suffix', $c['parcel_code_suffix'] ?? '');
     <div class="form-group">
         <label>ملحق كود الطرد *</label>
         <input type="text" name="parcel_code_suffix" class="form-control" required placeholder="مثال: R26 أو F أو RAM" value="<?= e($suffix) ?>" pattern="[A-Za-z0-9]+" title="أحرف وأرقام فقط">
-        <small class="text-muted">يرمز لنوعية الطرد. كود المستفيد = <strong>SOCI</strong> + الملحق + رقم تسلسلي (مثل <strong>SOCIR2600001</strong>).</small>
+        <small class="text-muted">يرمز لنوعية الطرد. كود المستفيد الداخلي = <strong>SOCI</strong> + الملحق + رقم تسلسلي (مثل <strong>SOCIR261</strong>). في الرسالة يظهر الرقم التسلسلي فقط (مثل <strong>1</strong>).</small>
     </div>
     <div class="form-group">
         <label>عدد أيام التسليم *</label>

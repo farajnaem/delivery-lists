@@ -38,7 +38,7 @@ $campaignActive = !empty($stats['campaign_active']);
     </div>
 
     <?php if (!$campaignActive): ?>
-    <div class="wh-alert wh-alert-error">انتهت فترة التسليم — لا يمكن تسجيل تسليمات جديدة.</div>
+    <div class="wh-alert wh-alert-error">تم إنهاء عملية التسليم — لا يمكن تسجيل تسليمات جديدة.</div>
     <?php endif; ?>
 
     <div id="pendingSync" class="wh-pending hidden">
@@ -47,8 +47,8 @@ $campaignActive = !empty($stats['campaign_active']);
     </div>
 
     <div class="wh-search-box">
-        <label for="searchQuery">ابحث بالكود (مثل SOCIR2600001) أو رقم الهوية</label>
-        <input type="search" id="searchQuery" class="wh-input" placeholder="SOCIR2600001 أو 1xxxxxxxxx" autocomplete="off" inputmode="search" <?= $campaignActive ? '' : 'disabled' ?>>
+        <label for="searchQuery">ابحث بالرقم التسلسلي (مثل 1 أو 42) أو رقم الهوية</label>
+        <input type="search" id="searchQuery" class="wh-input" placeholder="1 أو 1xxxxxxxxx" autocomplete="off" inputmode="numeric" <?= $campaignActive ? '' : 'disabled' ?>>
         <button type="button" id="btnSearch" class="wh-btn wh-btn-block" <?= $campaignActive ? '' : 'disabled' ?>>بحث</button>
     </div>
 
@@ -61,7 +61,7 @@ $campaignActive = !empty($stats['campaign_active']);
         <ul id="recentList" class="wh-recent-list">
             <?php foreach ($recent as $r): ?>
             <li>
-                <strong><?= e($r['disbursement_code']) ?></strong>
+                <strong><?= e($r['display_code'] ?? $r['sort_order'] ?? $r['disbursement_code']) ?></strong>
                 <?= e($r['name']) ?>
                 <small><?= e($r['delivered_at'] ?? '') ?>
                 <?= ($r['delivery_type'] ?? '') === 'late' ? ' — متأخر' : '' ?></small>

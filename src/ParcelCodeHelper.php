@@ -28,13 +28,19 @@ final class ParcelCodeHelper
     }
 
     /**
-     * كود الصرف للمستفيد = SOCI + ملحق الطرد + رقم تسلسلي (5 خانات).
-     * مثال: SOCI + R26 + 1 → SOCIR2600001
+     * كود الصرف الداخلي = SOCI + ملحق الطرد + رقم تسلسلي (بدون أصفار).
+     * مثال: SOCI + R26 + 1 → SOCIR261
      */
     public static function buildDisbursementCode(string $suffix, int $serial): string
     {
         $suffix = self::normalizeSuffix($suffix);
-        return self::PREFIX . $suffix . str_pad((string) max(1, $serial), 5, '0', STR_PAD_LEFT);
+        return self::PREFIX . $suffix . (string) max(1, $serial);
+    }
+
+    /** الرقم التسلسلي الظاهر للمستفيد وأمين المخزن في الرسائل والبحث. */
+    public static function displaySerial(int $serial): string
+    {
+        return (string) max(1, $serial);
     }
 
     /** استخراج الملحق من كود طرد قديم (مثل SOCI-R26 → R26). */

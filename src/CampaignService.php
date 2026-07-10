@@ -192,6 +192,25 @@ final class CampaignService
         $stmt->execute([max(0, $quantity), $id]);
     }
 
+    public static function closeDelivery(int $id): void
+    {
+        $pdo = Database::getConnection();
+        $stmt = $pdo->prepare('UPDATE campaigns SET delivery_closed_at = ? WHERE id = ?');
+        $stmt->execute([db_now(), $id]);
+    }
+
+    public static function reopenDelivery(int $id): void
+    {
+        $pdo = Database::getConnection();
+        $stmt = $pdo->prepare('UPDATE campaigns SET delivery_closed_at = NULL WHERE id = ?');
+        $stmt->execute([$id]);
+    }
+
+    public static function isDeliveryOpen(array $campaign): bool
+    {
+        return trim((string) ($campaign['delivery_closed_at'] ?? '')) === '';
+    }
+
     /** كود الطرد الكامل للعرض. */
     public static function parcelLabel(array $campaign): string
     {

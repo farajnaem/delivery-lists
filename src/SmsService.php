@@ -13,14 +13,14 @@ final class SmsService
         $name = trim($beneficiary['name'] ?? '');
         $parcel = trim($campaign['parcel_name'] ?? 'الطرد');
         $warehouse = trim($campaign['warehouse_name'] ?? 'المخزن');
-        $code = trim($beneficiary['disbursement_code'] ?? '');
+        $serial = (int) ($beneficiary['sort_order'] ?? 0);
 
         $parts = [
             'السيد/ ' . $name . '،',
             'تم تسليم ' . $parcel . ' بنجاح من ' . $warehouse . '.',
         ];
-        if ($code !== '') {
-            $parts[] = 'كود الصرف: ' . $code . '.';
+        if ($serial > 0) {
+            $parts[] = 'كود الصرف: ' . ParcelCodeHelper::displaySerial($serial) . '.';
         }
         $parts[] = 'شكراً لتعاونكم.';
 

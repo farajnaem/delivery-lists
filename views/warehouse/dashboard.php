@@ -47,6 +47,27 @@ context_nav([
 
 <?php if (!empty($canEdit)): ?>
 <div class="card">
+    <h2>حالة التسليم</h2>
+    <?php if (!empty($stock['campaign_active'])): ?>
+    <p class="text-muted">عملية التسليم <strong>مفتوحة</strong> — تستمر حتى تُنهيها يدوياً (لا تُغلق تلقائياً بانتهاء التاريخ).</p>
+    <form method="post" action="<?= e(url('/campaigns/close-delivery')) ?>" data-confirm="إنهاء عملية التسليم؟ لن يستطيع أمين المخزن تسجيل تسليمات جديدة.">
+        <?= \App\Csrf::field() ?>
+        <input type="hidden" name="campaign_id" value="<?= (int) $campaign['id'] ?>">
+        <button type="submit" class="btn btn-outline" style="border-color:#d97706;color:#b45309">إنهاء عملية التسليم</button>
+    </form>
+    <?php else: ?>
+    <p class="text-muted">عملية التسليم <strong>مُنهية</strong> منذ <?= e($campaign['delivery_closed_at'] ?? '') ?>.</p>
+    <form method="post" action="<?= e(url('/campaigns/reopen-delivery')) ?>">
+        <?= \App\Csrf::field() ?>
+        <input type="hidden" name="campaign_id" value="<?= (int) $campaign['id'] ?>">
+        <button type="submit" class="btn btn-outline">إعادة فتح التسليم</button>
+    </form>
+    <?php endif; ?>
+</div>
+<?php endif; ?>
+
+<?php if (!empty($canEdit)): ?>
+<div class="card">
     <h2>الكمية الافتتاحية</h2>
     <form method="post" action="<?= e(url('/campaigns/opening-quantity')) ?>" class="actions-row">
         <?= \App\Csrf::field() ?>
@@ -98,7 +119,7 @@ context_nav([
         <tbody>
         <?php foreach ($lateList as $row): ?>
         <tr>
-            <td><?= e($row['disbursement_code']) ?></td>
+            <td><?= e($row['display_code'] ?? $row['sort_order'] ?? $row['disbursement_code']) ?></td>
             <td><?= e($row['name']) ?></td>
             <td><?= e($row['delivery_date']) ?></td>
             <td><?= (int) $row['window_num'] ?></td>

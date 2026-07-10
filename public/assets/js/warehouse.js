@@ -98,7 +98,7 @@
         var delivered = b.receipt_status === 'مستلم';
         var html = '<dl>';
         html += '<dt>الاسم</dt><dd>' + esc(b.name) + '</dd>';
-        html += '<dt>الكود</dt><dd>' + esc(b.disbursement_code || '—') + '</dd>';
+        html += '<dt>الكود</dt><dd>' + esc(b.display_code || b.sort_order || b.disbursement_code || '—') + '</dd>';
         html += '<dt>الهوية</dt><dd>' + esc(b.national_id) + '</dd>';
         html += '<dt>موعد التسليم</dt><dd>' + esc(b.delivery_date || '—') + ' — شباك ' + esc(String(b.window_num || '—')) + '</dd>';
         html += '<dt>الحالة</dt><dd>';
@@ -137,7 +137,7 @@
         var empty = document.getElementById('recentEmpty');
         if (empty) empty.remove();
         var li = document.createElement('li');
-        li.innerHTML = '<strong>' + esc(b.disbursement_code || '') + '</strong> ' + esc(b.name) +
+        li.innerHTML = '<strong>' + esc(b.display_code || b.sort_order || b.disbursement_code || '') + '</strong> ' + esc(b.name) +
             '<small>الآن' + (deliveryType === 'late' ? ' — متأخر' : '') + '</small>';
         elRecent.insertBefore(li, elRecent.firstChild);
     }
@@ -159,7 +159,7 @@
                 } else {
                     data.delivered.forEach(function (b) {
                         var li = document.createElement('li');
-                        li.innerHTML = '<strong>' + esc(b.disbursement_code || '') + '</strong> ' + esc(b.name) +
+                        li.innerHTML = '<strong>' + esc(b.display_code || b.sort_order || b.disbursement_code || '') + '</strong> ' + esc(b.name) +
                             '<small>' + esc(b.delivered_at || '') +
                             (b.delivery_type === 'late' ? ' — متأخر' : '') + '</small>';
                         elRecent.appendChild(li);
@@ -211,7 +211,7 @@
         var item = {
             beneficiary_id: b.id,
             client_id: clientId,
-            code: b.disbursement_code,
+            code: b.display_code || b.sort_order || b.disbursement_code,
             name: b.name,
             queued_at: new Date().toISOString()
         };

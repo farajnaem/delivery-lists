@@ -22,6 +22,7 @@ final class DeliveryService
                    (SELECT COUNT(*) FROM beneficiaries b WHERE b.campaign_id = c.id AND b.receipt_status = {$delivered}) AS delivered_count
             FROM campaigns c
             WHERE c.status = 'generated'
+              AND (c.delivery_closed_at IS NULL OR c.delivery_closed_at = '')
             ORDER BY c.delivery_start DESC
         ");
         return $stmt->fetchAll();
@@ -87,8 +88,8 @@ final class DeliveryService
 
     public static function isCampaignActive(array $campaign): bool
     {
-        $today = date('Y-m-d');
-        return $today <= ($campaign['delivery_end'] ?? $today);
+        $closedAt = trim((string) ($campaign['delivery_closed_at'] ?? ''));
+        return $closedAt === '';
     }
 
     public static function search(int $campaignId, string $query): ?array
@@ -102,8 +103,10 @@ final class DeliveryService
         $normalized = preg_replace('/\s+/', '', $query) ?? $query;
         $upper = strtoupper($normalized);
 
+        $serial = ctype_digit($normalized) ? (int) $normalized : 0;
+
         $stmt = $pdo->prepare('
-            SELECT b.*, c.delivery_end, c.delivery_start, c.name AS campaign_name
+            SELECT b.*, c.delivery_end, c.delivery_start, c.delivery_closed_at, c.name AS campaign_name
             FROM beneficiaries b
             JOIN campaigns c ON c.id = b.campaign_id
             WHERE b.campaign_id = ?
@@ -111,12 +114,13 @@ final class DeliveryService
                 b.disbursement_code = ?
                 OR b.national_id = ?
                 OR REPLACE(b.national_id, \' \', \'\') = ?
+                OR (? > 0 AND b.sort_order = ?)
               )
             LIMIT 1
         ');
-        $stmt->execute([$campaignId, $upper, $normalized, $normalized]);
+        $stmt->execute([$campaignId, $upper, $normalized, $normalized, $serial, $serial]);
         $row = $stmt->fetch();
-        return $row ?: null;
+        return $row ? self::enrichForDisplay($row) : null;
     }
 
     /**
@@ -139,7 +143,7 @@ final class DeliveryService
         }
 
         if (!self::isCampaignActive($campaign)) {
-            return ['ok' => false, 'error' => 'انتهت فترة التسليم لهذه العملية.'];
+            return ['ok' => false, 'error' => 'تم إنهاء عملية التسليم — أعد فتحها من متابعة المخزن.'];
         }
 
         $stmt = $pdo->prepare('SELECT * FROM beneficiaries WHERE id = ? AND campaign_id = ? LIMIT 1');
@@ -218,7 +222,23 @@ final class DeliveryService
             // لا نوقف التسليم إذا فشل تجهيز الرسالة
         }
 
-        return ['ok' => true, 'beneficiary' => $beneficiary, 'delivery_type' => $deliveryType];
+        return ['ok' => true, 'beneficiary' => self::enrichForDisplay($beneficiary), 'delivery_type' => $deliveryType];
+    }
+
+    /** @param array<string, mixed> $beneficiary */
+    public static function enrichForDisplay(array $beneficiary): array
+    {
+        $serial = (int) ($beneficiary['sort_order'] ?? 0);
+        $beneficiary['display_code'] = $serial > 0
+            ? ParcelCodeHelper::displaySerial($serial)
+            : (string) ($beneficiary['disbursement_code'] ?? '');
+        return $beneficiary;
+    }
+
+    /** @return list<array<string, mixed>> */
+    public static function mapForDisplay(array $rows): array
+    {
+        return array_map([self::class, 'enrichForDisplay'], $rows);
     }
 
     /**
@@ -262,7 +282,7 @@ final class DeliveryService
     {
         $pdo = Database::getConnection();
         $stmt = $pdo->prepare('
-            SELECT b.name, b.disbursement_code, b.national_id, b.delivery_type,
+            SELECT b.name, b.disbursement_code, b.sort_order, b.national_id, b.delivery_type,
                    b.delivered_at, b.actual_delivery_date, b.delivery_date, b.window_num,
                    u.name AS delivered_by_name
             FROM beneficiaries b
@@ -276,7 +296,7 @@ final class DeliveryService
         $stmt->bindValue(3, $limit, PDO::PARAM_INT);
         $stmt->bindValue(4, $offset, PDO::PARAM_INT);
         $stmt->execute();
-        return $stmt->fetchAll();
+        return self::mapForDisplay($stmt->fetchAll());
     }
 
     public static function deliveredCount(int $campaignId): int
@@ -338,7 +358,7 @@ final class DeliveryService
         $pdo = Database::getConnection();
         $today = date('Y-m-d');
         $stmt = $pdo->prepare('
-            SELECT name, national_id, disbursement_code, delivery_date, window_num
+            SELECT name, national_id, disbursement_code, sort_order, delivery_date, window_num
             FROM beneficiaries
             WHERE campaign_id = ?
               AND receipt_status = ?
@@ -351,7 +371,7 @@ final class DeliveryService
         $stmt->bindValue(3, $today);
         $stmt->bindValue(4, $limit, PDO::PARAM_INT);
         $stmt->execute();
-        return $stmt->fetchAll();
+        return self::mapForDisplay($stmt->fetchAll());
     }
 
     private static function findByClientId(string $clientId): ?array

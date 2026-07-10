@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS campaigns (
     created_by INTEGER,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     generated_at TEXT,
+    delivery_closed_at TEXT,
     FOREIGN KEY (created_by) REFERENCES users(id)
 );
 

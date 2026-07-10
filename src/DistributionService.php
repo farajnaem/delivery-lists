@@ -127,7 +127,7 @@ final class DistributionService
                     $slot = $slots[$i];
                     $code = ParcelCodeHelper::buildDisbursementCode($codeSuffix, $codeNum);
                     $mobile = PhoneHelper::normalize($row['mobile']);
-                    $message = self::buildMessage($campaign, $row['name'], $dates[$d], $slot, $code, $w + 1);
+                    $message = self::buildMessage($campaign, $row['name'], $dates[$d], $slot, $codeNum, $w + 1);
 
                     $upd->execute([
                         $mobile,
@@ -236,7 +236,7 @@ final class DistributionService
         return sprintf('%02d:%02d', $h, $m);
     }
 
-    private static function buildMessage(array $campaign, string $name, string $date, array $slot, string $code, int $window): string
+    private static function buildMessage(array $campaign, string $name, string $date, array $slot, int $serial, int $window): string
     {
         return sprintf(
             'السيد / %s، يرجى التوجه إلى %s لاستلام %s وذلك يوم %s من الساعة %s إلى %s كود %s، شباك %d.',
@@ -246,7 +246,7 @@ final class DistributionService
             $date,
             $slot['from'],
             $slot['to'],
-            $code,
+            ParcelCodeHelper::displaySerial($serial),
             $window
         );
     }

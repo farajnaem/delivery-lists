@@ -12,6 +12,7 @@ $isMysql = config('db_driver') === 'mysql';
 $migrations = [
     'parcel_code_suffix' => "ALTER TABLE campaigns ADD COLUMN parcel_code_suffix TEXT NOT NULL DEFAULT ''",
     'opening_quantity' => "ALTER TABLE campaigns ADD COLUMN opening_quantity INTEGER NOT NULL DEFAULT 0",
+    'delivery_closed_at' => 'ALTER TABLE campaigns ADD COLUMN delivery_closed_at TEXT',
     'delivered_at' => 'ALTER TABLE beneficiaries ADD COLUMN delivered_at TEXT',
     'delivered_by' => 'ALTER TABLE beneficiaries ADD COLUMN delivered_by INTEGER',
     'delivery_type' => 'ALTER TABLE beneficiaries ADD COLUMN delivery_type TEXT',
@@ -91,6 +92,44 @@ CREATE TABLE IF NOT EXISTS sms_outbox (
     echo "OK: sms_outbox table\n";
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_sms_outbox_campaign ON sms_outbox(campaign_id, status)');
     echo "OK: idx_sms_outbox_campaign\n";
+}
+
+// تحديث أكواد الصرف: بدون أصفار + رسائل بالرقم التسلسلي فقط
+try {
+    $rows = $pdo->query('
+        SELECT b.id, b.sort_order, b.message_text, c.parcel_code_suffix
+        FROM beneficiaries b
+        JOIN campaigns c ON c.id = b.campaign_id
+        WHERE b.sort_order > 0
+    ')->fetchAll();
+    $updCode = $pdo->prepare('UPDATE beneficiaries SET disbursement_code = ?, message_text = ? WHERE id = ?');
+    foreach ($rows as $row) {
+        $serial = (int) $row['sort_order'];
+        $suffix = (string) ($row['parcel_code_suffix'] ?? '');
+        $code = \App\ParcelCodeHelper::buildDisbursementCode($suffix, $serial);
+        $message = (string) ($row['message_text'] ?? '');
+        if ($message !== '') {
+            $message = preg_replace(
+                '/كود\s+[^،]+،/u',
+                'كود ' . \App\ParcelCodeHelper::displaySerial($serial) . '،',
+                $message,
+                1
+            ) ?? $message;
+        }
+        $updCode->execute([$code, $message, $row['id']]);
+    }
+    echo "OK: disbursement_code format migration\n";
+} catch (Throwable $e) {
+    echo "SKIP: disbursement_code format migration\n";
+}
+
+if (!$isMysql) {
+    try {
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_beneficiaries_sort_order ON beneficiaries(campaign_id, sort_order)');
+        echo "OK: idx_beneficiaries_sort_order\n";
+    } catch (Throwable) {
+        echo "SKIP: idx_beneficiaries_sort_order\n";
+    }
 }
 
 echo "Migration complete.\n";
