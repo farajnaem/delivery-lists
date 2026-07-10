@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 require dirname(__DIR__) . '/src/bootstrap.php';
 
+use App\MobileAuth;
+use App\MobileSyncService;
 use App\Auth;
 use App\CampaignService;
 use App\Csrf;
@@ -84,7 +86,64 @@ if ($uri === '/logout') {
     redirect('/login');
 }
 
-Auth::requireLogin();
+// ——— API: تطبيق الموبايل (Bearer token — بدون جلسة ويب) ———
+if (str_starts_with($uri, '/api/mobile')) {
+    if ($uri === '/api/mobile/health' && $method === 'GET') {
+        json_response(['ok' => true, 'service' => 'delivery-lists-mobile', 'time' => db_now()]);
+    }
+
+    if ($uri === '/api/mobile/login' && $method === 'POST') {
+        $body = read_json_body();
+        $result = MobileAuth::login($body['email'] ?? '', $body['password'] ?? '');
+        if ($result === null) {
+            json_response(['ok' => false, 'error' => 'بريد أو كلمة مرور غير صحيحة — أمين مخزن فقط'], 401);
+        }
+        json_response(['ok' => true] + $result);
+    }
+
+    MobileAuth::requireAuth();
+
+    if ($uri === '/api/mobile/logout' && $method === 'POST') {
+        $body = read_json_body();
+        if (!empty($body['token'])) {
+            MobileAuth::logout((string) $body['token']);
+        }
+        json_response(['ok' => true]);
+    }
+
+    if ($uri === '/api/mobile/campaigns' && $method === 'GET') {
+        json_response(['ok' => true, 'campaigns' => MobileSyncService::listCampaigns()]);
+    }
+
+    if (preg_match('#^/api/mobile/campaigns/(\d+)/snapshot$#', $uri, $m) && $method === 'GET') {
+        $campaignId = (int) $m[1];
+        try {
+            json_response(['ok' => true] + MobileSyncService::snapshot($campaignId));
+        } catch (\Throwable $e) {
+            json_response(['ok' => false, 'error' => $e->getMessage()], 400);
+        }
+    }
+
+    if ($uri === '/api/mobile/sync' && $method === 'POST') {
+        $body = read_json_body();
+        $campaignId = (int) ($body['campaign_id'] ?? 0);
+        $pending = is_array($body['pending_deliveries'] ?? null) ? $body['pending_deliveries'] : [];
+        $lastSync = isset($body['last_sync_token']) ? (string) $body['last_sync_token'] : null;
+        try {
+            $result = MobileSyncService::sync(
+                $campaignId,
+                MobileAuth::userId() ?? 0,
+                $lastSync,
+                $pending
+            );
+            json_response($result);
+        } catch (\Throwable $e) {
+            json_response(['ok' => false, 'error' => $e->getMessage()], 400);
+        }
+    }
+
+    json_response(['ok' => false, 'error' => 'غير موجود'], 404);
+}
 
 Auth::requireLogin();
 

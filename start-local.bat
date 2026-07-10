@@ -15,5 +15,5 @@ if not exist vendor\composer\autoload_real.php (
 )
 php database\install.php
 echo.
-echo Starting server at http://localhost:8090
-php -S localhost:8090 -t public public/router.php
+echo Starting server at http://0.0.0.0:8090 (LAN + localhost)
+php -S 0.0.0.0:8090 -t public public/router.php

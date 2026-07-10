@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS beneficiaries (
     delivered_by INTEGER,
     delivery_type TEXT,
     actual_delivery_date TEXT,
+    updated_at TEXT,
     FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE,
     FOREIGN KEY (delivered_by) REFERENCES users(id)
 );
@@ -60,6 +61,18 @@ CREATE INDEX IF NOT EXISTS idx_beneficiaries_day_window ON beneficiaries(campaig
 CREATE INDEX IF NOT EXISTS idx_beneficiaries_code ON beneficiaries(campaign_id, disbursement_code);
 CREATE INDEX IF NOT EXISTS idx_beneficiaries_national_id ON beneficiaries(campaign_id, national_id);
 CREATE INDEX IF NOT EXISTS idx_beneficiaries_status ON beneficiaries(campaign_id, receipt_status);
+CREATE INDEX IF NOT EXISTS idx_beneficiaries_updated ON beneficiaries(campaign_id, updated_at);
+
+CREATE TABLE IF NOT EXISTS mobile_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at TEXT,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_mobile_tokens_user ON mobile_tokens(user_id);
 
 CREATE TABLE IF NOT EXISTS delivery_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

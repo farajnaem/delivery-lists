@@ -90,12 +90,13 @@ final class DistributionService
                 mobile = ?,
                 disbursement_code = ?, delivery_date = ?, window_num = ?,
                 time_from = ?, time_to = ?, message_text = ?,
-                day_index = ?, sort_order = ?
+                day_index = ?, sort_order = ?, updated_at = ?
             WHERE id = ?
         ');
 
         $pdo->beginTransaction();
         try {
+        $genNow = db_now();
         for ($d = 0; $d < $numDays; $d++) {
             $dayCount = $dayBuckets[$d];
             $dayRows = array_slice($rows, $idx, $dayCount);
@@ -139,6 +140,7 @@ final class DistributionService
                         $message,
                         $d + 1,
                         $codeNum,
+                        $genNow,
                         $row['id'],
                     ]);
                     $codeNum++;

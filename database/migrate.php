@@ -13,6 +13,7 @@ $migrations = [
     'parcel_code_suffix' => "ALTER TABLE campaigns ADD COLUMN parcel_code_suffix TEXT NOT NULL DEFAULT ''",
     'opening_quantity' => "ALTER TABLE campaigns ADD COLUMN opening_quantity INTEGER NOT NULL DEFAULT 0",
     'delivery_closed_at' => 'ALTER TABLE campaigns ADD COLUMN delivery_closed_at TEXT',
+    'beneficiaries_updated_at' => 'ALTER TABLE beneficiaries ADD COLUMN updated_at TEXT',
     'delivered_at' => 'ALTER TABLE beneficiaries ADD COLUMN delivered_at TEXT',
     'delivered_by' => 'ALTER TABLE beneficiaries ADD COLUMN delivered_by INTEGER',
     'delivery_type' => 'ALTER TABLE beneficiaries ADD COLUMN delivery_type TEXT',
@@ -123,7 +124,59 @@ try {
     echo "SKIP: disbursement_code format migration\n";
 }
 
+// تعبئة updated_at للسجلات القديمة
+try {
+    $now = db_now();
+    $pdo->exec("UPDATE beneficiaries SET updated_at = COALESCE(delivered_at, '{$now}') WHERE updated_at IS NULL OR updated_at = ''");
+    echo "OK: beneficiaries updated_at backfill\n";
+} catch (Throwable) {
+    echo "SKIP: beneficiaries updated_at backfill\n";
+}
+
+try {
+    if ($isMysql) {
+        $pdo->exec('
+CREATE TABLE IF NOT EXISTS mobile_tokens (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    token_hash VARCHAR(64) NOT NULL UNIQUE,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at DATETIME NULL,
+    INDEX idx_mobile_tokens_user (user_id),
+    CONSTRAINT fk_mobile_tokens_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+');
+    }
+    echo "OK: mobile_tokens table\n";
+} catch (Throwable) {
+    echo "SKIP: mobile_tokens table\n";
+}
+
 if (!$isMysql) {
+    try {
+        $pdo->exec('
+CREATE TABLE IF NOT EXISTS mobile_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL DEFAULT (datetime(\'now\')),
+    expires_at TEXT,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+)
+');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_mobile_tokens_user ON mobile_tokens(user_id)');
+        echo "OK: mobile_tokens sqlite table\n";
+    } catch (Throwable) {
+        echo "SKIP: mobile_tokens sqlite table\n";
+    }
+
+    try {
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_beneficiaries_updated ON beneficiaries(campaign_id, updated_at)');
+        echo "OK: idx_beneficiaries_updated\n";
+    } catch (Throwable) {
+        echo "SKIP: idx_beneficiaries_updated\n";
+    }
+
     try {
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_beneficiaries_sort_order ON beneficiaries(campaign_id, sort_order)');
         echo "OK: idx_beneficiaries_sort_order\n";

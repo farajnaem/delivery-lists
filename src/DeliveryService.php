@@ -175,7 +175,8 @@ final class DeliveryService
                     delivered_at = ?,
                     delivered_by = ?,
                     delivery_type = ?,
-                    actual_delivery_date = ?
+                    actual_delivery_date = ?,
+                    updated_at = ?
                 WHERE id = ? AND receipt_status != ?
             ');
             $upd->execute([
@@ -184,6 +185,7 @@ final class DeliveryService
                 $userId,
                 $deliveryType,
                 $today,
+                $now,
                 $beneficiaryId,
                 self::STATUS_DELIVERED,
             ]);
@@ -282,7 +284,7 @@ final class DeliveryService
     {
         $pdo = Database::getConnection();
         $stmt = $pdo->prepare('
-            SELECT b.name, b.disbursement_code, b.sort_order, b.national_id, b.delivery_type,
+            SELECT b.id, b.name, b.disbursement_code, b.sort_order, b.national_id, b.delivery_type,
                    b.delivered_at, b.actual_delivery_date, b.delivery_date, b.window_num,
                    u.name AS delivered_by_name
             FROM beneficiaries b
@@ -332,9 +334,10 @@ final class DeliveryService
                     delivered_at = NULL,
                     delivered_by = NULL,
                     delivery_type = NULL,
-                    actual_delivery_date = NULL
+                    actual_delivery_date = NULL,
+                    updated_at = ?
                 WHERE campaign_id = ? AND receipt_status = ?
-            ')->execute([self::STATUS_PENDING, $campaignId, self::STATUS_DELIVERED]);
+            ')->execute([self::STATUS_PENDING, db_now(), $campaignId, self::STATUS_DELIVERED]);
 
             $pdo->prepare("DELETE FROM delivery_events WHERE campaign_id = ? AND action = 'delivered'")
                 ->execute([$campaignId]);
@@ -358,7 +361,7 @@ final class DeliveryService
         $pdo = Database::getConnection();
         $today = date('Y-m-d');
         $stmt = $pdo->prepare('
-            SELECT name, national_id, disbursement_code, sort_order, delivery_date, window_num
+            SELECT id, name, national_id, disbursement_code, sort_order, delivery_date, window_num
             FROM beneficiaries
             WHERE campaign_id = ?
               AND receipt_status = ?

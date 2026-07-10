@@ -51,13 +51,25 @@ CREATE TABLE IF NOT EXISTS beneficiaries (
     delivered_by INT NULL,
     delivery_type VARCHAR(20) NULL,
     actual_delivery_date VARCHAR(20) NULL,
+    updated_at DATETIME NULL,
     INDEX idx_beneficiaries_campaign (campaign_id),
     INDEX idx_beneficiaries_day_window (campaign_id, day_index, window_num),
     INDEX idx_beneficiaries_code (campaign_id, disbursement_code),
     INDEX idx_beneficiaries_national_id (campaign_id, national_id),
     INDEX idx_beneficiaries_status (campaign_id, receipt_status),
+    INDEX idx_beneficiaries_updated (campaign_id, updated_at),
     CONSTRAINT fk_beneficiaries_campaign FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE,
     CONSTRAINT fk_beneficiaries_deliverer FOREIGN KEY (delivered_by) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS mobile_tokens (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    token_hash VARCHAR(64) NOT NULL UNIQUE,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at DATETIME NULL,
+    INDEX idx_mobile_tokens_user (user_id),
+    CONSTRAINT fk_mobile_tokens_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS delivery_events (

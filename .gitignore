@@ -16,3 +16,13 @@ test1.csv
 *.xls
 *.csv
 !storage/sample-beneficiaries.xlsx
+
+# Android
+android-app/.gradle/
+android-app/build/
+android-app/app/build/
+android-app/local.properties
+android-app/*.keystore
+android-app/.idea/
+android-app/sdk-install-log.txt
+android-app/app-debug.apk
