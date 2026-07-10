@@ -16,6 +16,9 @@ import com.rec.deliverylists.data.remote.StockDto
 import com.rec.deliverylists.data.remote.SyncRequest
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import retrofit2.HttpException
+import com.google.gson.Gson
+import com.google.gson.JsonObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -38,7 +41,7 @@ class DeliveryRepository(
 
     suspend fun getToken(): String? = session.tokenFlow.first()
 
-    suspend fun login(email: String, password: String): Result<Unit> = runCatching {
+    suspend fun login(email: String, password: String): Result<Unit> = apiCall {
         val res = api.login(LoginRequest(email.trim(), password))
         if (!res.ok || res.token.isNullOrBlank() || res.user == null) {
             throw IllegalStateException(res.error ?: "فشل تسجيل الدخول")
@@ -50,7 +53,7 @@ class DeliveryRepository(
         session.clear()
     }
 
-    suspend fun refreshCampaignList(): Result<Unit> = runCatching {
+    suspend fun refreshCampaignList(): Result<Unit> = apiCall {
         val token = requireToken()
         val res = api.campaigns(ApiClient.bearer(token))
         if (!res.ok) throw IllegalStateException(res.error ?: "فشل جلب العمليات")
@@ -61,7 +64,7 @@ class DeliveryRepository(
         campaignDao.upsertAll(mapped)
     }
 
-    suspend fun downloadSnapshot(campaignId: Int): Result<Unit> = runCatching {
+    suspend fun downloadSnapshot(campaignId: Int): Result<Unit> = apiCall {
         val token = requireToken()
         val snap = api.snapshot(ApiClient.bearer(token), campaignId)
         if (!snap.ok) throw IllegalStateException(snap.error ?: "فشل التحميل")
@@ -79,7 +82,7 @@ class DeliveryRepository(
         refreshCaches(campaignId, snap.recent_delivered, snap.late)
     }
 
-    suspend fun syncCampaign(campaignId: Int): Result<String?> = runCatching {
+    suspend fun syncCampaign(campaignId: Int): Result<String?> = apiCall {
         val token = requireToken()
         val campaign = campaignDao.get(campaignId) ?: throw IllegalStateException("العملية غير محمّلة")
         val pendingEntities = pendingDao.pendingForCampaign(campaignId)
@@ -119,7 +122,7 @@ class DeliveryRepository(
         res.sync_token
     }
 
-    suspend fun syncAllPending(): Result<Int> = runCatching {
+    suspend fun syncAllPending(): Result<Int> = apiCall {
         var synced = 0
         val campaigns = campaignDao.observeAll().first().filter { it.snapshotComplete }
         campaigns.forEach { c ->
@@ -190,7 +193,37 @@ class DeliveryRepository(
     suspend fun getCampaign(id: Int) = campaignDao.get(id)
 
     private suspend fun requireToken(): String =
-        session.tokenFlow.first() ?: throw IllegalStateException("سجّل الدخول أولاً")
+        session.tokenFlow.first()?.also { SessionStore.cachedToken = it }
+            ?: throw IllegalStateException("سجّل الدخول أولاً")
+
+    private suspend fun <T> apiCall(block: suspend () -> T): Result<T> = runCatching {
+        block()
+    }.recoverCatching { error ->
+        if (error is HttpException && error.code() == 401) {
+            session.clear()
+            throw IllegalStateException("انتهت الجلسة — سجّل الدخول مجدداً")
+        }
+        throw IllegalStateException(readApiError(error))
+    }
+
+    private fun readApiError(error: Throwable): String {
+        if (error is IllegalStateException) return error.message ?: "خطأ"
+        if (error is HttpException) {
+            val body = error.response()?.errorBody()?.string()
+            if (!body.isNullOrBlank()) {
+                runCatching {
+                    val json = Gson().fromJson(body, JsonObject::class.java)
+                    json.get("error")?.asString?.takeIf { it.isNotBlank() }
+                }.getOrNull()?.let { return it }
+            }
+            return when (error.code()) {
+                401 -> "غير مصرّح — سجّل الدخول"
+                403 -> "ليس لديك صلاحية"
+                else -> "خطأ من السيرفر (${error.code()})"
+            }
+        }
+        return error.message ?: "فشل الاتصال"
+    }
 
     private suspend fun updateStockLocal(campaignId: Int, stock: StockDto, campaign: CampaignDto?) {
         val c = campaignDao.get(campaignId)

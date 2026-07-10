@@ -53,12 +53,12 @@ final class MobileAuth
 
     public static function authenticateRequest(): bool
     {
-        $header = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
-        if (!preg_match('/^Bearer\s+(\S+)$/i', $header, $m)) {
+        $token = self::bearerTokenFromRequest();
+        if ($token === null) {
             return false;
         }
 
-        $hash = hash('sha256', $m[1]);
+        $hash = hash('sha256', $token);
         $pdo = Database::getConnection();
         $stmt = $pdo->prepare('
             SELECT t.*, u.name, u.email, u.role
@@ -113,5 +113,44 @@ final class MobileAuth
         $hash = hash('sha256', $token);
         $pdo = Database::getConnection();
         $pdo->prepare('DELETE FROM mobile_tokens WHERE token_hash = ?')->execute([$hash]);
+    }
+
+    private static function bearerTokenFromRequest(): ?string
+    {
+        $candidates = [];
+
+        foreach (['HTTP_AUTHORIZATION', 'REDIRECT_HTTP_AUTHORIZATION'] as $key) {
+            if (!empty($_SERVER[$key])) {
+                $candidates[] = (string) $_SERVER[$key];
+            }
+        }
+
+        if (function_exists('apache_request_headers')) {
+            $headers = apache_request_headers();
+            foreach ($headers as $name => $value) {
+                if (strcasecmp((string) $name, 'Authorization') === 0) {
+                    $candidates[] = (string) $value;
+                }
+            }
+        }
+
+        if (function_exists('getallheaders')) {
+            $headers = getallheaders();
+            if (is_array($headers)) {
+                foreach ($headers as $name => $value) {
+                    if (strcasecmp((string) $name, 'Authorization') === 0) {
+                        $candidates[] = (string) $value;
+                    }
+                }
+            }
+        }
+
+        foreach ($candidates as $header) {
+            if (preg_match('/^Bearer\s+(\S+)$/i', trim($header), $m)) {
+                return $m[1];
+            }
+        }
+
+        return null;
     }
 }

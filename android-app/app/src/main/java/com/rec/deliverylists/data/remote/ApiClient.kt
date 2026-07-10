@@ -1,6 +1,8 @@
 package com.rec.deliverylists.data.remote
 
 import com.rec.deliverylists.BuildConfig
+import com.rec.deliverylists.data.SessionStore
+import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -16,10 +18,23 @@ object ApiClient {
         }
     }
 
+    private val authInterceptor = Interceptor { chain ->
+        val token = SessionStore.cachedToken?.trim().orEmpty()
+        val request = if (token.isNotEmpty()) {
+            chain.request().newBuilder()
+                .header("Authorization", "Bearer $token")
+                .build()
+        } else {
+            chain.request()
+        }
+        chain.proceed(request)
+    }
+
     private val http = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(120, TimeUnit.SECONDS)
         .writeTimeout(120, TimeUnit.SECONDS)
+        .addInterceptor(authInterceptor)
         .addInterceptor(logging)
         .build()
 

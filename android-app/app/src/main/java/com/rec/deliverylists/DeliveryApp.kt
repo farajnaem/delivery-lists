@@ -6,6 +6,7 @@ import com.rec.deliverylists.data.DeliveryRepository
 import com.rec.deliverylists.data.SessionStore
 import com.rec.deliverylists.data.local.AppDatabase
 import com.rec.deliverylists.util.SyncScheduler
+import kotlinx.coroutines.runBlocking
 
 class DeliveryApp : Application() {
     lateinit var repository: DeliveryRepository
@@ -18,6 +19,7 @@ class DeliveryApp : Application() {
             .fallbackToDestructiveMigration()
             .build()
         val session = SessionStore(this)
+        runBlocking { session.restoreCachedToken() }
         repository = DeliveryRepository(db, session)
         SyncScheduler.schedule(this)
     }

@@ -46,6 +46,7 @@ fun CampaignListScreen(
     LaunchedEffect(Unit) {
         loading = true
         repo.refreshCampaignList()
+            .onFailure { message = it.message ?: "فشل تحديث القائمة" }
         repo.syncAllPending()
         loading = false
     }
