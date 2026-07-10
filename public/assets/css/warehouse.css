@@ -81,6 +81,13 @@ body.warehouse-app {
 }
 .wh-campaign-card strong { display: block; margin-bottom: 0.25rem; }
 .wh-campaign-card span { display: block; color: var(--wh-muted); font-size: 0.85rem; }
+.wh-parcel-label { font-size: 0.75rem !important; color: var(--wh-primary) !important; font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em; }
+.wh-parcel-name { font-size: 1.2rem !important; color: var(--wh-text) !important; margin-bottom: 0.15rem !important; }
+.wh-op-name { color: var(--wh-text) !important; font-weight: 600; }
+.wh-card-cta { display: block !important; margin-top: 0.65rem !important; color: var(--wh-primary) !important; font-weight: 700 !important; font-size: 0.9rem !important; }
+.wh-card-badge { display: inline-block; margin-top: 0.5rem; font-size: 0.75rem; padding: 0.2rem 0.5rem; border-radius: 6px; }
+.wh-card-badge-closed { background: #fef2f2; color: var(--wh-error); }
+.wh-section-title { font-size: 1rem; margin: 0 0 0.75rem; }
 .wh-meta { font-size: 0.8rem !important; }
 
 .wh-stock-bar {

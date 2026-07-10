@@ -1,6 +1,7 @@
 package com.rec.deliverylists.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,6 +13,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -24,6 +26,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.rec.deliverylists.DeliveryApp
@@ -39,8 +42,8 @@ fun CampaignDashboardScreen(
 ) {
     val repo = DeliveryApp.repository
     var campaign by remember { mutableStateOf<CampaignEntity?>(null) }
+    var preparing by remember { mutableStateOf(true) }
     var query by remember { mutableStateOf("") }
-    var results by remember { mutableStateOf<List<BeneficiaryEntity>>(emptyList()) }
     var selected by remember { mutableStateOf<BeneficiaryEntity?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
     val recent by repo.observeRecent(campaignId).collectAsState(initial = emptyList())
@@ -48,31 +51,61 @@ fun CampaignDashboardScreen(
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(campaignId) {
+        preparing = true
+        message = null
         campaign = repo.getCampaign(campaignId)
+        val current = campaign
+        if (current != null && !current.snapshotComplete) {
+            repo.downloadSnapshot(campaignId)
+                .onFailure {
+                    message = it.message ?: "فشل تحميل بيانات الطرد"
+                    preparing = false
+                    return@LaunchedEffect
+                }
+            campaign = repo.getCampaign(campaignId)
+        }
         repo.syncCampaign(campaignId)
         campaign = repo.getCampaign(campaignId)
+        preparing = false
     }
 
-    val c = campaign
-    if (c == null) {
-        Text("جاري التحميل...")
+    if (preparing || campaign == null) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                CircularProgressIndicator()
+                Spacer(Modifier.height(12.dp))
+                Text("جاري تحميل بيانات الطرد...")
+            }
+        }
         return
     }
+
+    val c = campaign!!
 
     Column(
         Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()),
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            OutlinedButton(onClick = onBack) { Text("رجوع") }
+            OutlinedButton(onClick = onBack) { Text("الطرود") }
             OutlinedButton(onClick = {
                 scope.launch {
-                    repo.syncCampaign(campaignId)
-                        .onSuccess { message = "تمت المزامنة"; campaign = repo.getCampaign(campaignId) }
+                    preparing = true
+                    repo.downloadSnapshot(campaignId)
                         .onFailure { message = it.message }
+                    repo.syncCampaign(campaignId)
+                        .onSuccess { message = "تمت المزامنة" }
+                        .onFailure { message = it.message }
+                    campaign = repo.getCampaign(campaignId)
+                    preparing = false
                 }
             }) { Text("مزامنة") }
         }
-        Text(c.name, style = MaterialTheme.typography.headlineSmall)
+        Text(c.parcelName, style = MaterialTheme.typography.headlineSmall)
+        Text(
+            "${c.name} — ${c.warehouseName}",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         if (!c.campaignActive) {
             Text("تم إنهاء التسليم", color = MaterialTheme.colorScheme.error)
         }
@@ -81,24 +114,25 @@ fun CampaignDashboardScreen(
             StatBox("الرصيد", c.balance.toString())
             StatBox("مُسلَّم", c.delivered.toString())
             StatBox("افتتاحي", c.openingQuantity.toString())
-            StatBox("متبقي", c.pending.toString())
         }
         message?.let { Text(it, Modifier.padding(vertical = 4.dp)) }
         Spacer(Modifier.height(12.dp))
 
+        Text("استعلام المستفيد", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(8.dp))
         OutlinedTextField(
             value = query,
             onValueChange = { query = it },
-            label = { Text("بحث: رقم تسلسلي / هوية / اسم") },
+            label = { Text("رقم تسلسلي / هوية / اسم") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
         )
         Button(
             onClick = {
                 scope.launch {
-                    results = repo.search(campaignId, query)
+                    val results = repo.search(campaignId, query)
                     selected = results.firstOrNull()
-                    if (results.isEmpty()) message = "لم يُعثر على مستفيد"
+                    message = if (results.isEmpty()) "لم يُعثر على مستفيد" else null
                 }
             },
             modifier = Modifier.fillMaxWidth(),
@@ -111,7 +145,7 @@ fun CampaignDashboardScreen(
                 scope.launch {
                     repo.confirmDelivery(campaignId, b)
                         .onSuccess {
-                            message = "تم تسجيل التسليم"
+                            message = "تم تسجيل الاستلام"
                             campaign = repo.getCampaign(campaignId)
                             selected = null
                             query = ""
@@ -127,7 +161,7 @@ fun CampaignDashboardScreen(
             Text("${row.displayCode} — ${row.name} — ${row.deliveryDate ?: ""}")
         }
         Spacer(Modifier.height(12.dp))
-        Text("آخر المستلمين", style = MaterialTheme.typography.titleMedium)
+        Text("سجل الاستلام", style = MaterialTheme.typography.titleMedium)
         recent.take(15).forEach { row ->
             Text("${row.displayCode} — ${row.name} — ${row.deliveredAt ?: ""}")
         }
@@ -136,7 +170,7 @@ fun CampaignDashboardScreen(
 
 @Composable
 private fun StatBox(label: String, value: String) {
-    Column(horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(value, style = MaterialTheme.typography.titleLarge)
         Text(label, style = MaterialTheme.typography.bodySmall)
     }
@@ -154,7 +188,7 @@ private fun BeneficiaryCard(b: BeneficiaryEntity, onConfirm: () -> Unit) {
             if (b.receiptStatus != DeliveryRepository.STATUS_DELIVERED) {
                 Spacer(Modifier.height(8.dp))
                 Button(onClick = onConfirm, modifier = Modifier.fillMaxWidth()) {
-                    Text("تأكيد التسليم")
+                    Text("تأكيد الاستلام")
                 }
             }
         }

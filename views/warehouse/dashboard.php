@@ -3,7 +3,7 @@ $stockActions = [
     ['label' => 'تفاصيل العملية', 'url' => '/campaigns/view?id=' . (int) $campaign['id']],
 ];
 if (!empty($canDeliver)) {
-    $stockActions[] = ['label' => 'تسليم (جوال)', 'url' => '/warehouse/deliver?campaign_id=' . (int) $campaign['id'], 'primary' => true];
+    $stockActions[] = ['label' => 'التسليم الرسمي', 'url' => '/warehouse/deliver?campaign_id=' . (int) $campaign['id'], 'primary' => true];
 }
 context_nav([
     ['label' => 'العمليات', 'url' => '/'],
@@ -104,7 +104,7 @@ context_nav([
 
 <?php if (!empty($canDeliver)): ?>
 <div class="card">
-    <a href="<?= e(url('/warehouse/deliver?campaign_id=' . (int) $campaign['id'])) ?>" class="btn">فتح صفحة التسليم (جوال)</a>
+    <a href="<?= e(url('/warehouse/deliver?campaign_id=' . (int) $campaign['id'])) ?>" class="btn">فتح التسليم الرسمي</a>
 </div>
 <?php endif; ?>
 

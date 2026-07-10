@@ -16,12 +16,12 @@
     <div class="wh-alert wh-alert-<?= e($flash['type']) ?>"><?= e($flash['message']) ?></div>
     <?php endif; ?>
 
-    <h1 class="wh-title">اختر العملية</h1>
-    <p class="wh-sub">العمليات المُولَّدة الجاهزة للتسليم من المخزن</p>
+    <h1 class="wh-title">اختر الطرد</h1>
+    <p class="wh-sub">اضغط على الطرد لفتح الاستلام والاستعلام — القناة الرسمية لتسجيل التسليم</p>
 
     <?php if (empty($campaigns)): ?>
     <div class="wh-card wh-empty">
-        <p>لا توجد عمليات جاهزة للتسليم حالياً.</p>
+        <p>لا توجد طرود جاهزة للتسليم حالياً.</p>
         <?php if (!empty($canViewOperations)): ?>
         <p><a href="<?= e(url('/')) ?>">← العودة لعمليات التوزيع</a></p>
         <?php endif; ?>
@@ -30,13 +30,20 @@
     <div class="wh-campaign-list">
         <?php foreach ($campaigns as $c): ?>
         <a href="<?= e(url('/warehouse/deliver?campaign_id=' . (int) $c['id'])) ?>" class="wh-campaign-card">
-            <strong><?= e($c['name']) ?></strong>
-            <span><?= e($c['parcel_name']) ?></span>
-            <span class="wh-meta"><?= e($c['delivery_start']) ?> — <?= e($c['delivery_end']) ?></span>
+            <span class="wh-parcel-label">الطرد</span>
+            <strong class="wh-parcel-name"><?= e($c['parcel_name']) ?></strong>
+            <span class="wh-op-name"><?= e($c['name']) ?></span>
+            <span class="wh-meta"><?= e($c['warehouse_name']) ?> · <?= e($c['delivery_start']) ?> — <?= e($c['delivery_end']) ?></span>
             <span class="wh-meta">
-                <?= (int) ($c['beneficiary_count'] ?? 0) ?> مستفيد
-                · <strong><?= (int) ($c['delivered_count'] ?? 0) ?> مُسلَّم</strong>
+                الرصيد: <strong><?= (int) ($c['balance'] ?? 0) ?></strong>
+                · <?= (int) ($c['beneficiary_count'] ?? 0) ?> مستفيد
+                · <?= (int) ($c['delivered_count'] ?? 0) ?> مُسلَّم
             </span>
+            <?php if (empty($c['campaign_active'])): ?>
+            <span class="wh-card-badge wh-card-badge-closed">التسليم مُنهى</span>
+            <?php else: ?>
+            <span class="wh-card-cta">استلام واستعلام ←</span>
+            <?php endif; ?>
         </a>
         <?php endforeach; ?>
     </div>

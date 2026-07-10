@@ -109,7 +109,7 @@
 
         if (!delivered && cfg.campaignActive) {
             html += '<div class="wh-result-actions">';
-            html += '<button type="button" id="btnConfirm" class="wh-btn wh-btn-success wh-btn-block">تأكيد التسليم</button>';
+            html += '<button type="button" id="btnConfirm" class="wh-btn wh-btn-success wh-btn-block">تأكيد الاستلام</button>';
             html += '</div>';
         } else if (delivered) {
             html += '<p class="text-muted" style="margin:0.5rem 0 0">تم التسليم ' + esc(b.delivered_at || '') + '</p>';

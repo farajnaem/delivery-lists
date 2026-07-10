@@ -219,9 +219,16 @@ if (str_starts_with($uri, '/api/warehouse')) {
 // ——— صفحة أمين المخزن (PWA) ———
 if ($uri === '/warehouse' && $method === 'GET') {
     Auth::requireRole(fn ($r) => RoleHelper::canDeliver($r));
+    $campaigns = DeliveryService::activeCampaigns();
+    foreach ($campaigns as &$c) {
+        $stats = DeliveryService::stockStats((int) $c['id']);
+        $c['balance'] = (int) ($stats['balance'] ?? 0);
+        $c['campaign_active'] = DeliveryService::isCampaignActive($c);
+    }
+    unset($c);
     warehouse_view('warehouse/select', [
         'title' => 'تسليم المخزن',
-        'campaigns' => DeliveryService::activeCampaigns(),
+        'campaigns' => $campaigns,
         'canViewOperations' => (Auth::role() ?? '') !== 'warehouse_keeper',
     ]);
     exit;

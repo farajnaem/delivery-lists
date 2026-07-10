@@ -7,10 +7,10 @@ $campaignActive = !empty($stats['campaign_active']);
 ?>
 <header class="wh-header">
     <div class="wh-header-inner">
-        <a href="<?= e(url('/warehouse')) ?>" class="wh-back" title="العمليات">←</a>
+        <a href="<?= e(url('/warehouse')) ?>" class="wh-back" title="الطرود">←</a>
         <div class="wh-header-title">
-            <strong><?= e($campaign['name']) ?></strong>
-            <small><?= e($campaign['warehouse_name']) ?></small>
+            <strong><?= e($campaign['parcel_name']) ?></strong>
+            <small><?= e($campaign['name']) ?> — <?= e($campaign['warehouse_name']) ?></small>
         </div>
         <div class="wh-header-links">
             <?php if (!empty($canViewStock)): ?>
@@ -47,6 +47,7 @@ $campaignActive = !empty($stats['campaign_active']);
     </div>
 
     <div class="wh-search-box">
+        <h2 class="wh-section-title">استعلام المستفيد</h2>
         <label for="searchQuery">ابحث بالرقم التسلسلي (مثل 1 أو 42) أو رقم الهوية</label>
         <input type="search" id="searchQuery" class="wh-input" placeholder="1 أو 1xxxxxxxxx" autocomplete="off" inputmode="numeric" <?= $campaignActive ? '' : 'disabled' ?>>
         <button type="button" id="btnSearch" class="wh-btn wh-btn-block" <?= $campaignActive ? '' : 'disabled' ?>>بحث</button>
@@ -57,7 +58,7 @@ $campaignActive = !empty($stats['campaign_active']);
     <div id="searchSuccess" class="wh-alert wh-alert-success hidden"></div>
 
     <div class="wh-recent">
-        <h2>المستلمون (<span id="deliveredTotal"><?= (int) $delivered ?></span>)</h2>
+        <h2 class="wh-section-title">سجل الاستلام (<span id="deliveredTotal"><?= (int) $delivered ?></span>)</h2>
         <ul id="recentList" class="wh-recent-list">
             <?php foreach ($recent as $r): ?>
             <li>

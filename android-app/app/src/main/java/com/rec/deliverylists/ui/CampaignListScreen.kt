@@ -1,5 +1,6 @@
 package com.rec.deliverylists.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -24,6 +25,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.rec.deliverylists.DeliveryApp
@@ -39,7 +41,6 @@ fun CampaignListScreen(
     val campaigns by repo.campaignsFlow.collectAsState(initial = emptyList())
     val pendingCount by repo.pendingCountFlow.collectAsState(initial = 0)
     var loading by remember { mutableStateOf(false) }
-    var downloadingId by remember { mutableStateOf<Int?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
@@ -53,7 +54,7 @@ fun CampaignListScreen(
 
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("العمليات", style = MaterialTheme.typography.headlineSmall)
+            Text("اختر الطرد", style = MaterialTheme.typography.headlineSmall)
             OutlinedButton(onClick = {
                 scope.launch {
                     repo.logout()
@@ -61,6 +62,11 @@ fun CampaignListScreen(
                 }
             }) { Text("خروج") }
         }
+        Text(
+            "اضغط على الطرد لفتح الاستلام والاستعلام",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         if (pendingCount > 0) {
             Text("بانتظار المزامنة: $pendingCount", color = MaterialTheme.colorScheme.primary)
         }
@@ -83,54 +89,50 @@ fun CampaignListScreen(
             }) { Text("مزامنة الآن") }
         }
         Spacer(Modifier.height(12.dp))
-        if (loading) CircularProgressIndicator()
+        if (loading) {
+            CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
+        }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(campaigns, key = { it.id }) { c ->
-                CampaignCard(
-                    campaign = c,
-                    downloading = downloadingId == c.id,
-                    onDownload = {
-                        downloadingId = c.id
-                        scope.launch {
-                            repo.downloadSnapshot(c.id)
-                                .onSuccess { message = "تم تحميل ${c.name}" }
-                                .onFailure { message = it.message }
-                            downloadingId = null
-                        }
-                    },
-                    onOpen = { onOpenCampaign(c.id) },
-                )
+                ParcelCard(campaign = c, onClick = { onOpenCampaign(c.id) })
             }
         }
     }
 }
 
 @Composable
-private fun CampaignCard(
+private fun ParcelCard(
     campaign: CampaignEntity,
-    downloading: Boolean,
-    onDownload: () -> Unit,
-    onOpen: () -> Unit,
+    onClick: () -> Unit,
 ) {
-    Card(Modifier.fillMaxWidth()) {
+    Card(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+    ) {
         Column(Modifier.padding(12.dp)) {
+            Text(
+                "الطرد",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Text(campaign.parcelName, style = MaterialTheme.typography.titleLarge)
             Text(campaign.name, style = MaterialTheme.typography.titleMedium)
-            Text("${campaign.parcelName} — ${campaign.warehouseName}")
-            Text("مُسلَّم: ${campaign.delivered} | الرصيد: ${campaign.balance}")
-            if (campaign.snapshotComplete) {
-                Text("محمّل محلياً ✓", color = MaterialTheme.colorScheme.primary)
+            Text(
+                "${campaign.warehouseName} · ${campaign.deliveryStart} — ${campaign.deliveryEnd}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(6.dp))
+            Text("الرصيد: ${campaign.balance} · مُسلَّم: ${campaign.delivered}")
+            if (!campaign.campaignActive) {
+                Text("التسليم مُنهى", color = MaterialTheme.colorScheme.error)
             } else {
-                Text("يجب التحميل قبل التسليم", color = MaterialTheme.colorScheme.error)
-            }
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onDownload, enabled = !downloading) {
-                    if (downloading) CircularProgressIndicator() else Text("تحميل/تحديث")
-                }
-                Button(
-                    onClick = onOpen,
-                    enabled = campaign.snapshotComplete,
-                ) { Text("فتح التسليم") }
+                Text(
+                    "استلام واستعلام ←",
+                    color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.labelLarge,
+                )
             }
         }
     }

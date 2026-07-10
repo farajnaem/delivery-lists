@@ -10,7 +10,7 @@ if ($isGenerated && !empty($canViewStock)) {
     $viewActions[] = ['label' => 'متابعة المخزن', 'url' => '/campaigns/stock?id=' . (int) $campaign['id'], 'primary' => true];
 }
 if ($isGenerated && !empty($canDeliver)) {
-    $viewActions[] = ['label' => 'تسليم (جوال)', 'url' => '/warehouse/deliver?campaign_id=' . (int) $campaign['id']];
+    $viewActions[] = ['label' => 'التسليم الرسمي', 'url' => '/warehouse/deliver?campaign_id=' . (int) $campaign['id']];
 }
 if (!empty($canEdit)) {
     $viewActions[] = ['label' => 'تعديل', 'url' => '/campaigns/edit?id=' . (int) $campaign['id']];
@@ -149,7 +149,7 @@ context_nav([
         <?php endif; ?>
 
         <?php if ($isGenerated && !empty($canDeliver)): ?>
-        <a href="<?= e(url('/warehouse/deliver?campaign_id=' . (int)$campaign['id'])) ?>" class="btn btn-outline">تسليم (جوال)</a>
+        <a href="<?= e(url('/warehouse/deliver?campaign_id=' . (int)$campaign['id'])) ?>" class="btn btn-outline">التسليم الرسمي</a>
         <?php endif; ?>
 
         <?php if (!empty($canEdit)): ?>
