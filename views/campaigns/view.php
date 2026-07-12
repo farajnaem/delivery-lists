@@ -26,7 +26,9 @@ context_nav([
 <h1><?= e($campaign['name']) ?></h1>
 <p class="text-muted">
     <?= e($campaign['parcel_name']) ?> — كود الطرد: <strong><?= e($parcelLabel) ?></strong>
-    (SOCI + <?= e($campaign['parcel_code_suffix'] ?? '') ?>)
+    <?php if (!empty($campaign['pipeline_name'])): ?>
+    · PipeLine: <strong><?= e($campaign['pipeline_name']) ?></strong>
+    <?php endif; ?>
     | <?= e($campaign['warehouse_name']) ?>
 </p>
 

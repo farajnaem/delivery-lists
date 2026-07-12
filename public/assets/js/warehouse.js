@@ -76,6 +76,7 @@
 
     function api(path, options) {
         options = options || {};
+        var retryOnCsrf = options.retryOnCsrf !== false;
         var headers = { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' };
         if (options.json) {
             headers['Content-Type'] = 'application/json';
@@ -88,8 +89,25 @@
             body: options.body ? JSON.stringify(options.body) : undefined
         }).then(function (r) {
             return r.json().then(function (data) {
+                if (r.status === 403 && data.csrf_expired && retryOnCsrf) {
+                    return refreshCsrf().then(function () {
+                        return api(path, Object.assign({}, options, { retryOnCsrf: false }));
+                    });
+                }
                 if (!r.ok) throw new Error(data.error || 'خطأ في الخادم');
                 return data;
+            });
+        });
+    }
+
+    function refreshCsrf() {
+        return fetch(cfg.apiBase + '/csrf', {
+            credentials: 'same-origin',
+            headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+        }).then(function (r) {
+            return r.json().then(function (data) {
+                if (!r.ok || !data.csrf) throw new Error(data.error || 'تعذّر تحديث الجلسة');
+                cfg.csrf = data.csrf;
             });
         });
     }
@@ -295,6 +313,10 @@
     setOnline(navigator.onLine);
     updatePendingUI();
     if (navigator.onLine) syncQueue();
+
+    setInterval(function () {
+        if (navigator.onLine) refreshCsrf().catch(function () {});
+    }, 1200000);
 
     setInterval(function () {
         if (navigator.onLine && pending.length > 0) syncQueue();

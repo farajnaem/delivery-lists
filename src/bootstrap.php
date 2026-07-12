@@ -38,6 +38,15 @@ require_once __DIR__ . '/helpers.php';
 
 date_default_timezone_set(config('timezone', 'Asia/Riyadh'));
 
+$sessionLifetime = max(3600, (int) env('SESSION_LIFETIME', 28800));
+ini_set('session.gc_maxlifetime', (string) $sessionLifetime);
+session_set_cookie_params([
+    'lifetime' => $sessionLifetime,
+    'path' => '/',
+    'httponly' => true,
+    'samesite' => 'Lax',
+]);
+
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }

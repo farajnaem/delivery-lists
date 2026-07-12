@@ -57,6 +57,10 @@ class DeliveryRepository(
         val token = requireToken()
         val res = api.campaigns(ApiClient.bearer(token))
         if (!res.ok) throw IllegalStateException(res.error ?: "فشل جلب العمليات")
+        val hint = res.hint
+        if (hint != null && res.campaigns.isEmpty()) {
+            throw IllegalStateException(hint)
+        }
         val existing = campaignDao.observeAll().first().associateBy { it.id }
         val mapped = res.campaigns.map { dto ->
             dto.toEntity(existing[dto.id])

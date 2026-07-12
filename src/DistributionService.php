@@ -63,6 +63,7 @@ final class DistributionService
             throw new \RuntimeException('أدخل ملحق كود الطرد (مثل R26 أو F).');
         }
 
+        $codePrefix = (string) ($campaign['parcel_code'] ?? ParcelCodeHelper::DEFAULT_PREFIX);
         $codeSuffix = (string) ($campaign['parcel_code_suffix'] ?? '');
 
         $pdo = Database::getConnection();
@@ -128,7 +129,7 @@ final class DistributionService
                 foreach ($windowRows as $i => $row) {
                     $slot = $slots[$i];
                     $pin = ParcelCodeHelper::generateRandomPin($usedPins);
-                    $code = ParcelCodeHelper::buildDisbursementCode($codeSuffix, $pin);
+                    $code = ParcelCodeHelper::buildDisbursementCode($codePrefix, $codeSuffix, $pin);
                     $mobile = PhoneHelper::normalize($row['mobile']);
                     $message = MessageTemplates::appointment($campaign, $row['name'], $dates[$d], $code, $w + 1);
 

@@ -6,9 +6,22 @@ namespace App;
 
 final class ParcelCodeHelper
 {
-    public const PREFIX = 'SOCI';
+    public const DEFAULT_PREFIX = 'SOCI';
+    /** @deprecated استخدم DEFAULT_PREFIX */
+    public const PREFIX = self::DEFAULT_PREFIX;
     public const PIN_MIN = 1;
     public const PIN_MAX = 99999;
+
+    public static function normalizePrefix(string $prefix): string
+    {
+        $prefix = strtoupper(trim($prefix));
+        return preg_replace('/[^A-Z0-9]/', '', $prefix) ?? '';
+    }
+
+    public static function validatePrefix(string $prefix): bool
+    {
+        return self::normalizePrefix($prefix) !== '';
+    }
 
     /** تطبيع ملحق كود الطرد (أحرف وأرقام فقط، أحرف كبيرة). */
     public static function normalizeSuffix(string $suffix): string
@@ -22,22 +35,30 @@ final class ParcelCodeHelper
         return self::normalizeSuffix($suffix) !== '';
     }
 
-    /** عرض كود الطرد الكامل: SOCI + الملحق. */
-    public static function formatParcelCode(string $suffix): string
+    /** عرض كود الطرد الكامل: البادئة + الملحق. */
+    public static function formatParcelCode(string $prefix, string $suffix): string
     {
+        $prefix = self::normalizePrefix($prefix);
         $suffix = self::normalizeSuffix($suffix);
-        return $suffix === '' ? self::PREFIX : self::PREFIX . $suffix;
+        if ($prefix === '') {
+            $prefix = self::DEFAULT_PREFIX;
+        }
+        return $suffix === '' ? $prefix : $prefix . $suffix;
     }
 
     /**
-     * كود الصرف الداخلي = SOCI + ملحق الطرد + رقم عشوائي (بدون أصفار يسار).
-     * مثال: SOCI + R26 + 48291 → SOCIR2648291
+     * كود الصرف الداخلي = بادئة + ملحق + رقم عشوائي.
+     * مثال: REC + R26 + 48291 → RECR2648291
      */
-    public static function buildDisbursementCode(string $suffix, int|string $pin): string
+    public static function buildDisbursementCode(string $prefix, string $suffix, int|string $pin): string
     {
+        $prefix = self::normalizePrefix($prefix);
+        if ($prefix === '') {
+            $prefix = self::DEFAULT_PREFIX;
+        }
         $suffix = self::normalizeSuffix($suffix);
         $pin = self::normalizePin($pin);
-        return self::PREFIX . $suffix . $pin;
+        return $prefix . $suffix . $pin;
     }
 
     /** توليد رقم عشوائي فريد داخل العملية (1–99999). */
@@ -56,7 +77,6 @@ final class ParcelCodeHelper
         return $pin;
     }
 
-    /** تحويل الرقم إلى صيغة مخزّنة/معروضة بدون أصفار يسار. */
     public static function normalizePin(int|string $pin): string
     {
         $digits = preg_replace('/\D/', '', (string) $pin) ?? '';
@@ -67,23 +87,20 @@ final class ParcelCodeHelper
         return (string) (int) $digits;
     }
 
-    /** الرقم كعدد صحيح للعرض والتصدير. */
-    public static function pinAsInt(string $disbursementCode, ?string $suffix = null): int
+    public static function pinAsInt(string $disbursementCode, ?string $suffix = null, ?string $prefix = null): int
     {
-        return (int) self::extractPin($disbursementCode, $suffix);
+        return (int) self::extractPin($disbursementCode, $suffix, $prefix);
     }
 
-    /** الأرقام الظاهرة للمستفيد وأمين المخزن والشبابيك (بدون أصفار يسار). */
-    public static function displayForBeneficiary(string $disbursementCode, ?string $suffix = null): string
+    public static function displayForBeneficiary(string $disbursementCode, ?string $suffix = null, ?string $prefix = null): string
     {
-        $pin = self::extractPin($disbursementCode, $suffix);
+        $pin = self::extractPin($disbursementCode, $suffix, $prefix);
         return $pin === '' ? $disbursementCode : $pin;
     }
 
-    /** الكود الكامل للتقارير: الملحق + الرقم (مثل R2648291). */
-    public static function displayFull(string $disbursementCode, ?string $suffix = null): string
+    public static function displayFull(string $disbursementCode, ?string $suffix = null, ?string $prefix = null): string
     {
-        $parsed = self::parseCode($disbursementCode, $suffix);
+        $parsed = self::parseCode($disbursementCode, $suffix, $prefix);
         if ($parsed === null) {
             return strtoupper(preg_replace('/\s+/', '', $disbursementCode) ?? $disbursementCode);
         }
@@ -91,9 +108,9 @@ final class ParcelCodeHelper
         return $parsed['suffix'] . self::normalizePin($parsed['pin']);
     }
 
-    public static function extractPin(string $disbursementCode, ?string $suffix = null): string
+    public static function extractPin(string $disbursementCode, ?string $suffix = null, ?string $prefix = null): string
     {
-        $parsed = self::parseCode($disbursementCode, $suffix);
+        $parsed = self::parseCode($disbursementCode, $suffix, $prefix);
         if ($parsed === null || $parsed['pin'] === '') {
             return '';
         }
@@ -104,15 +121,26 @@ final class ParcelCodeHelper
     /**
      * @return array{suffix: string, pin: string, is_legacy: bool}|null
      */
-    public static function parseCode(string $code, ?string $suffix = null): ?array
+    public static function parseCode(string $code, ?string $suffix = null, ?string $prefix = null): ?array
     {
         $code = strtoupper(preg_replace('/\s+/', '', $code) ?? $code);
         if ($code === '') {
             return null;
         }
 
-        if (str_starts_with($code, self::PREFIX)) {
-            $rest = substr($code, strlen(self::PREFIX));
+        if ($prefix !== null && $prefix !== '') {
+            $prefix = self::normalizePrefix($prefix);
+            if ($prefix !== '' && str_starts_with($code, $prefix)) {
+                $rest = substr($code, strlen($prefix));
+                $parsed = self::splitSuffixAndPin($rest, $suffix);
+                if ($parsed !== null) {
+                    return $parsed;
+                }
+            }
+        }
+
+        if (str_starts_with($code, self::DEFAULT_PREFIX)) {
+            $rest = substr($code, strlen(self::DEFAULT_PREFIX));
             $parsed = self::splitSuffixAndPin($rest, $suffix);
             if ($parsed !== null) {
                 return $parsed;
@@ -154,19 +182,17 @@ final class ParcelCodeHelper
         return (string) max(1, $serial);
     }
 
-    /** استخراج الملحق من كود طرد قديم (مثل SOCI-R26 → R26). */
     public static function extractSuffixFromLegacy(string $parcelCode): string
     {
         $code = strtoupper(trim($parcelCode));
-        if (!str_starts_with($code, self::PREFIX)) {
+        if (!str_starts_with($code, self::DEFAULT_PREFIX)) {
             return self::normalizeSuffix($parcelCode);
         }
-        $rest = substr($code, strlen(self::PREFIX));
+        $rest = substr($code, strlen(self::DEFAULT_PREFIX));
         return self::normalizeSuffix($rest);
     }
 
-    /** مطابقة استعلام البحث مع كود مخزّن. */
-    public static function matchSearchCandidates(string $query, string $suffix): array
+    public static function matchSearchCandidates(string $query, string $prefix, string $suffix): array
     {
         $normalized = preg_replace('/\s+/', '', trim($query)) ?? trim($query);
         if ($normalized === '') {
@@ -175,14 +201,18 @@ final class ParcelCodeHelper
 
         $upper = strtoupper($normalized);
         $candidates = [$upper];
-
-        if (preg_match('/^\d+$/', $normalized)) {
-            $candidates[] = self::buildDisbursementCode($suffix, (int) $normalized);
+        $prefix = self::normalizePrefix($prefix);
+        if ($prefix === '') {
+            $prefix = self::DEFAULT_PREFIX;
         }
 
-        $parsed = self::parseCode($upper, $suffix);
+        if (preg_match('/^\d+$/', $normalized)) {
+            $candidates[] = self::buildDisbursementCode($prefix, $suffix, (int) $normalized);
+        }
+
+        $parsed = self::parseCode($upper, $suffix, $prefix);
         if ($parsed !== null) {
-            $candidates[] = self::buildDisbursementCode($parsed['suffix'], $parsed['pin']);
+            $candidates[] = self::buildDisbursementCode($prefix, $parsed['suffix'], $parsed['pin']);
             $candidates[] = $parsed['suffix'] . self::normalizePin($parsed['pin']);
         }
 

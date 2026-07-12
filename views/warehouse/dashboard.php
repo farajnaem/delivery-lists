@@ -45,7 +45,7 @@ context_nav([
     </div>
 </div>
 
-<?php if (!empty($canEdit)): ?>
+<?php if (!empty($canCloseDelivery)): ?>
 <div class="card">
     <h2>حالة التسليم</h2>
     <?php if (!empty($stock['campaign_active'])): ?>

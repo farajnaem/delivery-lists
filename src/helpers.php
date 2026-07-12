@@ -126,7 +126,9 @@ function parse_campaign_post(array $post): array
 {
     return [
         'name' => trim($post['name'] ?? ''),
+        'pipeline_name' => trim($post['pipeline_name'] ?? ''),
         'parcel_name' => trim($post['parcel_name'] ?? ''),
+        'parcel_code' => \App\ParcelCodeHelper::normalizePrefix($post['parcel_code'] ?? \App\ParcelCodeHelper::DEFAULT_PREFIX),
         'parcel_code_suffix' => \App\ParcelCodeHelper::normalizeSuffix($post['parcel_code_suffix'] ?? ''),
         'delivery_start' => $post['delivery_start'] ?? '',
         'delivery_end' => $post['delivery_end'] ?? '',
@@ -156,8 +158,11 @@ function validate_campaign_data(array $data): ?string
     if ($data['name'] === '' || $data['parcel_name'] === '') {
         return 'أكمل اسم العملية واسم الطرد.';
     }
+    if (!\App\ParcelCodeHelper::validatePrefix($data['parcel_code'])) {
+        return 'أدخل كود الطرد (مثل SOCI أو REC).';
+    }
     if (!\App\ParcelCodeHelper::validateSuffix($data['parcel_code_suffix'])) {
-        return 'أدخل ملحق كود الطرد (مثل R26 أو F) — الحروف الأولى SOCI ثابتة.';
+        return 'أدخل ملحق كود الطرد (مثل R26 أو F).';
     }
     if ($data['delivery_start'] === '' || $data['delivery_end'] === '') {
         return 'حدد تواريخ التسليم.';

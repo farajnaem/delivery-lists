@@ -38,6 +38,18 @@ final class MobileSyncService
         return $result;
     }
 
+    /** @return array{campaigns:list<array<string,mixed>>, hint:?string} */
+    public static function campaignsPayload(): array
+    {
+        $campaigns = self::listCampaigns();
+        return [
+            'campaigns' => $campaigns,
+            'hint' => $campaigns === []
+                ? 'لا توجد عمليات مُولَّدة. من لوحة المدير: ارفع Excel ثم اضغط «توليد الكشوف». حساب التطبيق يجب أن يكون بدور «أمين مخزن» أو «مدير النظام».'
+                : null,
+        ];
+    }
+
     /** @return array<string, mixed> */
     public static function snapshot(int $campaignId): array
     {
@@ -58,8 +70,9 @@ final class MobileSyncService
         $rows = $stmt->fetchAll();
 
         $codeSuffix = (string) ($campaign['parcel_code_suffix'] ?? '');
+        $codePrefix = (string) ($campaign['parcel_code'] ?? '');
         $beneficiaries = array_map(
-            fn (array $row): array => self::formatBeneficiary($row, $codeSuffix),
+            fn (array $row): array => self::formatBeneficiary($row, $codeSuffix, $codePrefix),
             $rows
         );
         $stats = DeliveryService::stockStats($campaignId);
@@ -121,6 +134,7 @@ final class MobileSyncService
         $pdo = Database::getConnection();
         $campaign = CampaignService::find($campaignId);
         $codeSuffix = (string) ($campaign['parcel_code_suffix'] ?? '');
+        $codePrefix = (string) ($campaign['parcel_code'] ?? '');
         $since = trim((string) $since);
         if ($since === '') {
             return [];
@@ -136,17 +150,18 @@ final class MobileSyncService
         ');
         $stmt->execute([$campaignId, $since]);
         return array_map(
-            fn (array $row): array => self::formatBeneficiary($row, $codeSuffix),
+            fn (array $row): array => self::formatBeneficiary($row, $codeSuffix, $codePrefix),
             $stmt->fetchAll()
         );
     }
 
     /** @param array<string, mixed> $row */
-    public static function formatBeneficiary(array $row, string $codeSuffix = ''): array
+    public static function formatBeneficiary(array $row, string $codeSuffix = '', string $codePrefix = ''): array
     {
         $enriched = DeliveryService::enrichForDisplay(
             $row,
-            $codeSuffix !== '' ? $codeSuffix : null
+            $codeSuffix !== '' ? $codeSuffix : null,
+            $codePrefix !== '' ? $codePrefix : null
         );
         return [
             'id' => (int) ($enriched['id'] ?? 0),

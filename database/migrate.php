@@ -13,6 +13,7 @@ $migrations = [
     'parcel_code_suffix' => "ALTER TABLE campaigns ADD COLUMN parcel_code_suffix TEXT NOT NULL DEFAULT ''",
     'opening_quantity' => "ALTER TABLE campaigns ADD COLUMN opening_quantity INTEGER NOT NULL DEFAULT 0",
     'delivery_closed_at' => 'ALTER TABLE campaigns ADD COLUMN delivery_closed_at TEXT',
+    'pipeline_name' => "ALTER TABLE campaigns ADD COLUMN pipeline_name TEXT NOT NULL DEFAULT ''",
     'beneficiaries_updated_at' => 'ALTER TABLE beneficiaries ADD COLUMN updated_at TEXT',
     'delivered_at' => 'ALTER TABLE beneficiaries ADD COLUMN delivered_at TEXT',
     'delivered_by' => 'ALTER TABLE beneficiaries ADD COLUMN delivered_by INTEGER',
@@ -107,7 +108,7 @@ try {
     foreach ($rows as $row) {
         $serial = (int) $row['sort_order'];
         $suffix = (string) ($row['parcel_code_suffix'] ?? '');
-        $code = \App\ParcelCodeHelper::buildDisbursementCode($suffix, $serial);
+        $code = \App\ParcelCodeHelper::buildDisbursementCode(\App\ParcelCodeHelper::DEFAULT_PREFIX, $suffix, $serial);
         $message = (string) ($row['message_text'] ?? '');
         if ($message !== '') {
             $message = preg_replace(

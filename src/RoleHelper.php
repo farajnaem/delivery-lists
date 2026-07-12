@@ -14,9 +14,44 @@ final class RoleHelper
         'warehouse_keeper' => 'أمين المخزن',
     ];
 
+    /** @var array<string, list<string>> */
+    public const PERMISSIONS = [
+        'admin' => [
+            'إدارة المستخدمين (إضافة/تعديل/تعطيل)',
+            'إنشاء وتعديل العمليات وتوليد الكشوف',
+            'تصدير Excel والتقارير',
+            'متابعة المخزن وإنهاء/إعادة فتح التسليم',
+            'تسليم من المخزن (ويب + تطبيق)',
+            'إلغاء التسليمات',
+            'نسخ احتياطي لقاعدة البيانات',
+        ],
+        'coordinator' => [
+            'إنشاء وتعديل العمليات وتوليد الكشوف',
+            'تصدير Excel',
+            'متابعة المخزن (عرض فقط — بدون إنهاء التسليم)',
+        ],
+        'reviewer' => [
+            'معاينة العمليات والمخزن',
+            'تصدير Excel',
+        ],
+        'viewer' => [
+            'معاينة العمليات والمخزن فقط',
+        ],
+        'warehouse_keeper' => [
+            'تسليم من المخزن (ويب + تطبيق أندرويد)',
+            'عرض العمليات المُولَّدة فقط بعد تسجيل الدخول',
+        ],
+    ];
+
     public static function label(string $role): string
     {
         return self::ROLES[$role] ?? $role;
+    }
+
+    /** @return list<string> */
+    public static function permissions(string $role): array
+    {
+        return self::PERMISSIONS[$role] ?? [];
     }
 
     public static function canManageUsers(string $role): bool
@@ -50,6 +85,12 @@ final class RoleHelper
     }
 
     public static function canManageDatabase(string $role): bool
+    {
+        return $role === 'admin';
+    }
+
+    /** إنهاء وإعادة فتح عملية التسليم — مدير النظام فقط */
+    public static function canCloseDelivery(string $role): bool
     {
         return $role === 'admin';
     }

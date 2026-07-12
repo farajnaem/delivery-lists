@@ -3,6 +3,7 @@
 /** @var string $prefix */
 $isEdit = ($prefix ?? '') === 'edit';
 $c = $campaign ?? [];
+$parcelCode = old('parcel_code', $c['parcel_code'] ?? 'SOCI');
 $suffix = old('parcel_code_suffix', $c['parcel_code_suffix'] ?? '');
 ?>
 <h2 style="margin-top:<?= $isEdit ? '0' : '1.5rem' ?>">بيانات العملية</h2>
@@ -12,18 +13,23 @@ $suffix = old('parcel_code_suffix', $c['parcel_code_suffix'] ?? '');
         <input type="text" name="name" class="form-control" required placeholder="مثال: طرود رمضان 2026" value="<?= e(old('name', $c['name'] ?? '')) ?>">
     </div>
     <div class="form-group">
+        <label>PipeLine *</label>
+        <input type="text" name="pipeline_name" class="form-control" required placeholder="e.g. Ramadan 2026 Pipeline" value="<?= e(old('pipeline_name', $c['pipeline_name'] ?? '')) ?>">
+        <small class="text-muted">الاسم الإنجليزي للعملية — يظهر في التقارير والعرض.</small>
+    </div>
+    <div class="form-group">
         <label>اسم الطرد *</label>
         <input type="text" name="parcel_name" class="form-control" required value="<?= e(old('parcel_name', $c['parcel_name'] ?? '')) ?>">
     </div>
     <div class="form-group">
-        <label>كود الطرد (ثابت)</label>
-        <input type="text" class="form-control" value="SOCI" readonly style="background:#f3f4f6;font-weight:bold">
-        <small class="text-muted">الحروف الأولى <strong>SOCI</strong> ثابتة لكل الطرود.</small>
+        <label>كود الطرد *</label>
+        <input type="text" name="parcel_code" class="form-control" required placeholder="مثال: SOCI أو REC" value="<?= e($parcelCode) ?>" pattern="[A-Za-z0-9]+" title="أحرف وأرقام فقط">
+        <small class="text-muted">البادئة الأساسية لكود الصرف — أنت تحددها (مثل <strong>SOCI</strong> أو <strong>REC</strong>).</small>
     </div>
     <div class="form-group">
         <label>ملحق كود الطرد *</label>
         <input type="text" name="parcel_code_suffix" class="form-control" required placeholder="مثال: R26 أو F أو RAM" value="<?= e($suffix) ?>" pattern="[A-Za-z0-9]+" title="أحرف وأرقام فقط">
-        <small class="text-muted">يرمز لنوعية الطرد. كود الصرف الداخلي = <strong>SOCI</strong> + الملحق + رقم عشوائي (مثل <strong>SOCIR2648291</strong>). للمستفيد والشبابيك والمخزن يظهر الرقم فقط بدون أصفار يسار (مثل <strong>48291</strong> أو <strong>482</strong>)، وفي التقارير يظهر الملحق + الرقم (مثل <strong>R2648291</strong>).</small>
+        <small class="text-muted">كود الصرف الداخلي = <strong>كود الطرد</strong> + الملحق + رقم عشوائي. للمستفيد يظهر الرقم فقط، وفي التقارير يظهر الملحق + الرقم.</small>
     </div>
     <div class="form-group">
         <label>عدد أيام التسليم *</label>

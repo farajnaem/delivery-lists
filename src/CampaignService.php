@@ -33,18 +33,20 @@ final class CampaignService
     public static function create(array $data, int $userId): int
     {
         $pdo = Database::getConnection();
+        $prefix = ParcelCodeHelper::normalizePrefix($data['parcel_code'] ?? ParcelCodeHelper::DEFAULT_PREFIX);
         $suffix = ParcelCodeHelper::normalizeSuffix($data['parcel_code_suffix'] ?? '');
         $stmt = $pdo->prepare('
             INSERT INTO campaigns (
-                name, parcel_name, parcel_code, parcel_code_suffix, delivery_start, delivery_end,
+                name, pipeline_name, parcel_name, parcel_code, parcel_code_suffix, delivery_start, delivery_end,
                 warehouse_name, warehouse_location, num_days, work_start, work_end,
                 per_window_capacity, num_windows, opening_quantity, status, created_by
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ');
         $stmt->execute([
             $data['name'],
+            $data['pipeline_name'] ?? '',
             $data['parcel_name'],
-            ParcelCodeHelper::PREFIX,
+            $prefix,
             $suffix,
             $data['delivery_start'],
             $data['delivery_end'],
@@ -65,10 +67,11 @@ final class CampaignService
     public static function update(int $id, array $data): void
     {
         $pdo = Database::getConnection();
+        $prefix = ParcelCodeHelper::normalizePrefix($data['parcel_code'] ?? ParcelCodeHelper::DEFAULT_PREFIX);
         $suffix = ParcelCodeHelper::normalizeSuffix($data['parcel_code_suffix'] ?? '');
         $stmt = $pdo->prepare('
             UPDATE campaigns SET
-                name = ?, parcel_name = ?, parcel_code = ?, parcel_code_suffix = ?,
+                name = ?, pipeline_name = ?, parcel_name = ?, parcel_code = ?, parcel_code_suffix = ?,
                 delivery_start = ?, delivery_end = ?,
                 warehouse_name = ?, warehouse_location = ?, num_days = ?,
                 work_start = ?, work_end = ?, per_window_capacity = ?, opening_quantity = ?
@@ -76,8 +79,9 @@ final class CampaignService
         ');
         $stmt->execute([
             $data['name'],
+            $data['pipeline_name'] ?? '',
             $data['parcel_name'],
-            ParcelCodeHelper::PREFIX,
+            $prefix,
             $suffix,
             $data['delivery_start'],
             $data['delivery_end'],
@@ -214,6 +218,9 @@ final class CampaignService
     /** كود الطرد الكامل للعرض. */
     public static function parcelLabel(array $campaign): string
     {
-        return ParcelCodeHelper::formatParcelCode((string) ($campaign['parcel_code_suffix'] ?? ''));
+        return ParcelCodeHelper::formatParcelCode(
+            (string) ($campaign['parcel_code'] ?? ParcelCodeHelper::DEFAULT_PREFIX),
+            (string) ($campaign['parcel_code_suffix'] ?? '')
+        );
     }
 }

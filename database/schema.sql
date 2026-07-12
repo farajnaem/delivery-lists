@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS campaigns (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
+    pipeline_name TEXT NOT NULL DEFAULT '',
     parcel_name TEXT NOT NULL,
     parcel_code TEXT NOT NULL DEFAULT 'SOCI',
     parcel_code_suffix TEXT NOT NULL DEFAULT '',

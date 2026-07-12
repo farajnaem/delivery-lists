@@ -122,8 +122,9 @@ final class DeliveryService
 
         $pdo = Database::getConnection();
         $normalized = preg_replace('/\s+/', '', $query) ?? $query;
+        $prefix = (string) ($campaign['parcel_code'] ?? ParcelCodeHelper::DEFAULT_PREFIX);
         $suffix = (string) ($campaign['parcel_code_suffix'] ?? '');
-        $codeCandidates = ParcelCodeHelper::matchSearchCandidates($query, $suffix);
+        $codeCandidates = ParcelCodeHelper::matchSearchCandidates($query, $prefix, $suffix);
         $placeholders = implode(', ', array_fill(0, count($codeCandidates), '?'));
 
         $sql = '
@@ -254,24 +255,36 @@ final class DeliveryService
             // لا نوقف التسليم إذا فشل تجهيز الرسالة
         }
 
-        return ['ok' => true, 'beneficiary' => self::enrichForDisplay($beneficiary, (string) ($campaign['parcel_code_suffix'] ?? '')), 'delivery_type' => $deliveryType];
+        return ['ok' => true, 'beneficiary' => self::enrichForDisplay(
+            $beneficiary,
+            (string) ($campaign['parcel_code_suffix'] ?? ''),
+            (string) ($campaign['parcel_code'] ?? '')
+        ), 'delivery_type' => $deliveryType];
     }
 
     /** @param array<string, mixed> $beneficiary */
-    public static function enrichForDisplay(array $beneficiary, ?string $codeSuffix = null): array
+    public static function enrichForDisplay(array $beneficiary, ?string $codeSuffix = null, ?string $codePrefix = null): array
     {
         $code = trim((string) ($beneficiary['disbursement_code'] ?? ''));
         $suffix = $codeSuffix ?? (string) ($beneficiary['parcel_code_suffix'] ?? '');
+        $prefix = $codePrefix ?? (string) ($beneficiary['parcel_code'] ?? '');
         $beneficiary['display_code'] = $code !== ''
-            ? ParcelCodeHelper::displayForBeneficiary($code, $suffix !== '' ? $suffix : null)
+            ? ParcelCodeHelper::displayForBeneficiary(
+                $code,
+                $suffix !== '' ? $suffix : null,
+                $prefix !== '' ? $prefix : null
+            )
             : '';
         return $beneficiary;
     }
 
     /** @return list<array<string, mixed>> */
-    public static function mapForDisplay(array $rows, ?string $codeSuffix = null): array
+    public static function mapForDisplay(array $rows, ?string $codeSuffix = null, ?string $codePrefix = null): array
     {
-        return array_map(fn (array $row): array => self::enrichForDisplay($row, $codeSuffix), $rows);
+        return array_map(
+            fn (array $row): array => self::enrichForDisplay($row, $codeSuffix, $codePrefix),
+            $rows
+        );
     }
 
     /**
@@ -315,6 +328,7 @@ final class DeliveryService
     {
         $campaign = CampaignService::find($campaignId);
         $codeSuffix = (string) ($campaign['parcel_code_suffix'] ?? '');
+        $codePrefix = (string) ($campaign['parcel_code'] ?? '');
 
         $pdo = Database::getConnection();
         $stmt = $pdo->prepare('
@@ -332,7 +346,11 @@ final class DeliveryService
         $stmt->bindValue(3, $limit, PDO::PARAM_INT);
         $stmt->bindValue(4, $offset, PDO::PARAM_INT);
         $stmt->execute();
-        return self::mapForDisplay($stmt->fetchAll(), $codeSuffix !== '' ? $codeSuffix : null);
+        return self::mapForDisplay(
+            $stmt->fetchAll(),
+            $codeSuffix !== '' ? $codeSuffix : null,
+            $codePrefix !== '' ? $codePrefix : null
+        );
     }
 
     public static function deliveredCount(int $campaignId): int
@@ -394,6 +412,7 @@ final class DeliveryService
     {
         $campaign = CampaignService::find($campaignId);
         $codeSuffix = (string) ($campaign['parcel_code_suffix'] ?? '');
+        $codePrefix = (string) ($campaign['parcel_code'] ?? '');
 
         $pdo = Database::getConnection();
         $today = date('Y-m-d');
@@ -411,7 +430,11 @@ final class DeliveryService
         $stmt->bindValue(3, $today);
         $stmt->bindValue(4, $limit, PDO::PARAM_INT);
         $stmt->execute();
-        return self::mapForDisplay($stmt->fetchAll(), $codeSuffix !== '' ? $codeSuffix : null);
+        return self::mapForDisplay(
+            $stmt->fetchAll(),
+            $codeSuffix !== '' ? $codeSuffix : null,
+            $codePrefix !== '' ? $codePrefix : null
+        );
     }
 
     private static function findByClientId(string $clientId): ?array

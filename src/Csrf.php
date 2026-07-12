@@ -27,4 +27,10 @@ final class Csrf
             && isset($_SESSION[self::KEY])
             && hash_equals($_SESSION[self::KEY], $token);
     }
+
+    public static function refresh(): string
+    {
+        $_SESSION[self::KEY] = bin2hex(random_bytes(32));
+        return $_SESSION[self::KEY];
+    }
 }

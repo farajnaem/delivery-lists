@@ -79,7 +79,7 @@ data class RecentDeliveredDto(
     val delivered_by_name: String? = null,
 )
 
-data class CampaignsResponse(val ok: Boolean, val campaigns: List<CampaignDto> = emptyList(), val error: String? = null)
+data class CampaignsResponse(val ok: Boolean, val campaigns: List<CampaignDto> = emptyList(), val hint: String? = null, val error: String? = null)
 
 data class SnapshotResponse(
     val ok: Boolean = true,

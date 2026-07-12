@@ -14,11 +14,27 @@ final class UserService
         return $pdo->query('SELECT id, name, email, role, is_active, created_at FROM users ORDER BY name')->fetchAll();
     }
 
-    public static function emailExists(string $email): bool
+    public static function find(int $id): ?array
     {
         $pdo = Database::getConnection();
-        $stmt = $pdo->prepare('SELECT 1 FROM users WHERE email = ? LIMIT 1');
-        $stmt->execute([$email]);
+        $stmt = $pdo->prepare('SELECT id, name, email, role, is_active, created_at FROM users WHERE id = ? LIMIT 1');
+        $stmt->execute([$id]);
+        $row = $stmt->fetch();
+        return $row ?: null;
+    }
+
+    public static function emailExists(string $email, ?int $exceptId = null): bool
+    {
+        $pdo = Database::getConnection();
+        $sql = 'SELECT 1 FROM users WHERE email = ?';
+        $params = [$email];
+        if ($exceptId !== null) {
+            $sql .= ' AND id != ?';
+            $params[] = $exceptId;
+        }
+        $sql .= ' LIMIT 1';
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
         return (bool) $stmt->fetchColumn();
     }
 
@@ -27,6 +43,38 @@ final class UserService
         $pdo = Database::getConnection();
         $stmt = $pdo->prepare('INSERT INTO users (name, email, password_hash, role) VALUES (?, ?, ?, ?)');
         $stmt->execute([$name, $email, password_hash($password, PASSWORD_DEFAULT), $role]);
+    }
+
+    public static function update(int $id, string $name, string $email, string $role, bool $isActive, ?string $password = null): void
+    {
+        $pdo = Database::getConnection();
+        if ($password !== null && $password !== '') {
+            $stmt = $pdo->prepare('
+                UPDATE users SET name = ?, email = ?, role = ?, is_active = ?, password_hash = ?
+                WHERE id = ?
+            ');
+            $stmt->execute([$name, $email, $role, $isActive ? 1 : 0, password_hash($password, PASSWORD_DEFAULT), $id]);
+            return;
+        }
+
+        $stmt = $pdo->prepare('
+            UPDATE users SET name = ?, email = ?, role = ?, is_active = ?
+            WHERE id = ?
+        ');
+        $stmt->execute([$name, $email, $role, $isActive ? 1 : 0, $id]);
+    }
+
+    public static function deactivate(int $id): void
+    {
+        $pdo = Database::getConnection();
+        $stmt = $pdo->prepare('UPDATE users SET is_active = 0 WHERE id = ?');
+        $stmt->execute([$id]);
+    }
+
+    public static function adminCount(): int
+    {
+        $pdo = Database::getConnection();
+        return (int) $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'admin' AND is_active = 1")->fetchColumn();
     }
 
     public static function count(): int

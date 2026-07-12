@@ -112,7 +112,7 @@ if (str_starts_with($uri, '/api/mobile')) {
     }
 
     if ($uri === '/api/mobile/campaigns' && $method === 'GET') {
-        json_response(['ok' => true, 'campaigns' => MobileSyncService::listCampaigns()]);
+        json_response(['ok' => true] + MobileSyncService::campaignsPayload());
     }
 
     if (preg_match('#^/api/mobile/campaigns/(\d+)/snapshot$#', $uri, $m) && $method === 'GET') {
@@ -160,6 +160,10 @@ if ($role === 'warehouse_keeper') {
 if (str_starts_with($uri, '/api/warehouse')) {
     Auth::requireRole(fn ($r) => RoleHelper::canDeliver($r));
 
+    if ($uri === '/api/warehouse/csrf' && $method === 'GET') {
+        json_response(['ok' => true, 'csrf' => Csrf::token()]);
+    }
+
     if ($uri === '/api/warehouse/search' && $method === 'GET') {
         $campaignId = (int) ($_GET['campaign_id'] ?? 0);
         $q = trim($_GET['q'] ?? '');
@@ -173,7 +177,7 @@ if (str_starts_with($uri, '/api/warehouse')) {
     if ($uri === '/api/warehouse/deliver' && $method === 'POST') {
         $body = read_json_body();
         if (!Csrf::verify($_SERVER['HTTP_X_CSRF_TOKEN'] ?? null)) {
-            json_response(['ok' => false, 'error' => 'انتهت صلاحية الجلسة'], 403);
+            json_response(['ok' => false, 'error' => 'انتهت صلاحية النموذج — حدّث الصفحة أو انتظر لحظة ثم أعد المحاولة', 'csrf_expired' => true], 403);
         }
         $campaignId = (int) ($body['campaign_id'] ?? 0);
         $beneficiaryId = (int) ($body['beneficiary_id'] ?? 0);
@@ -189,7 +193,7 @@ if (str_starts_with($uri, '/api/warehouse')) {
     if ($uri === '/api/warehouse/sync' && $method === 'POST') {
         $body = read_json_body();
         if (!Csrf::verify($_SERVER['HTTP_X_CSRF_TOKEN'] ?? null)) {
-            json_response(['ok' => false, 'error' => 'انتهت صلاحية الجلسة'], 403);
+            json_response(['ok' => false, 'error' => 'انتهت صلاحية النموذج — حدّث الصفحة أو انتظر لحظة ثم أعد المحاولة', 'csrf_expired' => true], 403);
         }
         $campaignId = (int) ($body['campaign_id'] ?? 0);
         $items = is_array($body['items'] ?? null) ? $body['items'] : [];
@@ -269,6 +273,7 @@ if ($uri === '/campaigns/stock' && $method === 'GET') {
         'deliveredTotal' => $deliveredTotal,
         'lateList' => DeliveryService::pendingLate($id, 50),
         'canEdit' => RoleHelper::canEditCampaign(Auth::role() ?? ''),
+        'canCloseDelivery' => RoleHelper::canCloseDelivery(Auth::role() ?? ''),
         'canDeliver' => RoleHelper::canDeliver(Auth::role() ?? ''),
         'canExport' => RoleHelper::canViewStock(Auth::role() ?? ''),
         'canCancelDeliveries' => RoleHelper::canCancelDeliveries(Auth::role() ?? ''),
@@ -291,7 +296,7 @@ if ($uri === '/campaigns/opening-quantity' && $method === 'POST') {
 }
 
 if ($uri === '/campaigns/close-delivery' && $method === 'POST') {
-    Auth::requireRole(fn ($r) => RoleHelper::canEditCampaign($r));
+    Auth::requireRole(fn ($r) => RoleHelper::canCloseDelivery($r));
     $id = (int) ($_POST['campaign_id'] ?? 0);
     if (!Csrf::verify($_POST['_csrf'] ?? null)) {
         flash('error', 'انتهت صلاحية النموذج.');
@@ -303,7 +308,7 @@ if ($uri === '/campaigns/close-delivery' && $method === 'POST') {
 }
 
 if ($uri === '/campaigns/reopen-delivery' && $method === 'POST') {
-    Auth::requireRole(fn ($r) => RoleHelper::canEditCampaign($r));
+    Auth::requireRole(fn ($r) => RoleHelper::canCloseDelivery($r));
     $id = (int) ($_POST['campaign_id'] ?? 0);
     if (!Csrf::verify($_POST['_csrf'] ?? null)) {
         flash('error', 'انتهت صلاحية النموذج.');
@@ -689,12 +694,79 @@ if ($uri === '/users/create' && $method === 'POST') {
         flash('error', 'أكمل جميع الحقول — كلمة المرور 8 أحرف على الأقل.');
         redirect('/users');
     }
+    if (!array_key_exists($role, RoleHelper::ROLES)) {
+        flash('error', 'الدور غير صالح.');
+        redirect('/users');
+    }
     if (UserService::emailExists($email)) {
         flash('error', 'البريد الإلكتروني مستخدم مسبقاً.');
         redirect('/users');
     }
     UserService::create($name, $email, $password, $role);
     flash('success', 'تم إضافة المستخدم.');
+    redirect('/users');
+}
+
+if ($uri === '/users/update' && $method === 'POST') {
+    Auth::requireRole(fn ($r) => RoleHelper::canManageUsers($r));
+    if (!Csrf::verify($_POST['_csrf'] ?? null)) {
+        flash('error', 'انتهت صلاحية النموذج.');
+        redirect('/users');
+    }
+    $id = (int) ($_POST['user_id'] ?? 0);
+    $name = trim($_POST['name'] ?? '');
+    $email = trim($_POST['email'] ?? '');
+    $password = trim($_POST['password'] ?? '');
+    $role = $_POST['role'] ?? 'viewer';
+    $isActive = isset($_POST['is_active']);
+    $user = UserService::find($id);
+    if (!$user) {
+        flash('error', 'المستخدم غير موجود.');
+        redirect('/users');
+    }
+    if ($name === '' || $email === '' || !array_key_exists($role, RoleHelper::ROLES)) {
+        flash('error', 'تحقق من البيانات والدور.');
+        redirect('/users');
+    }
+    if (UserService::emailExists($email, $id)) {
+        flash('error', 'البريد الإلكتروني مستخدم مسبقاً.');
+        redirect('/users');
+    }
+    if ($user['role'] === 'admin' && $role !== 'admin' && UserService::adminCount() <= 1) {
+        flash('error', 'لا يمكن تغيير دور آخر مدير نشط في النظام.');
+        redirect('/users');
+    }
+    if (!$isActive && $user['role'] === 'admin' && UserService::adminCount() <= 1) {
+        flash('error', 'لا يمكن تعطيل آخر مدير نشط في النظام.');
+        redirect('/users');
+    }
+    UserService::update($id, $name, $email, $role, $isActive, $password !== '' ? $password : null);
+    flash('success', 'تم تحديث المستخدم.');
+    redirect('/users');
+}
+
+if ($uri === '/users/deactivate' && $method === 'POST') {
+    Auth::requireRole(fn ($r) => RoleHelper::canManageUsers($r));
+    if (!Csrf::verify($_POST['_csrf'] ?? null)) {
+        flash('error', 'انتهت صلاحية النموذج.');
+        redirect('/users');
+    }
+    $id = (int) ($_POST['user_id'] ?? 0);
+    if ($id === (int) (Auth::id() ?? 0)) {
+        flash('error', 'لا يمكنك تعطيل حسابك.');
+        redirect('/users');
+    }
+    $user = UserService::find($id);
+    if (!$user) {
+        flash('error', 'المستخدم غير موجود.');
+        redirect('/users');
+    }
+    if ($user['role'] === 'admin' && UserService::adminCount() <= 1) {
+        flash('error', 'لا يمكن تعطيل آخر مدير نشط في النظام.');
+        redirect('/users');
+    }
+    UserService::deactivate($id);
+    flash('success', 'تم تعطيل المستخدم.');
     redirect('/users');
 }
 
