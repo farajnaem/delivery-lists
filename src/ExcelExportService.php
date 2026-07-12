@@ -38,7 +38,7 @@ final class ExcelExportService
 
         self::buildMasterSheet($spreadsheet, $campaign, $all);
         self::buildDeliverySheets($spreadsheet, $campaign, $all);
-        self::buildMessagesSheet($spreadsheet, $all);
+        self::buildMessagesSheets($spreadsheet, $all);
 
         $spreadsheet->setActiveSheetIndex(0);
 
@@ -84,7 +84,11 @@ final class ExcelExportService
         self::buildDeliveryDetailSheet($spreadsheet, 'مستلم', $delivered, $campaign);
         self::buildDeliveryDetailSheet($spreadsheet, 'بانتظار_التسليم', $pending, $campaign);
         self::buildDeliveryDetailSheet($spreadsheet, 'متأخر_عن_الموعد', $latePending, $campaign);
-        self::buildSmsOutboxSheet($spreadsheet, SmsService::outbox($campaignId));
+        self::buildSmsOutboxSheet(
+            $spreadsheet,
+            SmsService::outbox($campaignId),
+            (string) ($campaign['parcel_code_suffix'] ?? '')
+        );
 
         $spreadsheet->setActiveSheetIndex(0);
 
@@ -259,6 +263,7 @@ final class ExcelExportService
         ];
         self::writeHeaderRow($sheet, $headerRow, $headers);
 
+        $codeSuffix = (string) ($campaign['parcel_code_suffix'] ?? '');
         $row = $headerRow + 1;
         foreach ($items as $i => $b) {
             $typeLabel = match ($b['delivery_type'] ?? '') {
@@ -271,7 +276,7 @@ final class ExcelExportService
                 $b['name'],
                 $b['national_id'],
                 null,
-                $b['disbursement_code'],
+                null,
                 self::formatReceiptStatusForExport($b),
                 $b['delivery_date'],
                 $b['window_num'],
@@ -282,6 +287,7 @@ final class ExcelExportService
                 $b['delivered_at'] ?? '',
                 $b['delivered_by_name'] ?? '',
             ], null, 'A' . $row);
+            self::setFullCodeCell($sheet, 'E' . $row, (string) ($b['disbursement_code'] ?? ''), $codeSuffix);
             self::setMobileCell($sheet, 'D' . $row, (string) $b['mobile']);
             $row++;
         }
@@ -300,7 +306,7 @@ final class ExcelExportService
     }
 
     /** @param list<array<string,mixed>> $messages */
-    private static function buildSmsOutboxSheet(Spreadsheet $spreadsheet, array $messages): void
+    private static function buildSmsOutboxSheet(Spreadsheet $spreadsheet, array $messages, string $codeSuffix = ''): void
     {
         $sheet = $spreadsheet->createSheet();
         $sheet->setTitle('رسائل_التأكيد');
@@ -319,7 +325,7 @@ final class ExcelExportService
             };
             $sheet->fromArray([
                 $i + 1,
-                $m['disbursement_code'] ?? '',
+                null,
                 $m['beneficiary_name'] ?? '',
                 null,
                 $m['message_text'] ?? '',
@@ -327,6 +333,7 @@ final class ExcelExportService
                 $m['created_at'] ?? '',
                 $m['sent_at'] ?? '',
             ], null, 'A' . $row);
+            self::setFullCodeCell($sheet, 'B' . $row, (string) ($m['disbursement_code'] ?? ''), $codeSuffix);
             self::setMobileCell($sheet, 'D' . $row, (string) ($m['mobile'] ?? ''));
             $sheet->getStyle('E' . $row)->getAlignment()->setWrapText(true);
             $row++;
@@ -381,6 +388,7 @@ final class ExcelExportService
         ];
         self::writeHeaderRow($sheet, $headerRow, $headers);
 
+        $codeSuffix = (string) ($campaign['parcel_code_suffix'] ?? '');
         $row = $headerRow + 1;
         foreach ($all as $i => $b) {
             $typeLabel = match ($b['delivery_type'] ?? '') {
@@ -394,7 +402,7 @@ final class ExcelExportService
                 $b['national_id'],
                 null,
                 self::formatReceiptStatusForExport($b),
-                $b['disbursement_code'],
+                null,
                 $b['delivery_date'],
                 $b['window_num'],
                 $b['time_from'],
@@ -403,6 +411,7 @@ final class ExcelExportService
                 $typeLabel,
                 $b['delivered_at'] ?? '',
             ], null, 'A' . $row);
+            self::setFullCodeCell($sheet, 'F' . $row, (string) ($b['disbursement_code'] ?? ''), $codeSuffix);
             self::setMobileCell($sheet, 'D' . $row, (string) $b['mobile']);
             $sheet->getStyle('A' . $row . ':M' . $row)->getFont()->setSize(9);
             $row++;
@@ -490,6 +499,8 @@ final class ExcelExportService
                 $headers = ['#', 'رقم الهوية', 'الاسم', 'رقم الجوال', 'كود الصرف', 'التوقيع على الاستلام'];
                 self::writeHeaderRow($sheet, $headerRow, $headers);
 
+        $codeSuffix = (string) ($campaign['parcel_code_suffix'] ?? '');
+
                 $row = $headerRow + 1;
                 foreach ($items as $i => $b) {
                     $sheet->fromArray([
@@ -497,9 +508,10 @@ final class ExcelExportService
                         $b['national_id'],
                         $b['name'],
                         null,
-                        $b['disbursement_code'],
+                        null,
                         '',
                     ], null, 'A' . $row);
+                    self::setPinCell($sheet, 'E' . $row, (string) ($b['disbursement_code'] ?? ''), $codeSuffix);
                     self::setMobileCell($sheet, 'D' . $row, (string) $b['mobile']);
                     $sheet->getStyle('F' . $row)->getAlignment()->setVertical(Alignment::VERTICAL_CENTER);
                     $row++;
@@ -515,10 +527,40 @@ final class ExcelExportService
         }
     }
 
-    private static function buildMessagesSheet(Spreadsheet $spreadsheet, array $all): void
+    private static function buildMessagesSheets(Spreadsheet $spreadsheet, array $all): void
     {
+        $jawwal = [];
+        $ooredoo = [];
+        $other = [];
+
+        foreach ($all as $beneficiary) {
+            $carrier = PhoneHelper::carrier((string) ($beneficiary['mobile'] ?? ''));
+            if ($carrier === PhoneHelper::CARRIER_JAWWAL) {
+                $jawwal[] = $beneficiary;
+            } elseif ($carrier === PhoneHelper::CARRIER_OOREDOO) {
+                $ooredoo[] = $beneficiary;
+            } else {
+                $other[] = $beneficiary;
+            }
+        }
+
+        self::buildCarrierMessagesSheet($spreadsheet, 'رسائل_جوال', $jawwal);
+        self::buildCarrierMessagesSheet($spreadsheet, 'رسائل_أوريدو', $ooredoo);
+
+        // لا نهمل أي رقم غير متوقع؛ نظهره في كشف مستقل للمراجعة.
+        if ($other !== []) {
+            self::buildCarrierMessagesSheet($spreadsheet, 'رسائل_غير_مصنفة', $other);
+        }
+    }
+
+    /** @param list<array<string,mixed>> $beneficiaries */
+    private static function buildCarrierMessagesSheet(
+        Spreadsheet $spreadsheet,
+        string $title,
+        array $beneficiaries
+    ): void {
         $sheet = $spreadsheet->createSheet();
-        $sheet->setTitle('كشف_الرسائل');
+        $sheet->setTitle($title);
         $sheet->setRightToLeft(true);
 
         $headerRow = 1;
@@ -526,17 +568,23 @@ final class ExcelExportService
         self::writeHeaderRow($sheet, $headerRow, $headers);
 
         $row = 2;
-        foreach ($all as $i => $b) {
+        foreach ($beneficiaries as $i => $b) {
             $sheet->setCellValue('A' . $row, $i + 1);
-            self::setMobileCell($sheet, 'B' . $row, (string) $b['mobile']);
+            self::setMobileCell(
+                $sheet,
+                'B' . $row,
+                PhoneHelper::messageRecipient((string) ($b['mobile'] ?? ''))
+            );
             $sheet->setCellValue('C' . $row, $b['message_text']);
             $sheet->getStyle('C' . $row)->getAlignment()->setWrapText(true);
             $row++;
         }
 
-        $lastRow = $row - 1;
+        $lastRow = max($headerRow, $row - 1);
         self::borderAll($sheet, 'A1:C' . $lastRow);
-        self::styleDataRows($sheet, 'A2:C' . $lastRow);
+        if ($beneficiaries !== []) {
+            self::styleDataRows($sheet, 'A2:C' . $lastRow);
+        }
 
         $sheet->getColumnDimension('A')->setWidth(6);
         $sheet->getColumnDimension('B')->setWidth(14);
@@ -553,6 +601,30 @@ final class ExcelExportService
         } else {
             $sheet->setCellValue($cell, $normalized);
         }
+    }
+
+    private static function setPinCell(Worksheet $sheet, string $cell, string $disbursementCode, string $codeSuffix): void
+    {
+        if ($disbursementCode === '') {
+            return;
+        }
+
+        $pin = ParcelCodeHelper::pinAsInt($disbursementCode, $codeSuffix !== '' ? $codeSuffix : null);
+        if ($pin > 0) {
+            $sheet->setCellValueExplicit($cell, $pin, DataType::TYPE_NUMERIC);
+        }
+    }
+
+    private static function setFullCodeCell(Worksheet $sheet, string $cell, string $disbursementCode, string $codeSuffix): void
+    {
+        if ($disbursementCode === '') {
+            return;
+        }
+
+        $sheet->setCellValue(
+            $cell,
+            ParcelCodeHelper::displayFull($disbursementCode, $codeSuffix !== '' ? $codeSuffix : null)
+        );
     }
 
     private static function writeHeaderRow(Worksheet $sheet, int $row, array $headers): void

@@ -1,7 +1,10 @@
+<?php use App\ParcelCodeHelper; ?>
 <?php
 /** @var list<array> $deliveredList */
 /** @var int|null $totalDelivered */
+/** @var string|null $codeSuffix */
 $totalDelivered = $totalDelivered ?? count($deliveredList ?? []);
+$codeSuffix = $codeSuffix ?? '';
 ?>
 <div class="card">
     <h2>المستلمون (<?= (int) $totalDelivered ?>)</h2>
@@ -18,7 +21,7 @@ $totalDelivered = $totalDelivered ?? count($deliveredList ?? []);
         <tbody>
         <?php foreach ($deliveredList as $r): ?>
         <tr>
-            <td><?= e($r['disbursement_code']) ?></td>
+            <td><?= e(ParcelCodeHelper::displayFull((string) ($r['disbursement_code'] ?? ''), $codeSuffix !== '' ? $codeSuffix : null)) ?></td>
             <td><?= e($r['name']) ?></td>
             <td><?= e($r['national_id'] ?? '') ?></td>
             <td><?= e($r['delivery_date'] ?? '') ?> — ش <?= (int) ($r['window_num'] ?? 0) ?></td>

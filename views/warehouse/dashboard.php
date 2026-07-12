@@ -147,6 +147,7 @@ context_nav([
 <?php partial('partials/delivered-table', [
     'deliveredList' => $deliveredList ?? [],
     'totalDelivered' => $deliveredTotal ?? ($stock['delivered'] ?? 0),
+    'codeSuffix' => $campaign['parcel_code_suffix'] ?? '',
 ]); ?>
 
 <script>

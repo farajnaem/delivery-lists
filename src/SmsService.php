@@ -10,21 +10,7 @@ final class SmsService
 {
     public static function buildDeliveryConfirmation(array $campaign, array $beneficiary): string
     {
-        $name = trim($beneficiary['name'] ?? '');
-        $parcel = trim($campaign['parcel_name'] ?? 'الطرد');
-        $warehouse = trim($campaign['warehouse_name'] ?? 'المخزن');
-        $serial = (int) ($beneficiary['sort_order'] ?? 0);
-
-        $parts = [
-            'السيد/ ' . $name . '،',
-            'تم تسليم ' . $parcel . ' بنجاح من ' . $warehouse . '.',
-        ];
-        if ($serial > 0) {
-            $parts[] = 'كود الصرف: ' . ParcelCodeHelper::displaySerial($serial) . '.';
-        }
-        $parts[] = 'شكراً لتعاونكم.';
-
-        return implode(' ', $parts);
+        return MessageTemplates::deliveryConfirmation($campaign, $beneficiary);
     }
 
     public static function queueDeliveryConfirmation(int $campaignId, array $beneficiary, array $campaign): int

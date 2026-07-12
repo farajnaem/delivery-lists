@@ -1,6 +1,7 @@
+<?php use App\Auth; ?>
 <?php
 $indexActions = [];
-if (!empty($canDeliver)) {
+if (!empty($canDeliver) && (Auth::role() ?? '') !== 'admin') {
     $indexActions[] = ['label' => 'تسليم المخزن', 'url' => '/warehouse', 'primary' => true];
 }
 context_nav([['label' => 'عمليات التوزيع']], $indexActions);

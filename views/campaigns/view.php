@@ -1,5 +1,6 @@
 <?php
 use App\CampaignService;
+use App\ParcelCodeHelper;
 $isGenerated = ($campaign['status'] ?? '') === 'generated';
 $parcelLabel = CampaignService::parcelLabel($campaign);
 $dayStats = $stats['days'] ?? [];
@@ -181,7 +182,7 @@ context_nav([
             <td><?= e($b['national_id']) ?></td>
             <td><?= e($b['mobile']) ?></td>
             <?php if ($isGenerated): ?>
-            <td><?= e($b['disbursement_code']) ?></td>
+            <td><?= e(ParcelCodeHelper::displayForBeneficiary((string) ($b['disbursement_code'] ?? ''), (string) ($campaign['parcel_code_suffix'] ?? ''))) ?></td>
             <td>
                 <?php if (($b['receipt_status'] ?? '') === 'مستلم'): ?>
                 <span class="badge-delivered-inline">مستلم</span>
@@ -206,6 +207,7 @@ context_nav([
 <?php partial('partials/delivered-table', [
     'deliveredList' => $deliveredList ?? [],
     'totalDelivered' => $deliveredTotal ?? 0,
+    'codeSuffix' => $campaign['parcel_code_suffix'] ?? '',
 ]); ?>
 <?php elseif ($isGenerated): ?>
 <div class="card">

@@ -57,7 +57,11 @@ final class MobileSyncService
         $stmt->execute([$campaignId]);
         $rows = $stmt->fetchAll();
 
-        $beneficiaries = array_map([self::class, 'formatBeneficiary'], $rows);
+        $codeSuffix = (string) ($campaign['parcel_code_suffix'] ?? '');
+        $beneficiaries = array_map(
+            fn (array $row): array => self::formatBeneficiary($row, $codeSuffix),
+            $rows
+        );
         $stats = DeliveryService::stockStats($campaignId);
 
         return [
@@ -115,6 +119,8 @@ final class MobileSyncService
     public static function changesSince(int $campaignId, ?string $since): array
     {
         $pdo = Database::getConnection();
+        $campaign = CampaignService::find($campaignId);
+        $codeSuffix = (string) ($campaign['parcel_code_suffix'] ?? '');
         $since = trim((string) $since);
         if ($since === '') {
             return [];
@@ -129,13 +135,19 @@ final class MobileSyncService
             ORDER BY b.updated_at ASC, b.id ASC
         ');
         $stmt->execute([$campaignId, $since]);
-        return array_map([self::class, 'formatBeneficiary'], $stmt->fetchAll());
+        return array_map(
+            fn (array $row): array => self::formatBeneficiary($row, $codeSuffix),
+            $stmt->fetchAll()
+        );
     }
 
     /** @param array<string, mixed> $row */
-    public static function formatBeneficiary(array $row): array
+    public static function formatBeneficiary(array $row, string $codeSuffix = ''): array
     {
-        $enriched = DeliveryService::enrichForDisplay($row);
+        $enriched = DeliveryService::enrichForDisplay(
+            $row,
+            $codeSuffix !== '' ? $codeSuffix : null
+        );
         return [
             'id' => (int) ($enriched['id'] ?? 0),
             'campaign_id' => (int) ($enriched['campaign_id'] ?? 0),

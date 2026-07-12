@@ -137,9 +137,8 @@ class DeliveryRepository(
     suspend fun search(campaignId: Int, query: String): List<BeneficiaryEntity> {
         val q = query.trim()
         if (q.isEmpty()) return emptyList()
-        val serial = q.toIntOrNull() ?: 0
         val norm = q.replace(" ", "")
-        return beneficiaryDao.search(campaignId, q, norm, serial)
+        return beneficiaryDao.search(campaignId, q, norm)
     }
 
     suspend fun confirmDelivery(campaignId: Int, beneficiary: BeneficiaryEntity): Result<Unit> = runCatching {

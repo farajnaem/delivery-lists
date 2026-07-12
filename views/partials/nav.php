@@ -5,7 +5,7 @@
         <a href="<?= e(url('/')) ?>" class="brand"><?= e(config('app_name')) ?></a>
         <nav class="nav-links">
             <a href="<?= e(url('/')) ?>">العمليات</a>
-            <?php if (RoleHelper::canDeliver(Auth::role() ?? '')): ?>
+            <?php if (RoleHelper::canDeliver(Auth::role() ?? '') && (Auth::role() ?? '') !== 'admin'): ?>
             <a href="<?= e(url('/warehouse')) ?>">تسليم المخزن</a>
             <?php endif; ?>
             <?php if (RoleHelper::canManageUsers(Auth::role() ?? '')): ?>

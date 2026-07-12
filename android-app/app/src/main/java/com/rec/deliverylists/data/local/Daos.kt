@@ -40,14 +40,15 @@ interface BeneficiaryDao {
         SELECT * FROM beneficiaries
         WHERE campaignId = :campaignId
           AND (
-            (:serial > 0 AND sortOrder = :serial)
+            displayCode = :queryNorm
+            OR UPPER(disbursementCode) = UPPER(:queryNorm)
             OR nationalId = :query
             OR REPLACE(nationalId, ' ', '') = :queryNorm
             OR name LIKE '%' || :query || '%'
           )
         LIMIT 20
     """)
-    suspend fun search(campaignId: Int, query: String, queryNorm: String, serial: Int): List<BeneficiaryEntity>
+    suspend fun search(campaignId: Int, query: String, queryNorm: String): List<BeneficiaryEntity>
 
     @Query("UPDATE beneficiaries SET receiptStatus = :status, deliveredAt = :deliveredAt, deliveryType = :type WHERE id = :id AND campaignId = :campaignId")
     suspend fun markLocalDelivered(campaignId: Int, id: Int, status: String, deliveredAt: String?, type: String?)

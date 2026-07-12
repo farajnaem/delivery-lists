@@ -115,26 +115,40 @@ final class DeliveryService
             return null;
         }
 
+        $campaign = CampaignService::find($campaignId);
+        if (!$campaign) {
+            return null;
+        }
+
         $pdo = Database::getConnection();
         $normalized = preg_replace('/\s+/', '', $query) ?? $query;
-        $upper = strtoupper($normalized);
+        $suffix = (string) ($campaign['parcel_code_suffix'] ?? '');
+        $codeCandidates = ParcelCodeHelper::matchSearchCandidates($query, $suffix);
+        $placeholders = implode(', ', array_fill(0, count($codeCandidates), '?'));
 
-        $serial = ctype_digit($normalized) ? (int) $normalized : 0;
-
-        $stmt = $pdo->prepare('
-            SELECT b.*, c.delivery_end, c.delivery_start, c.delivery_closed_at, c.name AS campaign_name
+        $sql = '
+            SELECT b.*, c.delivery_end, c.delivery_start, c.delivery_closed_at, c.name AS campaign_name,
+                   c.parcel_code_suffix
             FROM beneficiaries b
             JOIN campaigns c ON c.id = b.campaign_id
             WHERE b.campaign_id = ?
               AND (
-                b.disbursement_code = ?
-                OR b.national_id = ?
+                b.national_id = ?
                 OR REPLACE(b.national_id, \' \', \'\') = ?
-                OR (? > 0 AND b.sort_order = ?)
-              )
+        ';
+        $params = [$campaignId, $normalized, $normalized];
+
+        if ($codeCandidates !== []) {
+            $sql .= ' OR b.disbursement_code IN (' . $placeholders . ')';
+            array_push($params, ...$codeCandidates);
+        }
+
+        $sql .= ')
             LIMIT 1
-        ');
-        $stmt->execute([$campaignId, $upper, $normalized, $normalized, $serial, $serial]);
+        ';
+
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
         $row = $stmt->fetch();
         return $row ? self::enrichForDisplay($row) : null;
     }
@@ -240,23 +254,24 @@ final class DeliveryService
             // لا نوقف التسليم إذا فشل تجهيز الرسالة
         }
 
-        return ['ok' => true, 'beneficiary' => self::enrichForDisplay($beneficiary), 'delivery_type' => $deliveryType];
+        return ['ok' => true, 'beneficiary' => self::enrichForDisplay($beneficiary, (string) ($campaign['parcel_code_suffix'] ?? '')), 'delivery_type' => $deliveryType];
     }
 
     /** @param array<string, mixed> $beneficiary */
-    public static function enrichForDisplay(array $beneficiary): array
+    public static function enrichForDisplay(array $beneficiary, ?string $codeSuffix = null): array
     {
-        $serial = (int) ($beneficiary['sort_order'] ?? 0);
-        $beneficiary['display_code'] = $serial > 0
-            ? ParcelCodeHelper::displaySerial($serial)
-            : (string) ($beneficiary['disbursement_code'] ?? '');
+        $code = trim((string) ($beneficiary['disbursement_code'] ?? ''));
+        $suffix = $codeSuffix ?? (string) ($beneficiary['parcel_code_suffix'] ?? '');
+        $beneficiary['display_code'] = $code !== ''
+            ? ParcelCodeHelper::displayForBeneficiary($code, $suffix !== '' ? $suffix : null)
+            : '';
         return $beneficiary;
     }
 
     /** @return list<array<string, mixed>> */
-    public static function mapForDisplay(array $rows): array
+    public static function mapForDisplay(array $rows, ?string $codeSuffix = null): array
     {
-        return array_map([self::class, 'enrichForDisplay'], $rows);
+        return array_map(fn (array $row): array => self::enrichForDisplay($row, $codeSuffix), $rows);
     }
 
     /**
@@ -298,6 +313,9 @@ final class DeliveryService
     /** @return list<array> */
     public static function deliveredBeneficiaries(int $campaignId, int $limit = 100, int $offset = 0): array
     {
+        $campaign = CampaignService::find($campaignId);
+        $codeSuffix = (string) ($campaign['parcel_code_suffix'] ?? '');
+
         $pdo = Database::getConnection();
         $stmt = $pdo->prepare('
             SELECT b.id, b.name, b.disbursement_code, b.sort_order, b.national_id, b.delivery_type,
@@ -314,7 +332,7 @@ final class DeliveryService
         $stmt->bindValue(3, $limit, PDO::PARAM_INT);
         $stmt->bindValue(4, $offset, PDO::PARAM_INT);
         $stmt->execute();
-        return self::mapForDisplay($stmt->fetchAll());
+        return self::mapForDisplay($stmt->fetchAll(), $codeSuffix !== '' ? $codeSuffix : null);
     }
 
     public static function deliveredCount(int $campaignId): int
@@ -374,6 +392,9 @@ final class DeliveryService
 
     public static function pendingLate(int $campaignId, int $limit = 50): array
     {
+        $campaign = CampaignService::find($campaignId);
+        $codeSuffix = (string) ($campaign['parcel_code_suffix'] ?? '');
+
         $pdo = Database::getConnection();
         $today = date('Y-m-d');
         $stmt = $pdo->prepare('
@@ -390,7 +411,7 @@ final class DeliveryService
         $stmt->bindValue(3, $today);
         $stmt->bindValue(4, $limit, PDO::PARAM_INT);
         $stmt->execute();
-        return self::mapForDisplay($stmt->fetchAll());
+        return self::mapForDisplay($stmt->fetchAll(), $codeSuffix !== '' ? $codeSuffix : null);
     }
 
     private static function findByClientId(string $clientId): ?array

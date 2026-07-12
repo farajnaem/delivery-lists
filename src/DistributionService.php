@@ -80,7 +80,8 @@ final class DistributionService
         $dayBuckets = $plan['daily_counts'];
         $dates = self::buildDates($campaign['delivery_start'], $numDays);
 
-        $codeNum = 1;
+        $usedPins = [];
+        $sortOrder = 1;
         $idx = 0;
         $summary = $plan;
         $summary['dates'] = $dates;
@@ -126,9 +127,10 @@ final class DistributionService
 
                 foreach ($windowRows as $i => $row) {
                     $slot = $slots[$i];
-                    $code = ParcelCodeHelper::buildDisbursementCode($codeSuffix, $codeNum);
+                    $pin = ParcelCodeHelper::generateRandomPin($usedPins);
+                    $code = ParcelCodeHelper::buildDisbursementCode($codeSuffix, $pin);
                     $mobile = PhoneHelper::normalize($row['mobile']);
-                    $message = self::buildMessage($campaign, $row['name'], $dates[$d], $slot, $codeNum, $w + 1);
+                    $message = MessageTemplates::appointment($campaign, $row['name'], $dates[$d], $code, $w + 1);
 
                     $upd->execute([
                         $mobile,
@@ -139,11 +141,11 @@ final class DistributionService
                         $slot['to'],
                         $message,
                         $d + 1,
-                        $codeNum,
+                        $sortOrder,
                         $genNow,
                         $row['id'],
                     ]);
-                    $codeNum++;
+                    $sortOrder++;
                 }
             }
         }
@@ -238,18 +240,4 @@ final class DistributionService
         return sprintf('%02d:%02d', $h, $m);
     }
 
-    private static function buildMessage(array $campaign, string $name, string $date, array $slot, int $serial, int $window): string
-    {
-        return sprintf(
-            'السيد / %s، يرجى التوجه إلى %s لاستلام %s وذلك يوم %s من الساعة %s إلى %s كود %s، شباك %d.',
-            $name,
-            $campaign['warehouse_name'],
-            $campaign['parcel_name'],
-            $date,
-            $slot['from'],
-            $slot['to'],
-            ParcelCodeHelper::displaySerial($serial),
-            $window
-        );
-    }
 }
