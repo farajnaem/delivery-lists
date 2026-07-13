@@ -1,2 +1,7 @@
 # Apache often strips Authorization before PHP — required for /api/mobile Bearer auth.
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+</IfModule>
 SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1

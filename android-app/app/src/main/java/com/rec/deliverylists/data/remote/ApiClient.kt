@@ -23,6 +23,7 @@ object ApiClient {
         val request = if (token.isNotEmpty()) {
             chain.request().newBuilder()
                 .header("Authorization", "Bearer $token")
+                .header("X-Mobile-Token", token)
                 .build()
         } else {
             chain.request()
@@ -48,4 +49,6 @@ object ApiClient {
     }
 
     fun bearer(token: String): String = "Bearer $token"
+
+    fun mobileToken(token: String): String = token.trim()
 }

@@ -94,7 +94,11 @@ final class MobileAuth
     public static function requireAuth(): void
     {
         if (!self::authenticateRequest()) {
-            json_response(['ok' => false, 'error' => 'غير مصرّح — سجّل الدخول'], 401);
+            json_response([
+                'ok' => false,
+                'error' => 'غير مصرّح — سجّل الدخول',
+                'error_code' => 'auth_required',
+            ], 401);
         }
     }
 
@@ -119,7 +123,7 @@ final class MobileAuth
     {
         $candidates = [];
 
-        foreach (['HTTP_AUTHORIZATION', 'REDIRECT_HTTP_AUTHORIZATION'] as $key) {
+        foreach (['HTTP_AUTHORIZATION', 'REDIRECT_HTTP_AUTHORIZATION', 'HTTP_X_MOBILE_TOKEN'] as $key) {
             if (!empty($_SERVER[$key])) {
                 $candidates[] = (string) $_SERVER[$key];
             }
@@ -128,7 +132,8 @@ final class MobileAuth
         if (function_exists('apache_request_headers')) {
             $headers = apache_request_headers();
             foreach ($headers as $name => $value) {
-                if (strcasecmp((string) $name, 'Authorization') === 0) {
+                $lower = strtolower((string) $name);
+                if ($lower === 'authorization' || $lower === 'x-mobile-token') {
                     $candidates[] = (string) $value;
                 }
             }
@@ -138,7 +143,8 @@ final class MobileAuth
             $headers = getallheaders();
             if (is_array($headers)) {
                 foreach ($headers as $name => $value) {
-                    if (strcasecmp((string) $name, 'Authorization') === 0) {
+                    $lower = strtolower((string) $name);
+                    if ($lower === 'authorization' || $lower === 'x-mobile-token') {
                         $candidates[] = (string) $value;
                     }
                 }
@@ -146,8 +152,15 @@ final class MobileAuth
         }
 
         foreach ($candidates as $header) {
-            if (preg_match('/^Bearer\s+(\S+)$/i', trim($header), $m)) {
+            $header = trim($header);
+            if ($header === '') {
+                continue;
+            }
+            if (preg_match('/^Bearer\s+(\S+)$/i', $header, $m)) {
                 return $m[1];
+            }
+            if (preg_match('/^[a-f0-9]{64}$/i', $header)) {
+                return $header;
             }
         }
 

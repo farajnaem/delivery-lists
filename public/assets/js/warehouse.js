@@ -32,6 +32,136 @@
         updatePendingUI();
     }
 
+    // ——— تخزين محلي للمستفيدين (IndexedDB) للبحث أوفلاين ———
+    var DB_NAME = 'wh_offline';
+    var STORE = 'beneficiaries';
+    var dbPromise = null;
+    var snapshotKey = 'wh_snap_token_' + campaignId;
+
+    function openDb() {
+        if (dbPromise) return dbPromise;
+        dbPromise = new Promise(function (resolve, reject) {
+            if (!('indexedDB' in window)) {
+                reject(new Error('no-indexeddb'));
+                return;
+            }
+            var req = indexedDB.open(DB_NAME, 1);
+            req.onupgradeneeded = function () {
+                var db = req.result;
+                if (!db.objectStoreNames.contains(STORE)) {
+                    db.createObjectStore(STORE, { keyPath: 'key' });
+                }
+            };
+            req.onsuccess = function () { resolve(req.result); };
+            req.onerror = function () { reject(req.error); };
+        });
+        return dbPromise;
+    }
+
+    function beneficiaryKey(id) {
+        return campaignId + '_' + id;
+    }
+
+    function storeBeneficiaries(list) {
+        return openDb().then(function (db) {
+            return new Promise(function (resolve, reject) {
+                var tx = db.transaction(STORE, 'readwrite');
+                var store = tx.objectStore(STORE);
+                list.forEach(function (b) {
+                    store.put({
+                        key: beneficiaryKey(b.id),
+                        campaignId: campaignId,
+                        id: b.id,
+                        name: b.name || '',
+                        national_id: String(b.national_id || ''),
+                        mobile: b.mobile || '',
+                        display_code: String(b.display_code || b.sort_order || b.disbursement_code || ''),
+                        disbursement_code: String(b.disbursement_code || ''),
+                        sort_order: b.sort_order || null,
+                        receipt_status: b.receipt_status || '',
+                        delivery_date: b.delivery_date || null,
+                        window_num: b.window_num || null,
+                        delivered_at: b.delivered_at || null
+                    });
+                });
+                tx.oncomplete = function () { resolve(true); };
+                tx.onerror = function () { reject(tx.error); };
+            });
+        }).catch(function () { return false; });
+    }
+
+    function updateLocalBeneficiary(id, changes) {
+        return openDb().then(function (db) {
+            return new Promise(function (resolve) {
+                var tx = db.transaction(STORE, 'readwrite');
+                var store = tx.objectStore(STORE);
+                var getReq = store.get(beneficiaryKey(id));
+                getReq.onsuccess = function () {
+                    var rec = getReq.result;
+                    if (rec) {
+                        Object.keys(changes).forEach(function (k) { rec[k] = changes[k]; });
+                        store.put(rec);
+                    }
+                };
+                tx.oncomplete = function () { resolve(true); };
+                tx.onerror = function () { resolve(false); };
+            });
+        }).catch(function () { return false; });
+    }
+
+    function normalizeCode(s) {
+        return String(s == null ? '' : s).replace(/\s+/g, '').toUpperCase();
+    }
+
+    function localSearch(rawQuery) {
+        var q = (rawQuery || '').trim();
+        if (!q) return Promise.resolve(null);
+        var norm = q.replace(/\s+/g, '');
+        var normUpper = norm.toUpperCase();
+
+        return openDb().then(function (db) {
+            return new Promise(function (resolve) {
+                var tx = db.transaction(STORE, 'readonly');
+                var store = tx.objectStore(STORE);
+                var req = store.openCursor();
+                var found = null;
+                req.onsuccess = function () {
+                    var cursor = req.result;
+                    if (!cursor || found) {
+                        resolve(found);
+                        return;
+                    }
+                    var b = cursor.value;
+                    if (b.campaignId === campaignId) {
+                        var nid = String(b.national_id || '').replace(/\s+/g, '');
+                        if (
+                            (nid && nid === norm) ||
+                            (b.display_code && normalizeCode(b.display_code) === normUpper) ||
+                            (b.disbursement_code && normalizeCode(b.disbursement_code) === normUpper)
+                        ) {
+                            found = b;
+                        }
+                    }
+                    cursor.continue();
+                };
+                req.onerror = function () { resolve(null); };
+            });
+        }).catch(function () { return null; });
+    }
+
+    function downloadSnapshot() {
+        if (!navigator.onLine) return Promise.resolve(false);
+        return api('/snapshot?campaign_id=' + campaignId)
+            .then(function (data) {
+                if (data && data.beneficiaries) {
+                    localStorage.setItem(snapshotKey, data.sync_token || '');
+                    return storeBeneficiaries(data.beneficiaries);
+                }
+                return false;
+            })
+            .catch(function () { return false; });
+    }
+
     function uuid() {
         if (crypto && crypto.randomUUID) return crypto.randomUUID();
         return 'wh-' + Date.now() + '-' + Math.random().toString(36).slice(2);
@@ -206,7 +336,14 @@
         }
 
         if (!navigator.onLine) {
-            showError('لا يوجد اتصال — ابحث عند عودة الإنترنت');
+            localSearch(q).then(function (b) {
+                if (!b) {
+                    showError('لم يُعثر على مستفيد (بحث دون اتصال)');
+                    return;
+                }
+                currentBeneficiary = b;
+                renderBeneficiary(b);
+            });
             return;
         }
 
@@ -220,8 +357,33 @@
                 renderBeneficiary(data.beneficiary);
             })
             .catch(function (e) {
-                showError(e.message);
+                var isNetwork = !navigator.onLine || /fetch|network|failed/i.test(e.message || '');
+                if (!isNetwork) {
+                    showError(e.message);
+                    return;
+                }
+                localSearch(q).then(function (b) {
+                    if (!b) {
+                        showError('تعذّر الاتصال ولا توجد بيانات محلية — افتح الصفحة مرة وأنت متصل لتحميلها');
+                        return;
+                    }
+                    currentBeneficiary = b;
+                    renderBeneficiary(b);
+                });
             });
+    }
+
+    function queueOffline(item, b) {
+        pending.push(item);
+        saveQueue();
+        b.receipt_status = 'مستلم';
+        updateLocalBeneficiary(b.id, { receipt_status: 'مستلم', delivered_at: item.queued_at });
+        renderBeneficiary(b);
+        showSuccess('تم الحفظ محلياً — ستُزامَن عند عودة الاتصال');
+        prependRecent(b, 'on_time');
+        if (elBalance) elBalance.textContent = Math.max(0, parseInt(elBalance.textContent, 10) - 1);
+        if (elDelivered) elDelivered.textContent = parseInt(elDelivered.textContent, 10) + 1;
+        elQuery && elQuery.focus();
     }
 
     function confirmDelivery(b) {
@@ -235,15 +397,7 @@
         };
 
         if (!navigator.onLine) {
-            pending.push(item);
-            saveQueue();
-            b.receipt_status = 'مستلم';
-            renderBeneficiary(b);
-            showSuccess('تم الحفظ محلياً — ستُزامَن عند عودة الاتصال');
-            prependRecent(b, 'on_time');
-            if (elBalance) elBalance.textContent = Math.max(0, parseInt(elBalance.textContent, 10) - 1);
-            if (elDelivered) elDelivered.textContent = parseInt(elDelivered.textContent, 10) + 1;
-            elQuery && elQuery.focus();
+            queueOffline(item, b);
             return;
         }
 
@@ -259,10 +413,8 @@
             elQuery && (elQuery.value = '', elQuery.focus());
             elResult && elResult.classList.add('hidden');
         }).catch(function (e) {
-            if (!navigator.onLine || e.message.indexOf('fetch') !== -1) {
-                pending.push(item);
-                saveQueue();
-                showSuccess('تم الحفظ محلياً — ستُزامَن عند عودة الاتصال');
+            if (!navigator.onLine || /fetch|network|failed/i.test(e.message || '')) {
+                queueOffline(item, b);
             } else {
                 showError(e.message);
             }
@@ -306,13 +458,15 @@
 
     window.addEventListener('online', function () {
         setOnline(true);
-        syncQueue();
+        syncQueue().then(downloadSnapshot);
     });
     window.addEventListener('offline', function () { setOnline(false); });
 
     setOnline(navigator.onLine);
     updatePendingUI();
-    if (navigator.onLine) syncQueue();
+    if (navigator.onLine) {
+        syncQueue().then(downloadSnapshot);
+    }
 
     setInterval(function () {
         if (navigator.onLine) refreshCsrf().catch(function () {});

@@ -54,8 +54,8 @@ class DeliveryRepository(
     }
 
     suspend fun refreshCampaignList(): Result<Unit> = apiCall {
-        val token = requireToken()
-        val res = api.campaigns(ApiClient.bearer(token))
+        requireToken()
+        val res = api.campaigns()
         if (!res.ok) throw IllegalStateException(res.error ?: "فشل جلب العمليات")
         val hint = res.hint
         if (hint != null && res.campaigns.isEmpty()) {
@@ -69,8 +69,8 @@ class DeliveryRepository(
     }
 
     suspend fun downloadSnapshot(campaignId: Int): Result<Unit> = apiCall {
-        val token = requireToken()
-        val snap = api.snapshot(ApiClient.bearer(token), campaignId)
+        requireToken()
+        val snap = api.snapshot(campaignId)
         if (!snap.ok) throw IllegalStateException(snap.error ?: "فشل التحميل")
 
         beneficiaryDao.deleteForCampaign(campaignId)
@@ -87,7 +87,7 @@ class DeliveryRepository(
     }
 
     suspend fun syncCampaign(campaignId: Int): Result<String?> = apiCall {
-        val token = requireToken()
+        requireToken()
         val campaign = campaignDao.get(campaignId) ?: throw IllegalStateException("العملية غير محمّلة")
         val pendingEntities = pendingDao.pendingForCampaign(campaignId)
         val pending = pendingEntities.map {
@@ -95,7 +95,6 @@ class DeliveryRepository(
         }
 
         val res = api.sync(
-            ApiClient.bearer(token),
             SyncRequest(
                 campaign_id = campaignId,
                 last_sync_token = campaign.lastSyncToken,
@@ -202,11 +201,20 @@ class DeliveryRepository(
     private suspend fun <T> apiCall(block: suspend () -> T): Result<T> = runCatching {
         block()
     }.recoverCatching { error ->
-        if (error is HttpException && error.code() == 401) {
+        if (error is HttpException && error.code() == 401 && shouldClearSession(error)) {
             session.clear()
             throw IllegalStateException("انتهت الجلسة — سجّل الدخول مجدداً")
         }
         throw IllegalStateException(readApiError(error))
+    }
+
+    private fun shouldClearSession(error: HttpException): Boolean {
+        val body = error.response()?.errorBody()?.string() ?: return true
+        return runCatching {
+            val json = Gson().fromJson(body, JsonObject::class.java)
+            val code = json.get("error_code")?.asString
+            code == null || code == "auth_required"
+        }.getOrDefault(true)
     }
 
     private fun readApiError(error: Throwable): String {

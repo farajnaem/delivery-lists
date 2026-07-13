@@ -217,6 +217,16 @@ if (str_starts_with($uri, '/api/warehouse')) {
         ]);
     }
 
+    if ($uri === '/api/warehouse/snapshot' && $method === 'GET') {
+        $campaignId = (int) ($_GET['campaign_id'] ?? 0);
+        try {
+            $snapshot = MobileSyncService::snapshot($campaignId);
+            json_response(['ok' => true] + $snapshot);
+        } catch (\Throwable $e) {
+            json_response(['ok' => false, 'error' => $e->getMessage()], 400);
+        }
+    }
+
     json_response(['ok' => false, 'error' => 'غير موجود'], 404);
 }
 
