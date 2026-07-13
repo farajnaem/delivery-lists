@@ -164,6 +164,11 @@ final class MobileAuth
             }
         }
 
+        $queryToken = trim((string) ($_GET['mobile_token'] ?? ''));
+        if ($queryToken !== '' && preg_match('/^[a-f0-9]{64}$/i', $queryToken)) {
+            return $queryToken;
+        }
+
         return null;
     }
 }

@@ -21,7 +21,11 @@ object ApiClient {
     private val authInterceptor = Interceptor { chain ->
         val token = SessionStore.cachedToken?.trim().orEmpty()
         val request = if (token.isNotEmpty()) {
+            val url = chain.request().url.newBuilder()
+                .addQueryParameter("mobile_token", token)
+                .build()
             chain.request().newBuilder()
+                .url(url)
                 .header("Authorization", "Bearer $token")
                 .header("X-Mobile-Token", token)
                 .build()
