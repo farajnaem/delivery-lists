@@ -89,7 +89,12 @@ if ($uri === '/logout') {
 // ——— API: تطبيق الموبايل (Bearer token — بدون جلسة ويب) ———
 if (str_starts_with($uri, '/api/mobile')) {
     if ($uri === '/api/mobile/health' && $method === 'GET') {
-        json_response(['ok' => true, 'service' => 'delivery-lists-mobile', 'time' => db_now()]);
+        json_response([
+            'ok' => true,
+            'service' => 'delivery-lists-mobile',
+            'time' => db_now(),
+            'app_key_configured' => trim((string) env('APP_KEY', '')) !== '',
+        ]);
     }
 
     if ($uri === '/api/mobile/login' && $method === 'POST') {

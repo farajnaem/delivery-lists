@@ -208,13 +208,17 @@ class DeliveryRepository(
         throw IllegalStateException(readApiError(error))
     }
 
+    /**
+     * نمسح الجلسة فقط عند تأكيد السيرفر أن التوكن مرفوض (auth_required).
+     * أي 401 فارغ/غامض (بروكسي) لا يمسح الجلسة حتى لا يُطرد المستخدم ظلماً.
+     */
     private fun shouldClearSession(error: HttpException): Boolean {
-        val body = error.response()?.errorBody()?.string() ?: return true
+        val body = error.response()?.errorBody()?.string().orEmpty()
+        if (body.isBlank()) return false
         return runCatching {
             val json = Gson().fromJson(body, JsonObject::class.java)
-            val code = json.get("error_code")?.asString
-            code == null || code == "auth_required"
-        }.getOrDefault(true)
+            json.get("error_code")?.asString == "auth_required"
+        }.getOrDefault(false)
     }
 
     private fun readApiError(error: Throwable): String {

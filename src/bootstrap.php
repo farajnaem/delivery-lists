@@ -6,8 +6,9 @@ require dirname(__DIR__) . '/vendor/autoload.php';
 
 function env(string $key, mixed $default = null): mixed
 {
-    static $loaded = false;
-    if (!$loaded) {
+    static $fileEnv = null;
+    if ($fileEnv === null) {
+        $fileEnv = [];
         $envFile = dirname(__DIR__) . '/.env';
         if (is_file($envFile)) {
             foreach (file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
@@ -16,13 +17,26 @@ function env(string $key, mixed $default = null): mixed
                     continue;
                 }
                 [$k, $v] = explode('=', $line, 2);
-                $_ENV[trim($k)] = trim($v, " \t\"'");
+                $fileEnv[trim($k)] = trim($v, " \t\"'");
             }
         }
-        $loaded = true;
     }
 
-    return $_ENV[$key] ?? getenv($key) ?: $default;
+    // Coolify/Docker: المتغيرات الحقيقية في البيئة تتقدم على ملف .env الفارغ
+    $fromProcess = getenv($key);
+    if ($fromProcess !== false && $fromProcess !== '') {
+        return $fromProcess;
+    }
+
+    if (array_key_exists($key, $fileEnv) && $fileEnv[$key] !== '') {
+        return $fileEnv[$key];
+    }
+
+    if ($fromProcess !== false) {
+        return $fromProcess;
+    }
+
+    return $fileEnv[$key] ?? $default;
 }
 
 function config(string $key, mixed $default = null): mixed

@@ -18,19 +18,28 @@ object ApiClient {
         }
     }
 
+    /**
+     * لا نرسل Authorization: Bearer — بعض بروكسيات Coolify/Traefik تعترضه.
+     * نعتمد X-Mobile-Token + mobile_token في الرابط.
+     */
     private val authInterceptor = Interceptor { chain ->
         val token = SessionStore.cachedToken?.trim().orEmpty()
         val request = if (token.isNotEmpty()) {
             val url = chain.request().url.newBuilder()
+                .removeAllQueryParameters("mobile_token")
+                .removeAllQueryParameters("mt")
                 .addQueryParameter("mobile_token", token)
                 .build()
             chain.request().newBuilder()
                 .url(url)
-                .header("Authorization", "Bearer $token")
                 .header("X-Mobile-Token", token)
+                .header("X-Delivery-Token", token)
+                .removeHeader("Authorization")
                 .build()
         } else {
-            chain.request()
+            chain.request().newBuilder()
+                .removeHeader("Authorization")
+                .build()
         }
         chain.proceed(request)
     }
@@ -51,8 +60,4 @@ object ApiClient {
             .build()
             .create(DeliveryApi::class.java)
     }
-
-    fun bearer(token: String): String = "Bearer $token"
-
-    fun mobileToken(token: String): String = token.trim()
 }

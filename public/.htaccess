@@ -6,3 +6,4 @@
 </IfModule>
 SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1
 SetEnvIf X-Mobile-Token "(.*)" HTTP_X_MOBILE_TOKEN=$1
+SetEnvIf X-Delivery-Token "(.*)" HTTP_X_DELIVERY_TOKEN=$1
