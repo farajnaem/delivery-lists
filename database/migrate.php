@@ -9,7 +9,18 @@ use App\Database;
 $pdo = Database::getConnection();
 $isMysql = config('db_driver') === 'mysql';
 
-$migrations = [
+// على MySQL: VARCHAR/INT/DATETIME (TEXT + DEFAULT '' يفشل على إصدارات عديدة فيُتخطّى العمود خطأً)
+$migrations = $isMysql ? [
+    'parcel_code_suffix' => "ALTER TABLE campaigns ADD COLUMN parcel_code_suffix VARCHAR(50) NOT NULL DEFAULT ''",
+    'opening_quantity' => "ALTER TABLE campaigns ADD COLUMN opening_quantity INT NOT NULL DEFAULT 0",
+    'delivery_closed_at' => 'ALTER TABLE campaigns ADD COLUMN delivery_closed_at DATETIME NULL',
+    'pipeline_name' => "ALTER TABLE campaigns ADD COLUMN pipeline_name VARCHAR(255) NOT NULL DEFAULT ''",
+    'beneficiaries_updated_at' => 'ALTER TABLE beneficiaries ADD COLUMN updated_at DATETIME NULL',
+    'delivered_at' => 'ALTER TABLE beneficiaries ADD COLUMN delivered_at DATETIME NULL',
+    'delivered_by' => 'ALTER TABLE beneficiaries ADD COLUMN delivered_by INT NULL',
+    'delivery_type' => 'ALTER TABLE beneficiaries ADD COLUMN delivery_type VARCHAR(30) NULL',
+    'actual_delivery_date' => 'ALTER TABLE beneficiaries ADD COLUMN actual_delivery_date VARCHAR(20) NULL',
+] : [
     'parcel_code_suffix' => "ALTER TABLE campaigns ADD COLUMN parcel_code_suffix TEXT NOT NULL DEFAULT ''",
     'opening_quantity' => "ALTER TABLE campaigns ADD COLUMN opening_quantity INTEGER NOT NULL DEFAULT 0",
     'delivery_closed_at' => 'ALTER TABLE campaigns ADD COLUMN delivery_closed_at TEXT',
@@ -25,8 +36,12 @@ foreach ($migrations as $name => $sql) {
     try {
         $pdo->exec($sql);
         echo "OK: {$name}\n";
-    } catch (Throwable) {
-        echo "SKIP: {$name} (exists)\n";
+    } catch (Throwable $e) {
+        $msg = $e->getMessage();
+        $already = str_contains($msg, 'Duplicate column')
+            || str_contains($msg, 'duplicate column')
+            || str_contains($msg, 'exists');
+        echo ($already ? "SKIP: {$name} (exists)\n" : "WARN: {$name} — {$msg}\n");
     }
 }
 
