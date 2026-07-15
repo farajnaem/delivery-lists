@@ -131,13 +131,16 @@ function parse_campaign_post(array $post): array
         'parcel_code' => \App\ParcelCodeHelper::normalizePrefix($post['parcel_code'] ?? \App\ParcelCodeHelper::DEFAULT_PREFIX),
         'parcel_code_suffix' => \App\ParcelCodeHelper::normalizeSuffix($post['parcel_code_suffix'] ?? ''),
         'delivery_start' => $post['delivery_start'] ?? '',
-        'delivery_end' => $post['delivery_end'] ?? '',
+        'delivery_end' => trim((string) ($post['delivery_end'] ?? '')) !== ''
+            ? (string) $post['delivery_end']
+            : (string) ($post['delivery_start'] ?? ''),
         'warehouse_name' => trim($post['warehouse_name'] ?? ''),
         'warehouse_location' => trim($post['warehouse_location'] ?? ''),
-        'num_days' => (int) ($post['num_days'] ?? 1),
+        'num_days' => max(1, (int) ($post['num_days'] ?? 1)),
+        'num_windows' => max(1, (int) ($post['num_windows'] ?? 4)),
         'work_start' => $post['work_start'] ?? '09:00',
         'work_end' => $post['work_end'] ?? '15:00',
-        'per_window_capacity' => max(1, (int) ($post['per_window_capacity'] ?? 500)),
+        'per_window_capacity' => max(1, (int) ($post['per_window_capacity'] ?? 400)),
         'opening_quantity' => max(0, (int) ($post['opening_quantity'] ?? 0)),
     ];
 }
@@ -161,8 +164,11 @@ function validate_campaign_data(array $data): ?string
     if (!\App\ParcelCodeHelper::validatePrefix($data['parcel_code'])) {
         return 'أدخل كود الطرد (حرف أو مجموعة حروف مثل SOCI أو REC).';
     }
-    if ($data['delivery_start'] === '' || $data['delivery_end'] === '') {
-        return 'حدد تواريخ التسليم.';
+    if ($data['delivery_start'] === '') {
+        return 'حدد تاريخ بدء التسليم.';
+    }
+    if (($data['num_windows'] ?? 0) < 1) {
+        return 'أدخل عدد الشبابيك (1 فأكثر).';
     }
     if ($data['warehouse_name'] === '' || $data['warehouse_location'] === '') {
         return 'أكمل بيانات المخزن.';

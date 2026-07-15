@@ -5,6 +5,7 @@ $isEdit = ($prefix ?? '') === 'edit';
 $c = $campaign ?? [];
 $parcelCode = old('parcel_code', $c['parcel_code'] ?? 'SOCI');
 $suffix = old('parcel_code_suffix', $c['parcel_code_suffix'] ?? '');
+$defaultWindows = ((int) ($c['num_windows'] ?? 0) > 0) ? (string) (int) $c['num_windows'] : '4';
 ?>
 <h2 style="margin-top:<?= $isEdit ? '0' : '1.5rem' ?>">بيانات العملية</h2>
 <div class="grid-2">
@@ -28,17 +29,25 @@ $suffix = old('parcel_code_suffix', $c['parcel_code_suffix'] ?? '');
         <input type="hidden" name="parcel_code_suffix" value="<?= e($suffix) ?>">
     </div>
     <div class="form-group">
-        <label>عدد أيام التسليم *</label>
-        <input type="number" name="num_days" class="form-control" min="1" required value="<?= e(old('num_days', $c['num_days'] ?? '5')) ?>">
+        <label>عدد الشبابيك *</label>
+        <input type="number" name="num_windows" class="form-control" min="1" required value="<?= e(old('num_windows', $defaultWindows)) ?>">
+        <small class="text-muted">ثابت لكل يوم عمل. الطاقة اليومية = الشبابيك × مستفيد/شباك.</small>
+    </div>
+    <div class="form-group">
+        <label>مستفيدون لكل شباك *</label>
+        <input type="number" name="per_window_capacity" class="form-control" min="1" required value="<?= e(old('per_window_capacity', $c['per_window_capacity'] ?? '400')) ?>">
     </div>
     <div class="form-group">
         <label>تاريخ بدء التسليم *</label>
         <input type="date" name="delivery_start" class="form-control" required value="<?= e(old('delivery_start', $c['delivery_start'] ?? '')) ?>">
+        <small class="text-muted">أيام العمل تُحسب بعد رفع Excel. <strong>الجمعة لا تُحسب</strong> يوم عمل، ويُحدَّث تاريخ النهاية تلقائياً عند التوليد.</small>
     </div>
     <div class="form-group">
-        <label>تاريخ انتهاء التسليم *</label>
-        <input type="date" name="delivery_end" class="form-control" required value="<?= e(old('delivery_end', $c['delivery_end'] ?? '')) ?>">
+        <label>تاريخ انتهاء التسليم (تقديري)</label>
+        <input type="date" name="delivery_end" class="form-control" value="<?= e(old('delivery_end', $c['delivery_end'] ?? '')) ?>">
+        <small class="text-muted">اختياري — يُستبدل بآخر يوم عمل فعلي بعد التوليد (مع تخطّي الجمعة).</small>
     </div>
+    <input type="hidden" name="num_days" value="<?= e(old('num_days', $c['num_days'] ?? '1')) ?>">
     <div class="form-group">
         <label>اسم المخزن *</label>
         <input type="text" name="warehouse_name" class="form-control" required value="<?= e(old('warehouse_name', $c['warehouse_name'] ?? '')) ?>">
@@ -46,10 +55,6 @@ $suffix = old('parcel_code_suffix', $c['parcel_code_suffix'] ?? '');
     <div class="form-group">
         <label>موقع المخزن *</label>
         <input type="text" name="warehouse_location" class="form-control" required placeholder="عنوان أو رابط خرائط" value="<?= e(old('warehouse_location', $c['warehouse_location'] ?? '')) ?>">
-    </div>
-    <div class="form-group">
-        <label>مستفيدون لكل شباك *</label>
-        <input type="number" name="per_window_capacity" class="form-control" min="1" required value="<?= e(old('per_window_capacity', $c['per_window_capacity'] ?? '500')) ?>">
     </div>
     <div class="form-group">
         <label>بداية الدوام</label>

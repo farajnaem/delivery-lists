@@ -463,8 +463,8 @@ final class ExcelExportService
         $meta = [
             ['اسم الطرد', $campaign['parcel_name'], 'كود الطرد', $parcelLabel, '', ''],
             ['عدد المستفيدين', count($all), 'اسم المخزن', $campaign['warehouse_name'], 'من', $campaign['delivery_start']],
-            ['إلى', $campaign['delivery_end'], 'أيام التسليم', (int) $campaign['num_days'], 'مستفيد/شباك', (int) $campaign['per_window_capacity']],
-            ['موقع المخزن', $campaign['warehouse_location'], '', '', '', ''],
+            ['إلى', $campaign['delivery_end'], 'أيام العمل', (int) $campaign['num_days'], 'شبابيك/يوم', (int) ($campaign['num_windows'] ?? 0)],
+            ['موقع المخزن', $campaign['warehouse_location'], 'مستفيد/شباك', (int) $campaign['per_window_capacity'], '', ''],
         ];
         $r = 2;
         foreach ($meta as $line) {
@@ -539,11 +539,12 @@ final class ExcelExportService
             $byDayWindow[$d][$w][] = $b;
         }
 
-        $numDays = max(1, (int) $campaign['num_days']);
-        $perWindow = max(1, (int) $campaign['per_window_capacity']);
         $codePrefix = (string) ($campaign['parcel_code'] ?? '');
         $codeSuffix = (string) ($campaign['parcel_code_suffix'] ?? '');
-        $daysToBuild = $onlyDay !== null ? [$onlyDay] : range(1, $numDays);
+        $daysToBuild = $onlyDay !== null
+            ? [$onlyDay]
+            : array_keys($byDayWindow);
+        sort($daysToBuild, SORT_NUMERIC);
 
         foreach ($daysToBuild as $d) {
             $dayItems = $byDayWindow[$d] ?? [];
@@ -553,13 +554,6 @@ final class ExcelExportService
 
             $windows = array_keys($dayItems);
             sort($windows, SORT_NUMERIC);
-
-            if ($onlyDay === null) {
-                $dailyCounts = DistributionService::splitCount(count($all), $numDays);
-                $dayCount = $dailyCounts[$d - 1] ?? 0;
-                $numWindows = max(count($windows), DistributionService::windowsForDay($dayCount, $perWindow));
-                $windows = range(1, $numWindows);
-            }
 
             foreach ($windows as $w) {
                 $items = $dayItems[$w] ?? [];

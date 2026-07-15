@@ -564,11 +564,23 @@ if ($uri === '/campaigns/view' && $method === 'GET') {
     $preview = CampaignService::beneficiaries($id);
     $plan = null;
     if (($stats['total'] ?? 0) > 0) {
+        $perWindow = max(1, (int) $campaign['per_window_capacity']);
+        $numWindows = \App\DistributionService::resolveNumWindows(
+            $campaign,
+            (int) $stats['total'],
+            $perWindow
+        );
         $plan = DistributionService::plan(
             (int) $stats['total'],
-            (int) $campaign['num_days'],
-            max(1, (int) $campaign['per_window_capacity'])
+            $numWindows,
+            $perWindow
         );
+        if (!empty($campaign['delivery_start'])) {
+            $plan['dates'] = DistributionService::buildWorkDates(
+                (string) $campaign['delivery_start'],
+                (int) $plan['num_days']
+            );
+        }
     }
     view('campaigns/view', [
         'title' => $campaign['name'],
@@ -623,10 +635,11 @@ if ($uri === '/campaigns/generate' && $method === 'POST') {
     }
     try {
         $summary = DistributionService::generate($id);
-        $daily = $summary['daily_counts'][0] ?? 0;
-        $windows = $summary['days'][0]['windows'] ?? 0;
+        $daily = $summary['daily_capacity'] ?? ($summary['daily_counts'][0] ?? 0);
+        $windows = $summary['num_windows'] ?? ($summary['days'][0]['windows'] ?? 0);
         $sheets = $summary['total_delivery_sheets'] ?? 0;
-        flash('success', "تم التوليد: {$summary['total']} مستفيد → {$daily} / يوم → {$windows} شبابيك → {$sheets} كشف تسليم.");
+        $days = $summary['num_days'] ?? 0;
+        flash('success', "تم التوليد: {$summary['total']} مستفيد → طاقة يومية {$daily} ({$windows} شبابيك) → {$days} أيام عمل (بدون جمعة) → {$sheets} كشف.");
     } catch (Throwable $e) {
         flash('error', $e->getMessage());
     }

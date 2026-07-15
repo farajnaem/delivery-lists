@@ -56,7 +56,7 @@ final class CampaignService
             $data['work_start'],
             $data['work_end'],
             (int) $data['per_window_capacity'],
-            0,
+            max(1, (int) ($data['num_windows'] ?? 4)),
             max(0, (int) ($data['opening_quantity'] ?? 0)),
             'draft',
             $userId,
@@ -74,7 +74,7 @@ final class CampaignService
                 name = ?, pipeline_name = ?, parcel_name = ?, parcel_code = ?, parcel_code_suffix = ?,
                 delivery_start = ?, delivery_end = ?,
                 warehouse_name = ?, warehouse_location = ?, num_days = ?,
-                work_start = ?, work_end = ?, per_window_capacity = ?, opening_quantity = ?
+                work_start = ?, work_end = ?, per_window_capacity = ?, num_windows = ?, opening_quantity = ?
             WHERE id = ?
         ');
         $stmt->execute([
@@ -91,9 +91,18 @@ final class CampaignService
             $data['work_start'],
             $data['work_end'],
             (int) $data['per_window_capacity'],
+            max(1, (int) ($data['num_windows'] ?? 4)),
             max(0, (int) ($data['opening_quantity'] ?? 0)),
             $id,
         ]);
+    }
+
+    /** يحدّث أيام التسليم وتاريخ النهاية بعد التوليد (أيام عمل فعلية). */
+    public static function updateSchedule(int $id, int $numDays, string $deliveryEnd): void
+    {
+        $pdo = Database::getConnection();
+        $stmt = $pdo->prepare('UPDATE campaigns SET num_days = ?, delivery_end = ? WHERE id = ?');
+        $stmt->execute([max(1, $numDays), $deliveryEnd, $id]);
     }
 
     public static function markGenerated(int $id): void

@@ -4,7 +4,10 @@ use App\ParcelCodeHelper;
 $isGenerated = ($campaign['status'] ?? '') === 'generated';
 $parcelLabel = CampaignService::parcelLabel($campaign);
 $dayStats = $stats['days'] ?? [];
-$perWindow = max(1, (int) ($campaign['per_window_capacity'] ?? 500));
+$perWindow = max(1, (int) ($campaign['per_window_capacity'] ?? 400));
+$planSafe = is_array($plan ?? null) ? $plan : [];
+$numWindows = max(1, (int) ($planSafe['num_windows'] ?? $campaign['num_windows'] ?? 4));
+$dailyCapacity = (int) ($planSafe['daily_capacity'] ?? ($numWindows * $perWindow));
 
 $viewActions = [];
 if ($isGenerated && !empty($canViewStock)) {
@@ -38,12 +41,20 @@ context_nav([
         <div class="label">إجمالي المستفيدين</div>
     </div>
     <div class="stat-box">
-        <div class="value"><?= (int) $campaign['num_days'] ?></div>
-        <div class="label">أيام التسليم</div>
+        <div class="value"><?= (int) ($planSafe['num_days'] ?? $campaign['num_days']) ?></div>
+        <div class="label">أيام العمل</div>
+    </div>
+    <div class="stat-box">
+        <div class="value"><?= $numWindows ?></div>
+        <div class="label">شبابيك / يوم</div>
     </div>
     <div class="stat-box">
         <div class="value"><?= $perWindow ?></div>
         <div class="label">مستفيد / شباك</div>
+    </div>
+    <div class="stat-box">
+        <div class="value"><?= $dailyCapacity ?></div>
+        <div class="label">طاقة يومية</div>
     </div>
     <?php if (!empty($plan)): ?>
     <div class="stat-box">
@@ -67,21 +78,28 @@ context_nav([
 <div class="card">
     <h2>خطة التوزيع (قبل/بعد التوليد)</h2>
     <p class="text-muted">
-        <?= (int) $plan['total'] ?> ÷ <?= (int) $plan['num_days'] ?> أيام
-        = <strong><?= (int) ($plan['daily_counts'][0] ?? 0) ?> مستفيد / يوم</strong>
-        → ÷ <?= $perWindow ?> / شباك
-        = <strong><?= (int) ($plan['days'][0]['windows'] ?? 0) ?> شبابيك / يوم</strong>
+        <?= (int) $plan['total'] ?> مستفيد
+        ÷ طاقة يومية <strong><?= (int) ($plan['daily_capacity'] ?? $dailyCapacity) ?></strong>
+        (<?= $numWindows ?> شبابيك × <?= $perWindow ?> / شباك)
+        = <strong><?= (int) $plan['num_days'] ?> أيام عمل</strong>
         → <strong><?= (int) $plan['total_delivery_sheets'] ?> كشف</strong>
-        (<?= (int) $plan['num_days'] ?> أيام × <?= (int) ($plan['days'][0]['windows'] ?? 0) ?> شبابيك)
+        — <em>الجمعة مستثناة من أيام العمل</em>
     </p>
+    <?php if (!empty($plan['dates'])): ?>
+    <p class="text-muted">تواريخ العمل المتوقعة:
+        <?= e(implode('، ', $plan['dates'])) ?>
+        (إلى <?= e($plan['dates'][array_key_last($plan['dates'])]) ?>)
+    </p>
+    <?php endif; ?>
     <table class="table">
         <thead>
-            <tr><th>اليوم</th><th>المستفيدون</th><th>الشبابيك</th><th>لكل شباك</th></tr>
+            <tr><th>اليوم</th><th>التاريخ</th><th>المستفيدون</th><th>الشبابيك</th><th>لكل شباك</th></tr>
         </thead>
         <tbody>
-        <?php foreach ($plan['days'] as $day): ?>
+        <?php foreach ($plan['days'] as $i => $day): ?>
         <tr>
             <td><?= (int) $day['day_index'] ?></td>
+            <td><?= e((string) ($day['date'] ?? $plan['dates'][$i] ?? '')) ?></td>
             <td><?= (int) $day['beneficiaries'] ?></td>
             <td><?= (int) $day['windows'] ?></td>
             <td><?= e(implode('، ', array_map('strval', $day['per_window']))) ?></td>

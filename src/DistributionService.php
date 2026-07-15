@@ -7,35 +7,41 @@ namespace App;
 final class DistributionService
 {
     /**
-     * خطة التوزيع: إجمالي → أيام → شبابيك (حسب سعة الشباك) → مستفيدين/شباك.
+     * خطة التوزيع: إجمالي → أيام (من طاقة الشبابيك) → شبابيك ثابتة → مستفيدين/شباك.
      *
-     * مثال: 10000 ÷ 5 أيام = 2000/يوم → 2000 ÷ 500 = 4 شبابيك → 500/شباك → 20 كشف.
+     * مثال: 8000، 4 شبابيك، 400/شباك → يومي 1600 → 5 أيام عمل → 20 كشف.
      *
      * @return array{
      *   total:int,
      *   num_days:int,
+     *   num_windows:int,
      *   per_window:int,
+     *   daily_capacity:int,
      *   daily_counts:list<int>,
      *   total_delivery_sheets:int,
      *   days:list<array{day_index:int,beneficiaries:int,windows:int,per_window:list<int>}>
      * }
      */
-    public static function plan(int $total, int $numDays, int $perWindow): array
+    public static function plan(int $total, int $numWindows, int $perWindow): array
     {
-        $numDays = max(1, $numDays);
+        $numWindows = max(1, $numWindows);
         $perWindow = max(1, $perWindow);
+        $dailyCapacity = $numWindows * $perWindow;
+        $numDays = $total > 0 ? max(1, (int) ceil($total / $dailyCapacity)) : 1;
         $dailyCounts = self::splitCount($total, $numDays);
         $days = [];
         $totalSheets = 0;
 
         foreach ($dailyCounts as $i => $dayCount) {
-            $numWindows = self::windowsForDay($dayCount, $perWindow);
-            $windowSizes = self::splitCount($dayCount, $numWindows);
-            $totalSheets += $numWindows;
+            $windowsThisDay = $dayCount > 0 ? $numWindows : 0;
+            $windowSizes = $windowsThisDay > 0
+                ? self::splitCount($dayCount, $windowsThisDay)
+                : [];
+            $totalSheets += $windowsThisDay;
             $days[] = [
                 'day_index' => $i + 1,
                 'beneficiaries' => $dayCount,
-                'windows' => $numWindows,
+                'windows' => $windowsThisDay,
                 'per_window' => $windowSizes,
             ];
         }
@@ -43,7 +49,9 @@ final class DistributionService
         return [
             'total' => $total,
             'num_days' => $numDays,
+            'num_windows' => $numWindows,
             'per_window' => $perWindow,
+            'daily_capacity' => $dailyCapacity,
             'daily_counts' => $dailyCounts,
             'total_delivery_sheets' => $totalSheets,
             'days' => $days,
@@ -75,11 +83,12 @@ final class DistributionService
             throw new \RuntimeException('لا يوجد مستفيدون — ارفع ملف Excel أولاً.');
         }
 
-        $numDays = max(1, (int) $campaign['num_days']);
         $perWindow = max(1, (int) $campaign['per_window_capacity']);
-        $plan = self::plan(count($rows), $numDays, $perWindow);
+        $numWindows = self::resolveNumWindows($campaign, count($rows), $perWindow);
+        $plan = self::plan(count($rows), $numWindows, $perWindow);
         $dayBuckets = $plan['daily_counts'];
-        $dates = self::buildDates($campaign['delivery_start'], $numDays);
+        $numDays = $plan['num_days'];
+        $dates = self::buildWorkDates((string) $campaign['delivery_start'], $numDays);
 
         $usedPins = [];
         $sortOrder = 1;
@@ -104,14 +113,16 @@ final class DistributionService
             $dayRows = array_slice($rows, $idx, $dayCount);
             $idx += $dayCount;
 
-            $numWindows = self::windowsForDay($dayCount, $perWindow);
-            $windowBuckets = self::splitCount($dayCount, $numWindows);
+            $windowsThisDay = (int) ($plan['days'][$d]['windows'] ?? 0);
+            $windowBuckets = $windowsThisDay > 0
+                ? self::splitCount($dayCount, $windowsThisDay)
+                : [];
             $summary['days'][$d]['date'] = $dates[$d];
             $summary['days'][$d]['window_sizes'] = $windowBuckets;
 
             $rowOffset = 0;
 
-            for ($w = 0; $w < $numWindows; $w++) {
+            for ($w = 0; $w < $windowsThisDay; $w++) {
                 $windowCount = $windowBuckets[$w];
                 $windowRows = array_slice($dayRows, $rowOffset, $windowCount);
                 $rowOffset += $windowCount;
@@ -162,11 +173,30 @@ final class DistributionService
             throw $e;
         }
 
+        $deliveryEnd = $dates !== [] ? $dates[array_key_last($dates)] : (string) $campaign['delivery_start'];
+        CampaignService::updateSchedule($campaignId, $numDays, $deliveryEnd);
         CampaignService::markGenerated($campaignId);
         if ((int) ($campaign['opening_quantity'] ?? 0) <= 0) {
             CampaignService::updateOpeningQuantity($campaignId, count($rows));
         }
         return $summary;
+    }
+
+    /**
+     * للعمليات القديمة بدون num_windows: يستنتج من الأيام والسعة السابقة.
+     *
+     * @param array<string,mixed> $campaign
+     */
+    public static function resolveNumWindows(array $campaign, int $total, int $perWindow): int
+    {
+        $numWindows = (int) ($campaign['num_windows'] ?? 0);
+        if ($numWindows >= 1) {
+            return $numWindows;
+        }
+
+        $legacyDays = max(1, (int) ($campaign['num_days'] ?? 1));
+        $approxDaily = $total > 0 ? (int) ceil($total / $legacyDays) : $perWindow;
+        return self::windowsForDay($approxDaily, $perWindow);
     }
 
     /**
@@ -191,7 +221,7 @@ final class DistributionService
         }
     }
 
-    /** عدد الشبابيك ليوم واحد = ceil(مستفيدي_اليوم ÷ سعة_الشباك). */
+    /** عدد الشبابيك ليوم واحد = ceil(مستفيدي_اليوم ÷ سعة_الشباك) — للتوافق مع العمليات القديمة. */
     public static function windowsForDay(int $dayCount, int $perWindow): int
     {
         if ($dayCount <= 0) {
@@ -218,13 +248,23 @@ final class DistributionService
         return $result;
     }
 
-    /** @return list<string> */
-    private static function buildDates(string $start, int $days): array
+    /**
+     * أيام عمل متتالية من تاريخ البداية مع تخطّي الجمعة.
+     *
+     * @return list<string>
+     */
+    public static function buildWorkDates(string $start, int $workDays): array
     {
         $dates = [];
         $ts = strtotime($start) ?: time();
-        for ($i = 0; $i < $days; $i++) {
-            $dates[] = date('Y-m-d', strtotime("+{$i} day", $ts));
+        $guard = 0;
+        while (count($dates) < $workDays && $guard < 500) {
+            // N: 1=Mon … 5=Fri … 7=Sun
+            if ((int) date('N', $ts) !== 5) {
+                $dates[] = date('Y-m-d', $ts);
+            }
+            $ts = strtotime('+1 day', $ts) ?: ($ts + 86400);
+            $guard++;
         }
         return $dates;
     }
