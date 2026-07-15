@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN a2enmod rewrite headers
 
 COPY docker/apache.conf /etc/apache2/sites-available/000-default.conf
+COPY docker/php-uploads.ini /usr/local/etc/php/conf.d/zz-delivery-lists.ini
 
 WORKDIR /var/www/html
 

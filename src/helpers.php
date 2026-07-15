@@ -96,11 +96,12 @@ function db_now(): string
 }
 
 /** عمليات Excel/توزيع كبيرة — تجاوز حد 30 ثانية الافتراضي. */
-function extend_runtime(int $seconds = 600): void
+function extend_runtime(int $seconds = 1800): void
 {
+    @ignore_user_abort(true);
     @set_time_limit($seconds);
     @ini_set('max_execution_time', (string) $seconds);
-    @ini_set('memory_limit', '512M');
+    @ini_set('memory_limit', '1024M');
 }
 
 function json_response(array $data, int $status = 200): never

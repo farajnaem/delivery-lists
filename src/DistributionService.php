@@ -60,7 +60,8 @@ final class DistributionService
 
     public static function generate(int $campaignId): array
     {
-        extend_runtime();
+        extend_runtime(1800);
+        @ignore_user_abort(true);
 
         $campaign = CampaignService::find($campaignId);
         if (!$campaign) {
@@ -75,7 +76,7 @@ final class DistributionService
         $codeSuffix = (string) ($campaign['parcel_code_suffix'] ?? '');
 
         $pdo = Database::getConnection();
-        $stmt = $pdo->prepare('SELECT * FROM beneficiaries WHERE campaign_id = ? ORDER BY id ASC');
+        $stmt = $pdo->prepare('SELECT id, name, mobile FROM beneficiaries WHERE campaign_id = ? ORDER BY id ASC');
         $stmt->execute([$campaignId]);
         $rows = $stmt->fetchAll();
 
@@ -83,18 +84,24 @@ final class DistributionService
             throw new \RuntimeException('لا يوجد مستفيدون — ارفع ملف Excel أولاً.');
         }
 
+        $total = count($rows);
         $perWindow = max(1, (int) $campaign['per_window_capacity']);
-        $numWindows = self::resolveNumWindows($campaign, count($rows), $perWindow);
-        $plan = self::plan(count($rows), $numWindows, $perWindow);
+        $numWindows = self::resolveNumWindows($campaign, $total, $perWindow);
+        $plan = self::plan($total, $numWindows, $perWindow);
         $dayBuckets = $plan['daily_counts'];
         $numDays = $plan['num_days'];
         $dates = self::buildWorkDates((string) $campaign['delivery_start'], $numDays);
 
-        $usedPins = [];
+        $pins = self::allocateUniquePins($total);
+        $pinIdx = 0;
         $sortOrder = 1;
         $idx = 0;
         $summary = $plan;
         $summary['dates'] = $dates;
+        $genNow = db_now();
+
+        /** @var list<array{0:string,1:string,2:string,3:int,4:string,5:string,6:string,7:int,8:int,9:string,10:int}> */
+        $batch = [];
 
         $upd = $pdo->prepare('
             UPDATE beneficiaries SET
@@ -105,9 +112,25 @@ final class DistributionService
             WHERE id = ?
         ');
 
-        $pdo->beginTransaction();
-        try {
-        $genNow = db_now();
+        $flushBatch = static function () use ($pdo, $upd, &$batch): void {
+            if ($batch === []) {
+                return;
+            }
+            $pdo->beginTransaction();
+            try {
+                foreach ($batch as $params) {
+                    $upd->execute($params);
+                }
+                $pdo->commit();
+            } catch (\Throwable $e) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                throw $e;
+            }
+            $batch = [];
+        };
+
         for ($d = 0; $d < $numDays; $d++) {
             $dayCount = $dayBuckets[$d];
             $dayRows = array_slice($rows, $idx, $dayCount);
@@ -131,22 +154,38 @@ final class DistributionService
                     continue;
                 }
 
+                // أكواد أولاً ثم ترتيب أبجدي داخل الشباك (بدون مرور تحديث ثاني)
+                $prepared = [];
+                foreach ($windowRows as $row) {
+                    $pin = $pins[$pinIdx++];
+                    $code = ParcelCodeHelper::buildDisbursementCode($codePrefix, $codeSuffix, $pin);
+                    $prepared[] = [
+                        'id' => (int) $row['id'],
+                        'name' => (string) $row['name'],
+                        'mobile' => PhoneHelper::normalize($row['mobile']),
+                        'code' => $code,
+                    ];
+                }
+                usort($prepared, static fn ($a, $b) => strcmp($a['code'], $b['code']));
+
                 $slots = self::buildTimeSlots(
                     $campaign['work_start'],
                     $campaign['work_end'],
-                    $windowCount
+                    count($prepared)
                 );
 
-                foreach ($windowRows as $i => $row) {
+                foreach ($prepared as $i => $item) {
                     $slot = $slots[$i];
-                    $pin = ParcelCodeHelper::generateRandomPin($usedPins);
-                    $code = ParcelCodeHelper::buildDisbursementCode($codePrefix, $codeSuffix, $pin);
-                    $mobile = PhoneHelper::normalize($row['mobile']);
-                    $message = MessageTemplates::appointment($campaign, $row['name'], $dates[$d], $code, $w + 1);
-
-                    $upd->execute([
-                        $mobile,
-                        $code,
+                    $message = MessageTemplates::appointment(
+                        $campaign,
+                        $item['name'],
+                        $dates[$d],
+                        $item['code'],
+                        $w + 1
+                    );
+                    $batch[] = [
+                        $item['mobile'],
+                        $item['code'],
                         $dates[$d],
                         $w + 1,
                         $slot['from'],
@@ -155,38 +194,45 @@ final class DistributionService
                         $d + 1,
                         $sortOrder,
                         $genNow,
-                        $row['id'],
-                    ]);
+                        $item['id'],
+                    ];
                     $sortOrder++;
+
+                    if (count($batch) >= 250) {
+                        $flushBatch();
+                    }
                 }
             }
         }
 
-        // ترتيب أبجدي تصاعدي داخل كل يوم/شباك لتسهيل البحث — مع الإبقاء على اليوم والشباك والساعة
-        self::reindexSortOrderAlphabetically($pdo, $campaignId);
-
-        $pdo->commit();
-        } catch (\Throwable $e) {
-            if ($pdo->inTransaction()) {
-                $pdo->rollBack();
-            }
-            throw $e;
-        }
+        $flushBatch();
 
         $deliveryEnd = $dates !== [] ? $dates[array_key_last($dates)] : (string) $campaign['delivery_start'];
         CampaignService::updateSchedule($campaignId, $numDays, $deliveryEnd);
         CampaignService::markGenerated($campaignId);
         if ((int) ($campaign['opening_quantity'] ?? 0) <= 0) {
-            CampaignService::updateOpeningQuantity($campaignId, count($rows));
+            CampaignService::updateOpeningQuantity($campaignId, $total);
         }
         return $summary;
     }
 
-    /**
-     * للعمليات القديمة بدون num_windows: يستنتج من الأيام والسعة السابقة.
-     *
-     * @param array<string,mixed> $campaign
-     */
+    /** @return list<int> */
+    private static function allocateUniquePins(int $count): array
+    {
+        if ($count < 1) {
+            return [];
+        }
+        if ($count > ParcelCodeHelper::PIN_MAX) {
+            throw new \RuntimeException('عدد المستفيدين أكبر من الحد الأقصى لأكواد الصرف (' . ParcelCodeHelper::PIN_MAX . ').');
+        }
+
+        // أسرع بكثير من random_int مع فحص تصادم لكل مستفيد
+        $pins = range(ParcelCodeHelper::PIN_MIN, ParcelCodeHelper::PIN_MAX);
+        shuffle($pins);
+        return array_slice($pins, 0, $count);
+    }
+
+    /** للعمليات القديمة بدون num_windows: يستنتج من الأيام والسعة السابقة. */
     public static function resolveNumWindows(array $campaign, int $total, int $perWindow): int
     {
         $numWindows = (int) ($campaign['num_windows'] ?? 0);
@@ -197,28 +243,6 @@ final class DistributionService
         $legacyDays = max(1, (int) ($campaign['num_days'] ?? 1));
         $approxDaily = $total > 0 ? (int) ceil($total / $legacyDays) : $perWindow;
         return self::windowsForDay($approxDaily, $perWindow);
-    }
-
-    /**
-     * يعيد ترقيم sort_order حسب الكود أبجدياً داخل كل يوم وشباك.
-     * لا يغيّر day_index / window_num / المواعيد.
-     */
-    private static function reindexSortOrderAlphabetically(\PDO $pdo, int $campaignId): void
-    {
-        $stmt = $pdo->prepare('
-            SELECT id FROM beneficiaries
-            WHERE campaign_id = ?
-            ORDER BY day_index ASC, window_num ASC, disbursement_code ASC, id ASC
-        ');
-        $stmt->execute([$campaignId]);
-        $ids = $stmt->fetchAll(\PDO::FETCH_COLUMN);
-
-        $upd = $pdo->prepare('UPDATE beneficiaries SET sort_order = ? WHERE id = ?');
-        $sortOrder = 1;
-        foreach ($ids as $id) {
-            $upd->execute([$sortOrder, (int) $id]);
-            $sortOrder++;
-        }
     }
 
     /** عدد الشبابيك ليوم واحد = ceil(مستفيدي_اليوم ÷ سعة_الشباك) — للتوافق مع العمليات القديمة. */
