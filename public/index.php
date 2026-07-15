@@ -646,6 +646,44 @@ if ($uri === '/campaigns/export' && $method === 'GET') {
     }
 }
 
+if ($uri === '/campaigns/export-messages' && $method === 'GET') {
+    Auth::requireRole(fn ($r) => RoleHelper::canExport($r));
+    $id = (int) ($_GET['id'] ?? 0);
+    $day = (int) ($_GET['day'] ?? 0);
+    try {
+        $path = ExcelExportService::exportMessagesForDay($id, $day);
+        $campaign = CampaignService::find($id);
+        $filename = ($campaign['name'] ?? 'messages') . '_رسائل_يوم' . $day . '.xlsx';
+        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        header('Content-Disposition: attachment; filename="' . rawurlencode($filename) . '"');
+        header('Content-Length: ' . filesize($path));
+        readfile($path);
+        exit;
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+        redirect('/campaigns/view?id=' . $id);
+    }
+}
+
+if ($uri === '/campaigns/export-day' && $method === 'GET') {
+    Auth::requireRole(fn ($r) => RoleHelper::canExport($r));
+    $id = (int) ($_GET['id'] ?? 0);
+    $day = (int) ($_GET['day'] ?? 0);
+    try {
+        $path = ExcelExportService::exportDeliveryDay($id, $day);
+        $campaign = CampaignService::find($id);
+        $filename = ($campaign['name'] ?? 'delivery') . '_يوم' . $day . '.xlsx';
+        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        header('Content-Disposition: attachment; filename="' . rawurlencode($filename) . '"');
+        header('Content-Length: ' . filesize($path));
+        readfile($path);
+        exit;
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+        redirect('/campaigns/view?id=' . $id);
+    }
+}
+
 if ($uri === '/campaigns/export-deliveries' && $method === 'GET') {
     Auth::requireRole(fn ($r) => RoleHelper::canViewStock($r));
     $id = (int) ($_GET['id'] ?? 0);

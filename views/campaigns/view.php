@@ -143,7 +143,7 @@ context_nav([
         <?php endif; ?>
 
         <?php if ($isGenerated && !empty($canExport)): ?>
-        <a href="<?= e(url('/campaigns/export?id=' . (int)$campaign['id'])) ?>" class="btn">تنزيل Excel</a>
+        <a href="<?= e(url('/campaigns/export?id=' . (int)$campaign['id'])) ?>" class="btn">تنزيل Excel الكامل</a>
         <?php endif; ?>
 
         <?php if ($isGenerated && !empty($canViewStock)): ?>
@@ -160,9 +160,57 @@ context_nav([
         <?php endif; ?>
     </div>
     <p class="text-muted" style="margin-top:0.75rem">
-        ملف Excel: <strong>الكشف الإجمالي</strong> + <strong>يوم1_شباك1 … يوم5_شباك4</strong> (<?= (int) ($plan['total_delivery_sheets'] ?? 0) ?> كشف) + <strong>كشف الرسائل</strong>.
+        Excel الكامل: <strong>الكشف الإجمالي</strong> + كشوف التسليم لكل الأيام.
+        الرسائل وكشوف يوم معيّن تُنزَّل من الجدول أدناه (يوم بيوم).
     </p>
 </div>
+
+<?php if ($isGenerated && !empty($canExport) && !empty($plan['days'])): ?>
+<div class="card">
+    <h2>تنزيل يوم بيوم</h2>
+    <p class="text-muted">الرسائل: صدّر يوم التسليم فقط عند الاقتراب منه (للطوارئ والتأجيل). كشوف التسليم: تنزيل اختياري لشبابيك ذلك اليوم.</p>
+    <div class="table-wrap">
+    <table class="table">
+        <thead>
+            <tr>
+                <th>اليوم</th>
+                <th>التاريخ</th>
+                <th>المستفيدون</th>
+                <th>كشوف الرسائل</th>
+                <th>كشوف التسليم</th>
+            </tr>
+        </thead>
+        <tbody>
+        <?php foreach ($plan['days'] as $day): ?>
+            <?php
+            $di = (int) $day['day_index'];
+            $dayDate = $day['date'] ?? ($dayStats[$di - 1]['delivery_date'] ?? '');
+            if ($dayDate === '' && !empty($dayStats)) {
+                foreach ($dayStats as $ds) {
+                    if ((int) ($ds['day_index'] ?? 0) === $di) {
+                        $dayDate = $ds['delivery_date'] ?? '';
+                        break;
+                    }
+                }
+            }
+            ?>
+            <tr>
+                <td>اليوم <?= $di ?></td>
+                <td><?= e((string) $dayDate) ?></td>
+                <td><?= (int) ($day['beneficiaries'] ?? 0) ?></td>
+                <td>
+                    <a class="btn btn-outline" href="<?= e(url('/campaigns/export-messages?id=' . (int)$campaign['id'] . '&day=' . $di)) ?>">رسائل يوم <?= $di ?></a>
+                </td>
+                <td>
+                    <a class="btn btn-outline" href="<?= e(url('/campaigns/export-day?id=' . (int)$campaign['id'] . '&day=' . $di)) ?>">تسليم يوم <?= $di ?></a>
+                </td>
+            </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
+    </div>
+</div>
+<?php endif; ?>
 
 <?php if (!empty($preview)): ?>
 <div class="card">
@@ -184,7 +232,11 @@ context_nav([
             <td><?= e($b['national_id']) ?></td>
             <td><?= e($b['mobile']) ?></td>
             <?php if ($isGenerated): ?>
-            <td><?= e(ParcelCodeHelper::displayForBeneficiary((string) ($b['disbursement_code'] ?? ''), (string) ($campaign['parcel_code_suffix'] ?? ''))) ?></td>
+            <td><?= e(ParcelCodeHelper::displayFull(
+                (string) ($b['disbursement_code'] ?? ''),
+                (string) ($campaign['parcel_code_suffix'] ?? ''),
+                (string) ($campaign['parcel_code'] ?? '')
+            )) ?></td>
             <td>
                 <?php if (($b['receipt_status'] ?? '') === 'مستلم'): ?>
                 <span class="badge-delivered-inline">مستلم</span>
@@ -209,6 +261,7 @@ context_nav([
 <?php partial('partials/delivered-table', [
     'deliveredList' => $deliveredList ?? [],
     'totalDelivered' => $deliveredTotal ?? 0,
+    'codePrefix' => $campaign['parcel_code'] ?? '',
     'codeSuffix' => $campaign['parcel_code_suffix'] ?? '',
 ]); ?>
 <?php elseif ($isGenerated): ?>

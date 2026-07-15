@@ -26,7 +26,11 @@ final class MessageTemplates
             trim($campaign['parcel_name'] ?? 'الطرد'),
             $date,
             $window,
-            ParcelCodeHelper::displayForBeneficiary($disbursementCode)
+            ParcelCodeHelper::displayForBeneficiary(
+                $disbursementCode,
+                (string) ($campaign['parcel_code_suffix'] ?? ''),
+                (string) ($campaign['parcel_code'] ?? '')
+            )
         );
     }
 
@@ -45,7 +49,11 @@ final class MessageTemplates
         );
 
         if ($code !== '') {
-            $message .= ' ، كود رقم ' . ParcelCodeHelper::displayForBeneficiary($code);
+            $message .= ' ، كود رقم ' . ParcelCodeHelper::displayForBeneficiary(
+                $code,
+                (string) ($campaign['parcel_code_suffix'] ?? ''),
+                (string) ($campaign['parcel_code'] ?? '')
+            );
         }
 
         return $message;

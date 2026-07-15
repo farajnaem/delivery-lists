@@ -15,7 +15,8 @@ echo 'Imported: ' . count($items) . PHP_EOL;
 $id = CampaignService::create([
     'name' => 'اختبار',
     'parcel_name' => 'طرد غذائي',
-    'parcel_code' => 'SOCI-TEST',
+    'parcel_code' => 'SOCI',
+    'parcel_code_suffix' => '',
     'delivery_start' => '2026-07-10',
     'delivery_end' => '2026-07-14',
     'warehouse_name' => 'مخزن الشمال',

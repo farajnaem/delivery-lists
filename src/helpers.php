@@ -159,10 +159,7 @@ function validate_campaign_data(array $data): ?string
         return 'أكمل اسم العملية واسم الطرد.';
     }
     if (!\App\ParcelCodeHelper::validatePrefix($data['parcel_code'])) {
-        return 'أدخل كود الطرد (مثل SOCI أو REC).';
-    }
-    if (!\App\ParcelCodeHelper::validateSuffix($data['parcel_code_suffix'])) {
-        return 'أدخل ملحق كود الطرد (مثل R26 أو F).';
+        return 'أدخل كود الطرد (حرف أو مجموعة حروف مثل SOCI أو REC).';
     }
     if ($data['delivery_start'] === '' || $data['delivery_end'] === '') {
         return 'حدد تواريخ التسليم.';

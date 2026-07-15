@@ -59,8 +59,8 @@ final class DistributionService
             throw new \RuntimeException('العملية غير موجودة.');
         }
 
-        if (!ParcelCodeHelper::validateSuffix((string) ($campaign['parcel_code_suffix'] ?? ''))) {
-            throw new \RuntimeException('أدخل ملحق كود الطرد (مثل R26 أو F).');
+        if (!ParcelCodeHelper::validatePrefix((string) ($campaign['parcel_code'] ?? ''))) {
+            throw new \RuntimeException('أدخل كود الطرد (حرف أو مجموعة حروف مثل SOCI أو REC).');
         }
 
         $codePrefix = (string) ($campaign['parcel_code'] ?? ParcelCodeHelper::DEFAULT_PREFIX);
@@ -151,6 +151,9 @@ final class DistributionService
             }
         }
 
+        // ترتيب أبجدي تصاعدي داخل كل يوم/شباك لتسهيل البحث — مع الإبقاء على اليوم والشباك والساعة
+        self::reindexSortOrderAlphabetically($pdo, $campaignId);
+
         $pdo->commit();
         } catch (\Throwable $e) {
             if ($pdo->inTransaction()) {
@@ -164,6 +167,28 @@ final class DistributionService
             CampaignService::updateOpeningQuantity($campaignId, count($rows));
         }
         return $summary;
+    }
+
+    /**
+     * يعيد ترقيم sort_order حسب الكود أبجدياً داخل كل يوم وشباك.
+     * لا يغيّر day_index / window_num / المواعيد.
+     */
+    private static function reindexSortOrderAlphabetically(\PDO $pdo, int $campaignId): void
+    {
+        $stmt = $pdo->prepare('
+            SELECT id FROM beneficiaries
+            WHERE campaign_id = ?
+            ORDER BY day_index ASC, window_num ASC, disbursement_code ASC, id ASC
+        ');
+        $stmt->execute([$campaignId]);
+        $ids = $stmt->fetchAll(\PDO::FETCH_COLUMN);
+
+        $upd = $pdo->prepare('UPDATE beneficiaries SET sort_order = ? WHERE id = ?');
+        $sortOrder = 1;
+        foreach ($ids as $id) {
+            $upd->execute([$sortOrder, (int) $id]);
+            $sortOrder++;
+        }
     }
 
     /** عدد الشبابيك ليوم واحد = ceil(مستفيدي_اليوم ÷ سعة_الشباك). */

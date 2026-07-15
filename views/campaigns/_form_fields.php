@@ -24,12 +24,8 @@ $suffix = old('parcel_code_suffix', $c['parcel_code_suffix'] ?? '');
     <div class="form-group">
         <label>كود الطرد *</label>
         <input type="text" name="parcel_code" class="form-control" required placeholder="مثال: SOCI أو REC" value="<?= e($parcelCode) ?>" pattern="[A-Za-z0-9]+" title="أحرف وأرقام فقط">
-        <small class="text-muted">البادئة الأساسية لكود الصرف — أنت تحددها (مثل <strong>SOCI</strong> أو <strong>REC</strong>).</small>
-    </div>
-    <div class="form-group">
-        <label>ملحق كود الطرد *</label>
-        <input type="text" name="parcel_code_suffix" class="form-control" required placeholder="مثال: R26 أو F أو RAM" value="<?= e($suffix) ?>" pattern="[A-Za-z0-9]+" title="أحرف وأرقام فقط">
-        <small class="text-muted">كود الصرف الداخلي = <strong>كود الطرد</strong> + الملحق + رقم عشوائي. للمستفيد يظهر الرقم فقط، وفي التقارير يظهر الملحق + الرقم.</small>
+        <small class="text-muted">حرف أو مجموعة حروف تسبق الرقم. الكود النهائي = <strong>كود الطرد</strong> + <strong>5 أرقام عشوائية</strong> (مثل <strong>SOCI04821</strong>). في الرسائل وتسليم المخزن يظهر الرقم فقط بدون أصفار يسار.</small>
+        <input type="hidden" name="parcel_code_suffix" value="<?= e($suffix) ?>">
     </div>
     <div class="form-group">
         <label>عدد أيام التسليم *</label>

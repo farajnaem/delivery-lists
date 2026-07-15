@@ -38,16 +38,107 @@ final class ExcelExportService
 
         self::buildMasterSheet($spreadsheet, $campaign, $all);
         self::buildDeliverySheets($spreadsheet, $campaign, $all);
-        self::buildMessagesSheets($spreadsheet, $all);
+        // الرسائل تُصدَّر يوم بيوم عبر exportMessagesForDay
 
         $spreadsheet->setActiveSheetIndex(0);
 
+        return self::saveSpreadsheet($spreadsheet, $campaign, '');
+    }
+
+    /** تصدير كشوف التسليم ليوم واحد فقط (شبابيك ذلك اليوم). */
+    public static function exportDeliveryDay(int $campaignId, int $dayIndex): string
+    {
+        extend_runtime();
+
+        $campaign = CampaignService::find($campaignId);
+        if (!$campaign) {
+            throw new \RuntimeException('العملية غير موجودة.');
+        }
+
+        $dayIndex = max(1, $dayIndex);
+        $all = CampaignService::beneficiariesDetailed($campaignId);
+        if ($all === [] || empty($all[0]['disbursement_code'])) {
+            throw new \RuntimeException('يجب توليد الكشوف أولاً قبل التصدير.');
+        }
+
+        $dayRows = array_values(array_filter(
+            $all,
+            static fn (array $b): bool => (int) ($b['day_index'] ?? 0) === $dayIndex
+        ));
+        if ($dayRows === []) {
+            throw new \RuntimeException('لا يوجد مستفيدون لليوم المحدد.');
+        }
+
+        $spreadsheet = new Spreadsheet();
+        $spreadsheet->getDefaultStyle()->getFont()->setName('Arial')->setSize(10);
+
+        // ورقة فارغة تُستبدل بأول شباك — buildDeliverySheets ينشئ أوراقاً جديدة
+        $spreadsheet->removeSheetByIndex(0);
+        self::buildDeliverySheets($spreadsheet, $campaign, $dayRows, $dayIndex);
+
+        if ($spreadsheet->getSheetCount() === 0) {
+            throw new \RuntimeException('تعذّر بناء كشوف التسليم لهذا اليوم.');
+        }
+        $spreadsheet->setActiveSheetIndex(0);
+
+        $date = (string) ($dayRows[0]['delivery_date'] ?? '');
+        $suffix = 'يوم' . $dayIndex . ($date !== '' ? '_' . $date : '');
+
+        return self::saveSpreadsheet($spreadsheet, $campaign, $suffix);
+    }
+
+    /** تصدير كشوف الرسائل ليوم واحد فقط. */
+    public static function exportMessagesForDay(int $campaignId, int $dayIndex): string
+    {
+        extend_runtime();
+
+        $campaign = CampaignService::find($campaignId);
+        if (!$campaign) {
+            throw new \RuntimeException('العملية غير موجودة.');
+        }
+
+        $dayIndex = max(1, $dayIndex);
+        $all = CampaignService::beneficiariesDetailed($campaignId);
+        if ($all === [] || empty($all[0]['disbursement_code'])) {
+            throw new \RuntimeException('يجب توليد الكشوف أولاً قبل التصدير.');
+        }
+
+        $dayRows = array_values(array_filter(
+            $all,
+            static fn (array $b): bool => (int) ($b['day_index'] ?? 0) === $dayIndex
+        ));
+        if ($dayRows === []) {
+            throw new \RuntimeException('لا يوجد مستفيدون لليوم المحدد.');
+        }
+
+        $spreadsheet = new Spreadsheet();
+        $spreadsheet->getDefaultStyle()->getFont()->setName('Arial')->setSize(10);
+        $spreadsheet->removeSheetByIndex(0);
+        self::buildMessagesSheets($spreadsheet, $dayRows);
+
+        if ($spreadsheet->getSheetCount() === 0) {
+            throw new \RuntimeException('لا توجد رسائل لهذا اليوم.');
+        }
+        $spreadsheet->setActiveSheetIndex(0);
+
+        $date = (string) ($dayRows[0]['delivery_date'] ?? '');
+        $suffix = 'رسائل_يوم' . $dayIndex . ($date !== '' ? '_' . $date : '');
+
+        return self::saveSpreadsheet($spreadsheet, $campaign, $suffix);
+    }
+
+    /** @param Spreadsheet $spreadsheet */
+    private static function saveSpreadsheet(Spreadsheet $spreadsheet, array $campaign, string $nameSuffix): string
+    {
         $dir = dirname(__DIR__) . '/storage/exports';
         if (!is_dir($dir)) {
             mkdir($dir, 0775, true);
         }
 
         $safeName = preg_replace('/[^\p{L}\p{N}_-]+/u', '_', $campaign['name']) ?: 'campaign';
+        if ($nameSuffix !== '') {
+            $safeName .= '_' . preg_replace('/[^\p{L}\p{N}_-]+/u', '_', $nameSuffix);
+        }
         $path = $dir . '/' . $safeName . '_' . date('Y-m-d_His') . '.xlsx';
 
         (new Xlsx($spreadsheet))->save($path);
@@ -87,22 +178,13 @@ final class ExcelExportService
         self::buildSmsOutboxSheet(
             $spreadsheet,
             SmsService::outbox($campaignId),
+            (string) ($campaign['parcel_code'] ?? ''),
             (string) ($campaign['parcel_code_suffix'] ?? '')
         );
 
         $spreadsheet->setActiveSheetIndex(0);
 
-        $dir = dirname(__DIR__) . '/storage/exports';
-        if (!is_dir($dir)) {
-            mkdir($dir, 0775, true);
-        }
-
-        $safeName = preg_replace('/[^\p{L}\p{N}_-]+/u', '_', $campaign['name']) ?: 'campaign';
-        $path = $dir . '/' . $safeName . '_deliveries_' . date('Y-m-d_His') . '.xlsx';
-
-        (new Xlsx($spreadsheet))->save($path);
-
-        return $path;
+        return self::saveSpreadsheet($spreadsheet, $campaign, 'deliveries');
     }
 
     /** @param list<array<string,mixed>> $all */
@@ -263,6 +345,7 @@ final class ExcelExportService
         ];
         self::writeHeaderRow($sheet, $headerRow, $headers);
 
+        $codePrefix = (string) ($campaign['parcel_code'] ?? '');
         $codeSuffix = (string) ($campaign['parcel_code_suffix'] ?? '');
         $row = $headerRow + 1;
         foreach ($items as $i => $b) {
@@ -287,7 +370,7 @@ final class ExcelExportService
                 $b['delivered_at'] ?? '',
                 $b['delivered_by_name'] ?? '',
             ], null, 'A' . $row);
-            self::setFullCodeCell($sheet, 'E' . $row, (string) ($b['disbursement_code'] ?? ''), $codeSuffix);
+            self::setFullCodeCell($sheet, 'E' . $row, (string) ($b['disbursement_code'] ?? ''), $codePrefix, $codeSuffix);
             self::setMobileCell($sheet, 'D' . $row, (string) $b['mobile']);
             $row++;
         }
@@ -306,8 +389,12 @@ final class ExcelExportService
     }
 
     /** @param list<array<string,mixed>> $messages */
-    private static function buildSmsOutboxSheet(Spreadsheet $spreadsheet, array $messages, string $codeSuffix = ''): void
-    {
+    private static function buildSmsOutboxSheet(
+        Spreadsheet $spreadsheet,
+        array $messages,
+        string $codePrefix = '',
+        string $codeSuffix = ''
+    ): void {
         $sheet = $spreadsheet->createSheet();
         $sheet->setTitle('رسائل_التأكيد');
         $sheet->setRightToLeft(true);
@@ -333,7 +420,13 @@ final class ExcelExportService
                 $m['created_at'] ?? '',
                 $m['sent_at'] ?? '',
             ], null, 'A' . $row);
-            self::setFullCodeCell($sheet, 'B' . $row, (string) ($m['disbursement_code'] ?? ''), $codeSuffix);
+            self::setFullCodeCell(
+                $sheet,
+                'B' . $row,
+                (string) ($m['disbursement_code'] ?? ''),
+                $codePrefix,
+                $codeSuffix
+            );
             self::setMobileCell($sheet, 'D' . $row, (string) ($m['mobile'] ?? ''));
             $sheet->getStyle('E' . $row)->getAlignment()->setWrapText(true);
             $row++;
@@ -346,7 +439,7 @@ final class ExcelExportService
         }
 
         $sheet->getColumnDimension('A')->setWidth(5);
-        $sheet->getColumnDimension('B')->setWidth(12);
+        $sheet->getColumnDimension('B')->setWidth(14);
         $sheet->getColumnDimension('C')->setWidth(20);
         $sheet->getColumnDimension('D')->setWidth(12);
         $sheet->getColumnDimension('E')->setWidth(70);
@@ -368,7 +461,7 @@ final class ExcelExportService
 
         $parcelLabel = CampaignService::parcelLabel($campaign);
         $meta = [
-            ['اسم الطرد', $campaign['parcel_name'], 'كود الطرد', $parcelLabel, 'ملحق الكود', $campaign['parcel_code_suffix'] ?? ''],
+            ['اسم الطرد', $campaign['parcel_name'], 'كود الطرد', $parcelLabel, '', ''],
             ['عدد المستفيدين', count($all), 'اسم المخزن', $campaign['warehouse_name'], 'من', $campaign['delivery_start']],
             ['إلى', $campaign['delivery_end'], 'أيام التسليم', (int) $campaign['num_days'], 'مستفيد/شباك', (int) $campaign['per_window_capacity']],
             ['موقع المخزن', $campaign['warehouse_location'], '', '', '', ''],
@@ -388,6 +481,7 @@ final class ExcelExportService
         ];
         self::writeHeaderRow($sheet, $headerRow, $headers);
 
+        $codePrefix = (string) ($campaign['parcel_code'] ?? '');
         $codeSuffix = (string) ($campaign['parcel_code_suffix'] ?? '');
         $row = $headerRow + 1;
         foreach ($all as $i => $b) {
@@ -411,7 +505,7 @@ final class ExcelExportService
                 $typeLabel,
                 $b['delivered_at'] ?? '',
             ], null, 'A' . $row);
-            self::setFullCodeCell($sheet, 'F' . $row, (string) ($b['disbursement_code'] ?? ''), $codeSuffix);
+            self::setFullCodeCell($sheet, 'F' . $row, (string) ($b['disbursement_code'] ?? ''), $codePrefix, $codeSuffix);
             self::setMobileCell($sheet, 'D' . $row, (string) $b['mobile']);
             $sheet->getStyle('A' . $row . ':M' . $row)->getFont()->setSize(9);
             $row++;
@@ -425,30 +519,64 @@ final class ExcelExportService
         self::applyPortraitPrint($sheet, $headerRow, $lastRow, 'M');
     }
 
-    private static function buildDeliverySheets(Spreadsheet $spreadsheet, array $campaign, array $all): void
-    {
+    /**
+     * @param list<array<string,mixed>> $all
+     * @param int|null $onlyDay إن وُجد يُصدَّر هذا اليوم فقط
+     */
+    private static function buildDeliverySheets(
+        Spreadsheet $spreadsheet,
+        array $campaign,
+        array $all,
+        ?int $onlyDay = null
+    ): void {
         $byDayWindow = [];
         foreach ($all as $b) {
             $d = (int) ($b['day_index'] ?? 0);
             $w = (int) ($b['window_num'] ?? 0);
+            if ($onlyDay !== null && $d !== $onlyDay) {
+                continue;
+            }
             $byDayWindow[$d][$w][] = $b;
         }
 
         $numDays = max(1, (int) $campaign['num_days']);
         $perWindow = max(1, (int) $campaign['per_window_capacity']);
-        $dailyCounts = DistributionService::splitCount(count($all), $numDays);
+        $codePrefix = (string) ($campaign['parcel_code'] ?? '');
+        $codeSuffix = (string) ($campaign['parcel_code_suffix'] ?? '');
+        $daysToBuild = $onlyDay !== null ? [$onlyDay] : range(1, $numDays);
 
-        for ($d = 1; $d <= $numDays; $d++) {
-            $dayCount = $dailyCounts[$d - 1] ?? 0;
-            $numWindows = DistributionService::windowsForDay($dayCount, $perWindow);
+        foreach ($daysToBuild as $d) {
+            $dayItems = $byDayWindow[$d] ?? [];
+            if ($dayItems === []) {
+                continue;
+            }
 
-            for ($w = 1; $w <= $numWindows; $w++) {
-                $items = $byDayWindow[$d][$w] ?? [];
+            $windows = array_keys($dayItems);
+            sort($windows, SORT_NUMERIC);
+
+            if ($onlyDay === null) {
+                $dailyCounts = DistributionService::splitCount(count($all), $numDays);
+                $dayCount = $dailyCounts[$d - 1] ?? 0;
+                $numWindows = max(count($windows), DistributionService::windowsForDay($dayCount, $perWindow));
+                $windows = range(1, $numWindows);
+            }
+
+            foreach ($windows as $w) {
+                $items = $dayItems[$w] ?? [];
                 if ($items === []) {
                     continue;
                 }
 
-                usort($items, fn ($a, $b) => ((int) $a['sort_order']) <=> ((int) $b['sort_order']));
+                usort($items, static function ($a, $b) {
+                    $codeCmp = strcmp(
+                        (string) ($a['disbursement_code'] ?? ''),
+                        (string) ($b['disbursement_code'] ?? '')
+                    );
+                    if ($codeCmp !== 0) {
+                        return $codeCmp;
+                    }
+                    return ((int) ($a['sort_order'] ?? 0)) <=> ((int) ($b['sort_order'] ?? 0));
+                });
 
                 $first = $items[0];
                 $title = 'يوم' . $d . '_شباك' . $w;
@@ -460,13 +588,12 @@ final class ExcelExportService
                 $sheet->setTitle($title);
                 $sheet->setRightToLeft(true);
 
-                // ── بيانات الطرد ──
                 $sheet->setCellValue('A1', 'بيانات الطرد');
                 $sheet->mergeCells('A1:F1');
                 self::styleSectionTitle($sheet, 'A1:F1');
 
                 $parcelMeta = [
-                    ['اسم الطرد', $campaign['parcel_name'], 'كود الطرد', CampaignService::parcelLabel($campaign), 'ملحق الكود', $campaign['parcel_code_suffix'] ?? ''],
+                    ['اسم الطرد', $campaign['parcel_name'], 'كود الطرد', CampaignService::parcelLabel($campaign), '', ''],
                     ['تاريخ البداية', $campaign['delivery_start'], 'تاريخ النهاية', $campaign['delivery_end'], 'اسم المخزن', $campaign['warehouse_name']],
                     ['موقع المخزن', $campaign['warehouse_location'], '', '', '', ''],
                 ];
@@ -477,7 +604,6 @@ final class ExcelExportService
                 }
                 self::styleMetaBlock($sheet, 'A2:D4');
 
-                // ── بيانات الشباك ──
                 $r = 6;
                 $sheet->setCellValue('A' . $r, 'بيانات الكشف (الشباك)');
                 $sheet->mergeCells('A' . $r . ':F' . $r);
@@ -499,8 +625,6 @@ final class ExcelExportService
                 $headers = ['#', 'رقم الهوية', 'الاسم', 'رقم الجوال', 'كود الصرف', 'التوقيع على الاستلام'];
                 self::writeHeaderRow($sheet, $headerRow, $headers);
 
-        $codeSuffix = (string) ($campaign['parcel_code_suffix'] ?? '');
-
                 $row = $headerRow + 1;
                 foreach ($items as $i => $b) {
                     $sheet->fromArray([
@@ -511,7 +635,13 @@ final class ExcelExportService
                         null,
                         '',
                     ], null, 'A' . $row);
-                    self::setPinCell($sheet, 'E' . $row, (string) ($b['disbursement_code'] ?? ''), $codeSuffix);
+                    self::setFullCodeCell(
+                        $sheet,
+                        'E' . $row,
+                        (string) ($b['disbursement_code'] ?? ''),
+                        $codePrefix,
+                        $codeSuffix
+                    );
                     self::setMobileCell($sheet, 'D' . $row, (string) $b['mobile']);
                     $sheet->getStyle('F' . $row)->getAlignment()->setVertical(Alignment::VERTICAL_CENTER);
                     $row++;
@@ -544,6 +674,10 @@ final class ExcelExportService
             }
         }
 
+        self::sortByDisbursementCode($jawwal);
+        self::sortByDisbursementCode($ooredoo);
+        self::sortByDisbursementCode($other);
+
         self::buildCarrierMessagesSheet($spreadsheet, 'رسائل_جوال', $jawwal);
         self::buildCarrierMessagesSheet($spreadsheet, 'رسائل_أوريدو', $ooredoo);
 
@@ -551,6 +685,17 @@ final class ExcelExportService
         if ($other !== []) {
             self::buildCarrierMessagesSheet($spreadsheet, 'رسائل_غير_مصنفة', $other);
         }
+    }
+
+    /** @param list<array<string,mixed>> $items */
+    private static function sortByDisbursementCode(array &$items): void
+    {
+        usort($items, static function ($a, $b) {
+            return strcmp(
+                (string) ($a['disbursement_code'] ?? ''),
+                (string) ($b['disbursement_code'] ?? '')
+            );
+        });
     }
 
     /** @param list<array<string,mixed>> $beneficiaries */
@@ -603,27 +748,25 @@ final class ExcelExportService
         }
     }
 
-    private static function setPinCell(Worksheet $sheet, string $cell, string $disbursementCode, string $codeSuffix): void
-    {
+    private static function setFullCodeCell(
+        Worksheet $sheet,
+        string $cell,
+        string $disbursementCode,
+        string $codePrefix = '',
+        string $codeSuffix = ''
+    ): void {
         if ($disbursementCode === '') {
             return;
         }
 
-        $pin = ParcelCodeHelper::pinAsInt($disbursementCode, $codeSuffix !== '' ? $codeSuffix : null);
-        if ($pin > 0) {
-            $sheet->setCellValueExplicit($cell, $pin, DataType::TYPE_NUMERIC);
-        }
-    }
-
-    private static function setFullCodeCell(Worksheet $sheet, string $cell, string $disbursementCode, string $codeSuffix): void
-    {
-        if ($disbursementCode === '') {
-            return;
-        }
-
-        $sheet->setCellValue(
+        $sheet->setCellValueExplicit(
             $cell,
-            ParcelCodeHelper::displayFull($disbursementCode, $codeSuffix !== '' ? $codeSuffix : null)
+            ParcelCodeHelper::displayFull(
+                $disbursementCode,
+                $codeSuffix !== '' ? $codeSuffix : null,
+                $codePrefix !== '' ? $codePrefix : null
+            ),
+            DataType::TYPE_STRING
         );
     }
 
@@ -731,7 +874,7 @@ final class ExcelExportService
     private static function setDeliveryColumnWidths(Worksheet $sheet): void
     {
         $widths = [
-            'A' => 5, 'B' => 14, 'C' => 24, 'D' => 12, 'E' => 14, 'F' => 20,
+            'A' => 5, 'B' => 14, 'C' => 24, 'D' => 12, 'E' => 16, 'F' => 20,
         ];
         foreach ($widths as $col => $w) {
             $sheet->getColumnDimension($col)->setWidth($w);

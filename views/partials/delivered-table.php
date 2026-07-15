@@ -2,8 +2,10 @@
 <?php
 /** @var list<array> $deliveredList */
 /** @var int|null $totalDelivered */
+/** @var string|null $codePrefix */
 /** @var string|null $codeSuffix */
 $totalDelivered = $totalDelivered ?? count($deliveredList ?? []);
+$codePrefix = $codePrefix ?? '';
 $codeSuffix = $codeSuffix ?? '';
 ?>
 <div class="card">
@@ -21,7 +23,11 @@ $codeSuffix = $codeSuffix ?? '';
         <tbody>
         <?php foreach ($deliveredList as $r): ?>
         <tr>
-            <td><?= e(ParcelCodeHelper::displayFull((string) ($r['disbursement_code'] ?? ''), $codeSuffix !== '' ? $codeSuffix : null)) ?></td>
+            <td><?= e(ParcelCodeHelper::displayFull(
+                (string) ($r['disbursement_code'] ?? ''),
+                $codeSuffix !== '' ? $codeSuffix : null,
+                $codePrefix !== '' ? $codePrefix : null
+            )) ?></td>
             <td><?= e($r['name']) ?></td>
             <td><?= e($r['national_id'] ?? '') ?></td>
             <td><?= e($r['delivery_date'] ?? '') ?> — ش <?= (int) ($r['window_num'] ?? 0) ?></td>
