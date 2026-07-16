@@ -1,8 +1,8 @@
 <?php
 $stats = $stock ?? [];
-$balance = (string) ($stats['balance'] ?? '٠');
-$opening = (string) ($stats['opening_quantity'] ?? '٠');
-$delivered = (string) ($stats['delivered'] ?? '٠');
+$balance = (string) ($stats['balance'] ?? '0');
+$opening = (string) ($stats['opening_quantity'] ?? '0');
+$delivered = (string) ($stats['delivered'] ?? '0');
 $campaignActive = !empty($stats['campaign_active']);
 ?>
 <header class="wh-header">

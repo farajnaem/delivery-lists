@@ -24,7 +24,7 @@ $codeSuffix = $codeSuffix ?? '';
             <td><?= e($r['display_code'] ?? '') ?></td>
             <td><?= e($r['name']) ?></td>
             <td><?= e($r['national_id'] ?? '') ?></td>
-            <td><?= e($r['delivery_date'] ?? '') ?> — ش <?= e((string) ($r['window_num'] ?? '٠')) ?></td>
+            <td><?= e($r['delivery_date'] ?? '') ?> — ش <?= e((string) ($r['window_num'] ?? '0')) ?></td>
             <td><?= ($r['delivery_type'] ?? '') === 'late' ? 'متأخر' : 'في الموعد' ?></td>
             <td><?= e($r['delivered_at'] ?? '') ?></td>
             <td><?= e($r['delivered_by_name'] ?? '') ?></td>
@@ -34,7 +34,7 @@ $codeSuffix = $codeSuffix ?? '';
     </table>
     </div>
     <?php if (($totalDelivered ?? 0) > count($deliveredList)): ?>
-    <p class="text-muted">يعرض أول <?= e(ar_digits((string) count($deliveredList))) ?> — للقائمة الكاملة نزّل <strong>تقرير Excel للتسليمات</strong>.</p>
+    <p class="text-muted">يعرض أول <?= e((string) count($deliveredList)) ?> — للقائمة الكاملة نزّل <strong>تقرير Excel للتسليمات</strong>.</p>
     <?php endif; ?>
     <?php endif; ?>
 </div>

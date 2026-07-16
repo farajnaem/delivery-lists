@@ -112,9 +112,9 @@ fun CampaignDashboardScreen(
         }
         Spacer(Modifier.height(8.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-            StatBox("الرصيد", ArabicFormat.toArabic(c.balance.toString()))
-            StatBox("مُسلَّم", ArabicFormat.toArabic(c.delivered.toString()))
-            StatBox("افتتاحي", ArabicFormat.toArabic(c.openingQuantity.toString()))
+            StatBox("الرصيد", c.balance.toString())
+            StatBox("مُسلَّم", c.delivered.toString())
+            StatBox("افتتاحي", c.openingQuantity.toString())
         }
         message?.let { Text(it, Modifier.padding(vertical = 4.dp)) }
         Spacer(Modifier.height(12.dp))
@@ -157,7 +157,7 @@ fun CampaignDashboardScreen(
         }
 
         Spacer(Modifier.height(16.dp))
-        Text("متأخرون (${ArabicFormat.toArabic(late.size.toString())})", style = MaterialTheme.typography.titleMedium)
+        Text("متأخرون (${late.size})", style = MaterialTheme.typography.titleMedium)
         late.take(10).forEach { row ->
             Text("${row.displayCode} — ${row.name} — ${row.deliveryDate ?: ""}")
         }
@@ -183,8 +183,8 @@ private fun BeneficiaryCard(b: BeneficiaryEntity, onConfirm: () -> Unit) {
         Column(Modifier.padding(12.dp)) {
             Text(b.name, style = MaterialTheme.typography.titleMedium)
             Text("الكود: ${b.displayCode}")
-            Text("الهوية: ${ArabicFormat.toArabic(b.nationalId)}")
-            Text("الموعد: ${b.deliveryDate ?: "—"} — شباك ${ArabicFormat.toArabic(b.windowNum?.toString() ?: "—")}")
+            Text("الهوية: ${b.nationalId}")
+            Text("الموعد: ${b.deliveryDate ?: "—"} — شباك ${b.windowNum?.toString() ?: "—"}")
             if (!b.timeFrom.isNullOrBlank() || !b.timeTo.isNullOrBlank()) {
                 Text(
                     "الوقت: ${ArabicFormat.formatTime12(b.timeFrom)} — ${ArabicFormat.formatTime12(b.timeTo)}",

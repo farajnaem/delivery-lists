@@ -613,7 +613,7 @@ if ($uri === '/campaigns/view' && $method === 'GET') {
             : [],
         'deliveredTotal' => ($campaign['status'] ?? '') === 'generated'
             ? ArabicFormat::toArabicDigits((string) DeliveryService::deliveredCount($id))
-            : '٠',
+            : '0',
     ]);
     exit;
 }

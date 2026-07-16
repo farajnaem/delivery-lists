@@ -11,22 +11,16 @@
         });
     }
 
-    function toArabicDigits(s) {
-        return String(s == null ? '' : s).replace(/[0-9]/g, function (ch) {
-            return ARABIC[WESTERN.indexOf(ch)];
-        });
-    }
-
     function formatTime12(time24) {
         var t = toWesternDigits(String(time24 || '').trim());
         var m = t.match(/^(\d{1,2}):(\d{2})/);
-        if (!m) return toArabicDigits(t);
+        if (!m) return t;
         var hour = parseInt(m[1], 10);
         var minute = m[2];
         var period = hour < 12 ? 'ص' : 'م';
         var hour12 = hour % 12;
         if (hour12 === 0) hour12 = 12;
-        return toArabicDigits(hour12 + ':' + minute + ' ' + period);
+        return hour12 + ':' + minute + ' ' + period;
     }
 
     function formatDateTimeAr(dt) {
@@ -34,9 +28,9 @@
         if (!t) return '';
         var parts = t.split(' ');
         if (parts.length >= 2) {
-            return toArabicDigits(parts[0]) + ' ' + formatTime12(parts[1]);
+            return parts[0] + ' ' + formatTime12(parts[1]);
         }
-        return toArabicDigits(t);
+        return t;
     }
 
     function localizeBeneficiary(b) {
@@ -46,7 +40,7 @@
             if (copy[k] != null && copy[k] !== '') {
                 if (k === 'delivered_at') copy[k] = formatDateTimeAr(copy[k]);
                 else if (k === 'time_from' || k === 'time_to') copy[k] = formatTime12(copy[k]);
-                else copy[k] = toArabicDigits(copy[k]);
+                else copy[k] = toWesternDigits(copy[k]);
             }
         });
         if (copy.time_from) copy.time_from = formatTime12(copy.time_from);
@@ -369,16 +363,16 @@
                     });
                 }
                 var totalEl = document.getElementById('deliveredTotal');
-                if (totalEl && data.total !== undefined) totalEl.textContent = toArabicDigits(data.total);
+                if (totalEl && data.total !== undefined) totalEl.textContent = toWesternDigits(data.total);
             })
             .catch(function () {});
     }
 
     function updateStock(stock) {
-        if (stock && elBalance) elBalance.textContent = toArabicDigits(stock.balance);
-        if (stock && elDelivered) elDelivered.textContent = toArabicDigits(stock.delivered);
+        if (stock && elBalance) elBalance.textContent = toWesternDigits(stock.balance);
+        if (stock && elDelivered) elDelivered.textContent = toWesternDigits(stock.delivered);
         var totalEl = document.getElementById('deliveredTotal');
-        if (stock && totalEl) totalEl.textContent = toArabicDigits(stock.delivered);
+        if (stock && totalEl) totalEl.textContent = toWesternDigits(stock.delivered);
     }
 
     function doSearch() {
@@ -436,8 +430,8 @@
         renderBeneficiary(b);
         showSuccess('تم الحفظ محلياً — ستُزامَن عند عودة الاتصال');
         prependRecent(b, 'on_time');
-        if (elBalance) elBalance.textContent = toArabicDigits(String(Math.max(0, parseInt(toWesternDigits(elBalance.textContent), 10) - 1)));
-        if (elDelivered) elDelivered.textContent = toArabicDigits(String(parseInt(toWesternDigits(elDelivered.textContent), 10) + 1));
+        if (elBalance) elBalance.textContent = String(Math.max(0, parseInt(toWesternDigits(elBalance.textContent), 10) - 1));
+        if (elDelivered) elDelivered.textContent = String(parseInt(toWesternDigits(elDelivered.textContent), 10) + 1);
         elQuery && elQuery.focus();
     }
 

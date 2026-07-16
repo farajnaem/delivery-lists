@@ -21,7 +21,7 @@ final class MessageTemplates
         string $timeFrom = '',
         string $timeTo = ''
     ): string {
-        $timePart = ArabicFormat::formatTimeRange12($timeFrom, $timeTo, false);
+        $timePart = ArabicFormat::formatTimeRange12($timeFrom, $timeTo);
         if ($timePart !== '') {
             $timePart = ' ، ' . $timePart;
         }
@@ -33,7 +33,7 @@ final class MessageTemplates
             trim($name),
             self::INVITATION_CENTER,
             trim($campaign['parcel_name'] ?? 'الطرد'),
-            ArabicFormat::formatDate($date, false),
+            ArabicFormat::formatDate($date),
             $warehouse,
             $window,
             $timePart,

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App;
 
 /**
- * عرض الأرقام بالأرقام العربية (٠١٢٣…) والوقت بنظام 12 ساعة (ص/م).
+ * تنسيق العرض: أرقام إنجليزية والوقت بنظام 12 ساعة (ص/م).
  * التخزين في قاعدة البيانات يبقى بالأرقام الغربية وصيغة 24 ساعة.
  */
 final class ArabicFormat
@@ -13,9 +13,10 @@ final class ArabicFormat
     private const WESTERN = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
     private const ARABIC = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
 
+    /** @deprecated استخدم toWesternDigits — يُبقى للتوافق ويعيد أرقاماً إنجليزية فقط */
     public static function toArabicDigits(string|int|float|null $value): string
     {
-        return str_replace(self::WESTERN, self::ARABIC, (string) ($value ?? ''));
+        return self::toWesternDigits($value);
     }
 
     public static function toWesternDigits(string|int|float|null $value): string
@@ -23,7 +24,7 @@ final class ArabicFormat
         return str_replace(self::ARABIC, self::WESTERN, (string) ($value ?? ''));
     }
 
-    public static function formatTime12(string $time24, bool $arabicDigits = true): string
+    public static function formatTime12(string $time24, bool $arabicDigits = false): string
     {
         $time24 = self::toWesternDigits(trim($time24));
         if ($time24 === '') {
@@ -31,7 +32,7 @@ final class ArabicFormat
         }
 
         if (!preg_match('/^(\d{1,2}):(\d{2})/', $time24, $m)) {
-            return $arabicDigits ? self::toArabicDigits($time24) : $time24;
+            return $arabicDigits ? str_replace(self::WESTERN, self::ARABIC, $time24) : $time24;
         }
 
         $hour = (int) $m[1];
@@ -44,10 +45,10 @@ final class ArabicFormat
 
         $formatted = sprintf('%d:%s %s', $hour12, $minute, $period);
 
-        return $arabicDigits ? self::toArabicDigits($formatted) : $formatted;
+        return $arabicDigits ? str_replace(self::WESTERN, self::ARABIC, $formatted) : $formatted;
     }
 
-    public static function formatTimeRange12(string $from, string $to, bool $arabicDigits = true): string
+    public static function formatTimeRange12(string $from, string $to, bool $arabicDigits = false): string
     {
         $from = self::formatTime12($from, $arabicDigits);
         $to = self::formatTime12($to, $arabicDigits);
@@ -58,7 +59,7 @@ final class ArabicFormat
         return 'من الساعة ' . $from . ' إلى ' . $to;
     }
 
-    public static function formatDate(string $date, bool $arabicDigits = true): string
+    public static function formatDate(string $date, bool $arabicDigits = false): string
     {
         $western = self::toWesternDigits(trim($date));
         if ($western === '') {
@@ -69,13 +70,13 @@ final class ArabicFormat
         if ($ts !== false) {
             $formatted = date('Y-m-d', $ts);
 
-            return $arabicDigits ? self::toArabicDigits($formatted) : $formatted;
+            return $arabicDigits ? str_replace(self::WESTERN, self::ARABIC, $formatted) : $formatted;
         }
 
-        return $arabicDigits ? self::toArabicDigits($western) : $western;
+        return $arabicDigits ? str_replace(self::WESTERN, self::ARABIC, $western) : $western;
     }
 
-    public static function formatDateTime(string $datetime): string
+    public static function formatDateTime(string $datetime, bool $arabicDigits = false): string
     {
         $western = self::toWesternDigits(trim($datetime));
         if ($western === '') {
@@ -84,17 +85,17 @@ final class ArabicFormat
 
         $ts = strtotime($western);
         if ($ts === false) {
-            return self::toArabicDigits($western);
+            return $arabicDigits ? str_replace(self::WESTERN, self::ARABIC, $western) : $western;
         }
 
-        $date = self::toArabicDigits(date('Y-m-d', $ts));
-        $time = self::formatTime12(date('H:i', $ts));
+        $date = self::formatDate(date('Y-m-d', $ts), $arabicDigits);
+        $time = self::formatTime12(date('H:i', $ts), $arabicDigits);
 
         return trim($date . ' ' . $time);
     }
 
     /**
-     * تجهيز صف مستفيد للعرض (واجهة، API، رسائل).
+     * تجهيز صف مستفيد للعرض (واجهة، API).
      *
      * @param array<string, mixed> $row
      * @return array<string, mixed>
@@ -109,20 +110,18 @@ final class ArabicFormat
         $prefix = $codePrefix ?? (string) ($row['parcel_code'] ?? '');
 
         if ($code !== '') {
-            $row['display_code'] = self::toArabicDigits(
-                ParcelCodeHelper::displayForBeneficiary(
-                    $code,
-                    $suffix !== '' ? $suffix : null,
-                    $prefix !== '' ? $prefix : null
-                )
+            $row['display_code'] = ParcelCodeHelper::displayForBeneficiary(
+                $code,
+                $suffix !== '' ? $suffix : null,
+                $prefix !== '' ? $prefix : null
             );
         } elseif (!empty($row['display_code'])) {
-            $row['display_code'] = self::toArabicDigits((string) $row['display_code']);
+            $row['display_code'] = self::toWesternDigits((string) $row['display_code']);
         }
 
         foreach (['national_id', 'mobile', 'sort_order', 'window_num', 'day_index'] as $key) {
             if (isset($row[$key]) && $row[$key] !== '' && $row[$key] !== null) {
-                $row[$key] = self::toArabicDigits((string) $row[$key]);
+                $row[$key] = self::toWesternDigits((string) $row[$key]);
             }
         }
 
@@ -185,7 +184,7 @@ final class ArabicFormat
             'planned_today',
         ] as $key) {
             if (isset($stats[$key])) {
-                $stats[$key] = self::toArabicDigits((string) $stats[$key]);
+                $stats[$key] = self::toWesternDigits((string) $stats[$key]);
             }
         }
 
