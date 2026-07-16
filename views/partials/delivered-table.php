@@ -1,4 +1,4 @@
-<?php use App\ParcelCodeHelper; ?>
+<?php
 /** @var int|null $totalDelivered */
 /** @var string|null $codePrefix */
 /** @var string|null $codeSuffix */

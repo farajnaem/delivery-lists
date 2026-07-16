@@ -23,7 +23,7 @@ final class ArabicFormat
         return str_replace(self::ARABIC, self::WESTERN, (string) ($value ?? ''));
     }
 
-    public static function formatTime12(string $time24): string
+    public static function formatTime12(string $time24, bool $arabicDigits = true): string
     {
         $time24 = self::toWesternDigits(trim($time24));
         if ($time24 === '') {
@@ -31,7 +31,7 @@ final class ArabicFormat
         }
 
         if (!preg_match('/^(\d{1,2}):(\d{2})/', $time24, $m)) {
-            return self::toArabicDigits($time24);
+            return $arabicDigits ? self::toArabicDigits($time24) : $time24;
         }
 
         $hour = (int) $m[1];
@@ -42,13 +42,15 @@ final class ArabicFormat
             $hour12 = 12;
         }
 
-        return self::toArabicDigits(sprintf('%d:%s %s', $hour12, $minute, $period));
+        $formatted = sprintf('%d:%s %s', $hour12, $minute, $period);
+
+        return $arabicDigits ? self::toArabicDigits($formatted) : $formatted;
     }
 
-    public static function formatTimeRange12(string $from, string $to): string
+    public static function formatTimeRange12(string $from, string $to, bool $arabicDigits = true): string
     {
-        $from = self::formatTime12($from);
-        $to = self::formatTime12($to);
+        $from = self::formatTime12($from, $arabicDigits);
+        $to = self::formatTime12($to, $arabicDigits);
         if ($from === '' || $to === '') {
             return '';
         }
@@ -56,7 +58,7 @@ final class ArabicFormat
         return 'من الساعة ' . $from . ' إلى ' . $to;
     }
 
-    public static function formatDate(string $date): string
+    public static function formatDate(string $date, bool $arabicDigits = true): string
     {
         $western = self::toWesternDigits(trim($date));
         if ($western === '') {
@@ -65,10 +67,12 @@ final class ArabicFormat
 
         $ts = strtotime($western);
         if ($ts !== false) {
-            return self::toArabicDigits(date('Y-m-d', $ts));
+            $formatted = date('Y-m-d', $ts);
+
+            return $arabicDigits ? self::toArabicDigits($formatted) : $formatted;
         }
 
-        return self::toArabicDigits($western);
+        return $arabicDigits ? self::toArabicDigits($western) : $western;
     }
 
     public static function formatDateTime(string $datetime): string

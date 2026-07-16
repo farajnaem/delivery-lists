@@ -21,7 +21,7 @@ final class MessageTemplates
         string $timeFrom = '',
         string $timeTo = ''
     ): string {
-        $timePart = ArabicFormat::formatTimeRange12($timeFrom, $timeTo);
+        $timePart = ArabicFormat::formatTimeRange12($timeFrom, $timeTo, false);
         if ($timePart !== '') {
             $timePart = ' ، ' . $timePart;
         }
@@ -29,20 +29,18 @@ final class MessageTemplates
         $warehouse = self::warehouseLabel($campaign);
 
         return sprintf(
-            'السيد/ %s يدعوكم %s لاستلام %s وذلك يوم %s في %s ، شباك رقم %s%s ، كود رقم %s',
+            'السيد/ %s يدعوكم %s لاستلام %s وذلك يوم %s في %s ، شباك رقم %d%s ، كود رقم %s',
             trim($name),
             self::INVITATION_CENTER,
             trim($campaign['parcel_name'] ?? 'الطرد'),
-            ArabicFormat::formatDate($date),
+            ArabicFormat::formatDate($date, false),
             $warehouse,
-            ArabicFormat::toArabicDigits((string) $window),
+            $window,
             $timePart,
-            ArabicFormat::toArabicDigits(
-                ParcelCodeHelper::displayForBeneficiary(
-                    $disbursementCode,
-                    (string) ($campaign['parcel_code_suffix'] ?? ''),
-                    (string) ($campaign['parcel_code'] ?? '')
-                )
+            ParcelCodeHelper::displayForBeneficiary(
+                $disbursementCode,
+                (string) ($campaign['parcel_code_suffix'] ?? ''),
+                (string) ($campaign['parcel_code'] ?? '')
             )
         );
     }
@@ -78,12 +76,10 @@ final class MessageTemplates
         );
 
         if ($code !== '') {
-            $message .= ' ، كود رقم ' . ArabicFormat::toArabicDigits(
-                ParcelCodeHelper::displayForBeneficiary(
-                    $code,
-                    (string) ($campaign['parcel_code_suffix'] ?? ''),
-                    (string) ($campaign['parcel_code'] ?? '')
-                )
+            $message .= ' ، كود رقم ' . ParcelCodeHelper::displayForBeneficiary(
+                $code,
+                (string) ($campaign['parcel_code_suffix'] ?? ''),
+                (string) ($campaign['parcel_code'] ?? '')
             );
         }
 
