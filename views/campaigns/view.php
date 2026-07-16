@@ -186,7 +186,7 @@ context_nav([
 <?php if ($isGenerated && !empty($canExport) && !empty($plan['days'])): ?>
 <div class="card">
     <h2>تنزيل يوم بيوم</h2>
-    <p class="text-muted">الرسائل: صدّر يوم التسليم فقط عند الاقتراب منه (للطوارئ والتأجيل). كشوف التسليم: تنزيل اختياري لشبابيك ذلك اليوم.</p>
+    <p class="text-muted">الرسائل: صدّر يوم التسليم فقط عند الاقتراب منه (للطوارئ والتأجيل). ملف الرسائل يحتوي ورقتين منفصلتين: <strong>رسائل_جوال</strong> و<strong>رسائل_أوريدو</strong>. كشوف التسليم: تنزيل اختياري لشبابيك ذلك اليوم.</p>
     <div class="table-wrap">
     <table class="table">
         <thead>

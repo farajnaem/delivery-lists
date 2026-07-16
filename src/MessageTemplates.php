@@ -27,12 +27,16 @@ final class MessageTemplates
             ? sprintf(' ، من الساعة %s إلى %s', $timeFrom, $timeTo)
             : '';
 
+        $warehouse = trim((string) ($campaign['warehouse_name'] ?? ''));
+        $placePart = $warehouse !== '' ? sprintf(' في %s', $warehouse) : '';
+
         return sprintf(
-            'السيد/ %s يدعوكم %s لاستلام %s وذلك يوم %s ، شباك رقم %d%s ، كود رقم %s',
+            'السيد/ %s يدعوكم %s لاستلام %s وذلك يوم %s%s ، شباك رقم %d%s ، كود رقم %s',
             trim($name),
             self::INVITATION_CENTER,
             trim($campaign['parcel_name'] ?? 'الطرد'),
             $date,
+            $placePart,
             $window,
             $timePart,
             ParcelCodeHelper::displayForBeneficiary(

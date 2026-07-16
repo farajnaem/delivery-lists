@@ -15,7 +15,12 @@ if ($h !== [66, 66, 67, 67, 67, 67]) {
 }
 
 $msg = MessageTemplates::appointment(
-    ['parcel_name' => 'طرد', 'parcel_code' => 'SOCI', 'parcel_code_suffix' => ''],
+    [
+        'parcel_name' => 'طرد',
+        'parcel_code' => 'SOCI',
+        'parcel_code_suffix' => '',
+        'warehouse_name' => 'مخزن الشمال',
+    ],
     'أحمد',
     '2026-07-20',
     'SOCI00482',
@@ -24,8 +29,12 @@ $msg = MessageTemplates::appointment(
     '10:00'
 );
 echo $msg . PHP_EOL;
-if (!str_contains($msg, 'من الساعة 09:00 إلى 10:00') || !str_contains($msg, 'شباك رقم 2')) {
-    fwrite(STDERR, "message missing time/window\n");
+if (
+    !str_contains($msg, 'من الساعة 09:00 إلى 10:00')
+    || !str_contains($msg, 'شباك رقم 2')
+    || !str_contains($msg, 'في مخزن الشمال')
+) {
+    fwrite(STDERR, "message missing time/window/warehouse\n");
     exit(1);
 }
 

@@ -114,7 +114,7 @@ final class ExcelExportService
         $spreadsheet = new Spreadsheet();
         $spreadsheet->getDefaultStyle()->getFont()->setName('Arial')->setSize(10);
         $spreadsheet->removeSheetByIndex(0);
-        self::buildMessagesSheets($spreadsheet, $dayRows);
+        self::buildMessagesSheets($spreadsheet, $dayRows, $campaign);
 
         if ($spreadsheet->getSheetCount() === 0) {
             throw new \RuntimeException('لا توجد رسائل لهذا اليوم.');
@@ -651,7 +651,8 @@ final class ExcelExportService
         }
     }
 
-    private static function buildMessagesSheets(Spreadsheet $spreadsheet, array $all): void
+    /** @param list<array<string,mixed>> $all */
+    private static function buildMessagesSheets(Spreadsheet $spreadsheet, array $all, array $campaign = []): void
     {
         $jawwal = [];
         $ooredoo = [];
@@ -672,12 +673,15 @@ final class ExcelExportService
         self::sortByName($ooredoo);
         self::sortByName($other);
 
-        self::buildCarrierMessagesSheet($spreadsheet, 'رسائل_جوال', $jawwal);
-        self::buildCarrierMessagesSheet($spreadsheet, 'رسائل_أوريدو', $ooredoo);
-
-        // لا نهمل أي رقم غير متوقع؛ نظهره في كشف مستقل للمراجعة.
+        // كل شبكة بورقة مستقلة داخل نفس الملف (جوال / أوريدو / غير مصنفة).
+        if ($jawwal !== []) {
+            self::buildCarrierMessagesSheet($spreadsheet, 'رسائل_جوال', $jawwal, $campaign);
+        }
+        if ($ooredoo !== []) {
+            self::buildCarrierMessagesSheet($spreadsheet, 'رسائل_أوريدو', $ooredoo, $campaign);
+        }
         if ($other !== []) {
-            self::buildCarrierMessagesSheet($spreadsheet, 'رسائل_غير_مصنفة', $other);
+            self::buildCarrierMessagesSheet($spreadsheet, 'رسائل_غير_مصنفة', $other, $campaign);
         }
     }
 
@@ -696,17 +700,32 @@ final class ExcelExportService
     private static function buildCarrierMessagesSheet(
         Spreadsheet $spreadsheet,
         string $title,
-        array $beneficiaries
+        array $beneficiaries,
+        array $campaign = []
     ): void {
         $sheet = $spreadsheet->createSheet();
         $sheet->setTitle($title);
         $sheet->setRightToLeft(true);
 
-        $headerRow = 1;
+        $warehouse = trim((string) ($campaign['warehouse_name'] ?? ''));
+        $location = trim((string) ($campaign['warehouse_location'] ?? ''));
+        $metaParts = array_filter([
+            $warehouse !== '' ? 'مخزن التسليم: ' . $warehouse : '',
+            $location !== '' ? 'الموقع: ' . $location : '',
+            'عدد الرسائل: ' . count($beneficiaries),
+        ]);
+        $sheet->setCellValue('A1', implode(' — ', $metaParts));
+        $sheet->mergeCells('A1:C1');
+        $sheet->getStyle('A1')->getFont()->setBold(true);
+        $sheet->getStyle('A1')->getFill()
+            ->setFillType(Fill::FILL_SOLID)
+            ->getStartColor()->setRGB(self::SECTION_FILL);
+
+        $headerRow = 2;
         $headers = ['#', 'رقم الجوال', 'نص الرسالة'];
         self::writeHeaderRow($sheet, $headerRow, $headers);
 
-        $row = 2;
+        $row = $headerRow + 1;
         foreach ($beneficiaries as $i => $b) {
             $sheet->setCellValue('A' . $row, $i + 1);
             self::setMobileCell(
@@ -720,9 +739,9 @@ final class ExcelExportService
         }
 
         $lastRow = max($headerRow, $row - 1);
-        self::borderAll($sheet, 'A1:C' . $lastRow);
+        self::borderAll($sheet, 'A' . $headerRow . ':C' . $lastRow);
         if ($beneficiaries !== []) {
-            self::styleDataRows($sheet, 'A2:C' . $lastRow);
+            self::styleDataRows($sheet, 'A' . ($headerRow + 1) . ':C' . $lastRow);
         }
 
         $sheet->getColumnDimension('A')->setWidth(6);
