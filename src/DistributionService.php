@@ -154,7 +154,7 @@ final class DistributionService
                     continue;
                 }
 
-                // أكواد أولاً ثم ترتيب أبجدي داخل الشباك (بدون مرور تحديث ثاني)
+                // أكواد + توزيع ساعات بالتساوي، ثم ترتيب الكشف أبجدياً حسب الاسم
                 $prepared = [];
                 foreach ($windowRows as $row) {
                     $pin = $pins[$pinIdx++];
@@ -166,30 +166,37 @@ final class DistributionService
                         'code' => $code,
                     ];
                 }
-                usort($prepared, static fn ($a, $b) => strcmp($a['code'], $b['code']));
 
                 $slots = self::buildTimeSlots(
                     $campaign['work_start'],
                     $campaign['work_end'],
                     count($prepared)
                 );
+                foreach ($prepared as $i => &$item) {
+                    $item['time_from'] = $slots[$i]['from'];
+                    $item['time_to'] = $slots[$i]['to'];
+                }
+                unset($item);
 
-                foreach ($prepared as $i => $item) {
-                    $slot = $slots[$i];
+                usort($prepared, static fn ($a, $b) => self::compareNames($a['name'], $b['name']));
+
+                foreach ($prepared as $item) {
                     $message = MessageTemplates::appointment(
                         $campaign,
                         $item['name'],
                         $dates[$d],
                         $item['code'],
-                        $w + 1
+                        $w + 1,
+                        $item['time_from'],
+                        $item['time_to']
                     );
                     $batch[] = [
                         $item['mobile'],
                         $item['code'],
                         $dates[$d],
                         $w + 1,
-                        $slot['from'],
-                        $slot['to'],
+                        $item['time_from'],
+                        $item['time_to'],
                         $message,
                         $d + 1,
                         $sortOrder,
@@ -293,6 +300,46 @@ final class DistributionService
         return $dates;
     }
 
+    /** مقارنة أسماء عربية تصاعدياً (ألف → ياء). */
+    public static function compareNames(string $a, string $b): int
+    {
+        $a = trim($a);
+        $b = trim($b);
+        if (class_exists(\Collator::class)) {
+            static $collator = null;
+            if ($collator === null) {
+                $collator = new \Collator('ar');
+            }
+            $cmp = $collator->compare($a, $b);
+            return is_int($cmp) ? $cmp : strcmp($a, $b);
+        }
+
+        return strcmp($a, $b);
+    }
+
+    /**
+     * يقسم العدد على الأجزاء بالتساوي، والباقي على الأجزاء الأخيرة.
+     * مثال: 400 على 6 ساعات → 66,66,67,67,67,67
+     *
+     * @return list<int>
+     */
+    public static function splitCountEndHeavy(int $total, int $parts): array
+    {
+        if ($parts < 1) {
+            $parts = 1;
+        }
+        if ($total <= 0) {
+            return array_fill(0, $parts, 0);
+        }
+        $base = intdiv($total, $parts);
+        $remainder = $total % $parts;
+        $result = [];
+        for ($i = 0; $i < $parts; $i++) {
+            $result[] = $base + ($i >= $parts - $remainder ? 1 : 0);
+        }
+        return $result;
+    }
+
     /**
      * @return list<array{from:string,to:string}>
      */
@@ -301,7 +348,8 @@ final class DistributionService
         $startMin = self::toMinutes($workStart);
         $endMin = self::toMinutes($workEnd);
         $hours = max(1, intdiv($endMin - $startMin, 60));
-        $hourBuckets = self::splitCount($count, $hours);
+        // الباقي على الساعات الأخيرة (مثل 67 في آخر ساعات بدل الأولى)
+        $hourBuckets = self::splitCountEndHeavy($count, $hours);
         $slots = [];
         $cursor = $startMin;
 

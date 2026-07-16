@@ -4,9 +4,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libzip-dev \
     libpng-dev \
     libsqlite3-dev \
+    libicu-dev \
     curl \
     unzip \
-    && docker-php-ext-install pdo pdo_mysql pdo_sqlite zip gd \
+    && docker-php-ext-install pdo pdo_mysql pdo_sqlite zip gd intl \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 RUN a2enmod rewrite headers

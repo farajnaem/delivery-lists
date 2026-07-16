@@ -17,15 +17,24 @@ final class MessageTemplates
         string $name,
         string $date,
         string $disbursementCode,
-        int $window
+        int $window,
+        string $timeFrom = '',
+        string $timeTo = ''
     ): string {
+        $timeFrom = substr(trim($timeFrom), 0, 5);
+        $timeTo = substr(trim($timeTo), 0, 5);
+        $timePart = ($timeFrom !== '' && $timeTo !== '')
+            ? sprintf(' ، من الساعة %s إلى %s', $timeFrom, $timeTo)
+            : '';
+
         return sprintf(
-            'السيد/ %s يدعوكم %s لاستلام %s وذلك يوم %s ، شباك رقم %d ، كود رقم %s',
+            'السيد/ %s يدعوكم %s لاستلام %s وذلك يوم %s ، شباك رقم %d%s ، كود رقم %s',
             trim($name),
             self::INVITATION_CENTER,
             trim($campaign['parcel_name'] ?? 'الطرد'),
             $date,
             $window,
+            $timePart,
             ParcelCodeHelper::displayForBeneficiary(
                 $disbursementCode,
                 (string) ($campaign['parcel_code_suffix'] ?? ''),

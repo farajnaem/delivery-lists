@@ -562,12 +562,12 @@ final class ExcelExportService
                 }
 
                 usort($items, static function ($a, $b) {
-                    $codeCmp = strcmp(
-                        (string) ($a['disbursement_code'] ?? ''),
-                        (string) ($b['disbursement_code'] ?? '')
+                    $nameCmp = DistributionService::compareNames(
+                        (string) ($a['name'] ?? ''),
+                        (string) ($b['name'] ?? '')
                     );
-                    if ($codeCmp !== 0) {
-                        return $codeCmp;
+                    if ($nameCmp !== 0) {
+                        return $nameCmp;
                     }
                     return ((int) ($a['sort_order'] ?? 0)) <=> ((int) ($b['sort_order'] ?? 0));
                 });
@@ -668,9 +668,9 @@ final class ExcelExportService
             }
         }
 
-        self::sortByDisbursementCode($jawwal);
-        self::sortByDisbursementCode($ooredoo);
-        self::sortByDisbursementCode($other);
+        self::sortByName($jawwal);
+        self::sortByName($ooredoo);
+        self::sortByName($other);
 
         self::buildCarrierMessagesSheet($spreadsheet, 'رسائل_جوال', $jawwal);
         self::buildCarrierMessagesSheet($spreadsheet, 'رسائل_أوريدو', $ooredoo);
@@ -682,12 +682,12 @@ final class ExcelExportService
     }
 
     /** @param list<array<string,mixed>> $items */
-    private static function sortByDisbursementCode(array &$items): void
+    private static function sortByName(array &$items): void
     {
         usort($items, static function ($a, $b) {
-            return strcmp(
-                (string) ($a['disbursement_code'] ?? ''),
-                (string) ($b['disbursement_code'] ?? '')
+            return DistributionService::compareNames(
+                (string) ($a['name'] ?? ''),
+                (string) ($b['name'] ?? '')
             );
         });
     }
