@@ -733,7 +733,8 @@ final class ExcelExportService
                 'B' . $row,
                 PhoneHelper::messageRecipient((string) ($b['mobile'] ?? ''))
             );
-            $sheet->setCellValue('C' . $row, $b['message_text']);
+            // نبني النص من القالب الحالي حتى يظهر اسم المخزن دائماً (حتى لو message_text قديم).
+            $sheet->setCellValue('C' . $row, MessageTemplates::appointmentFromBeneficiary($campaign, $b));
             $sheet->getStyle('C' . $row)->getAlignment()->setWrapText(true);
             $row++;
         }

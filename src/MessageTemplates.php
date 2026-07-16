@@ -11,7 +11,7 @@ final class MessageTemplates
 {
     private const INVITATION_CENTER = 'مركز الإرشاد التربوي REC بالتعاون مع IOM';
 
-    /** رسالة الموعد قبل الاستلام */
+    /** رسالة الموعد قبل الاستلام — اسم المخزن إلزامي في كل رسالة. */
     public static function appointment(
         array $campaign,
         string $name,
@@ -27,16 +27,15 @@ final class MessageTemplates
             ? sprintf(' ، من الساعة %s إلى %s', $timeFrom, $timeTo)
             : '';
 
-        $warehouse = trim((string) ($campaign['warehouse_name'] ?? ''));
-        $placePart = $warehouse !== '' ? sprintf(' في %s', $warehouse) : '';
+        $warehouse = self::warehouseLabel($campaign);
 
         return sprintf(
-            'السيد/ %s يدعوكم %s لاستلام %s وذلك يوم %s%s ، شباك رقم %d%s ، كود رقم %s',
+            'السيد/ %s يدعوكم %s لاستلام %s وذلك يوم %s في %s ، شباك رقم %d%s ، كود رقم %s',
             trim($name),
             self::INVITATION_CENTER,
             trim($campaign['parcel_name'] ?? 'الطرد'),
             $date,
-            $placePart,
+            $warehouse,
             $window,
             $timePart,
             ParcelCodeHelper::displayForBeneficiary(
@@ -47,18 +46,34 @@ final class MessageTemplates
         );
     }
 
-    /** رسالة تأكيد التسليم بعد الاستلام */
+    /** إعادة بناء رسالة الموعد من صف مستفيد (للتصدير حتى لو النص القديم قديم). */
+    public static function appointmentFromBeneficiary(array $campaign, array $beneficiary): string
+    {
+        return self::appointment(
+            $campaign,
+            (string) ($beneficiary['name'] ?? ''),
+            (string) ($beneficiary['delivery_date'] ?? ''),
+            (string) ($beneficiary['disbursement_code'] ?? ''),
+            (int) ($beneficiary['window_num'] ?? 0),
+            (string) ($beneficiary['time_from'] ?? ''),
+            (string) ($beneficiary['time_to'] ?? '')
+        );
+    }
+
+    /** رسالة تأكيد التسليم بعد الاستلام — تتضمن اسم المخزن دائماً. */
     public static function deliveryConfirmation(array $campaign, array $beneficiary): string
     {
         $name = trim($beneficiary['name'] ?? '');
         $parcel = trim($campaign['parcel_name'] ?? 'الطرد');
         $code = trim((string) ($beneficiary['disbursement_code'] ?? ''));
+        $warehouse = self::warehouseLabel($campaign);
 
         $message = sprintf(
-            'السيد/ %s يؤكد %s استلام %s',
+            'السيد/ %s يؤكد %s استلام %s في %s',
             $name,
             self::INVITATION_CENTER,
-            $parcel
+            $parcel,
+            $warehouse
         );
 
         if ($code !== '') {
@@ -70,5 +85,16 @@ final class MessageTemplates
         }
 
         return $message;
+    }
+
+    /** اسم المخزن يظهر في كل رسالة؛ لا يُترك فارغاً. */
+    private static function warehouseLabel(array $campaign): string
+    {
+        $warehouse = trim((string) ($campaign['warehouse_name'] ?? ''));
+        if ($warehouse === '') {
+            throw new \RuntimeException('اسم المخزن مطلوب في الرسالة.');
+        }
+
+        return $warehouse;
     }
 }
