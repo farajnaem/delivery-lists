@@ -19,10 +19,17 @@ test1.csv
 
 # Android
 android-app/.gradle/
+android-app/.gradle-local/
 android-app/build/
+android-app/*.log
+android-app/hs_err_*.log
+android-app/replay_*.log
 android-app/app/build/
 android-app/local.properties
+android-app/keystore.properties
 android-app/*.keystore
+android-app/*.jks
 android-app/.idea/
 android-app/sdk-install-log.txt
 android-app/app-debug.apk
+android-app/*-release.apk

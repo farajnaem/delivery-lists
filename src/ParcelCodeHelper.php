@@ -9,9 +9,9 @@ final class ParcelCodeHelper
     public const DEFAULT_PREFIX = 'SOCI';
     /** @deprecated استخدم DEFAULT_PREFIX */
     public const PREFIX = self::DEFAULT_PREFIX;
-    public const PIN_MIN = 1;
-    public const PIN_MAX = 99999;
-    public const PIN_WIDTH = 5;
+    public const PIN_MIN = 1000000;
+    public const PIN_MAX = 9999999;
+    public const PIN_WIDTH = 7;
 
     public static function normalizePrefix(string $prefix): string
     {
@@ -48,8 +48,8 @@ final class ParcelCodeHelper
     }
 
     /**
-     * كود الصرف الداخلي = كود الطرد + 5 أرقام (مع أصفار يسار عند الحاجة).
-     * مثال: REC + 482 → REC00482
+     * كود الصرف الداخلي = كود الطرد + 7 أرقام (مع أصفار يسار عند الحاجة).
+     * مثال: REC + 4829103 → REC4829103
      *
      * المعامل $suffix يُتجاهل في الصيغة الجديدة ويُبقى للتوافق مع الاستدعاءات القديمة.
      */
@@ -63,23 +63,84 @@ final class ParcelCodeHelper
         return $prefix . self::padPin($pin);
     }
 
-    /** رقم عشوائي فريد داخل العملية (1–99999) يُخزَّن لاحقاً بـ 5 خانات. */
+    /**
+     * يتأكد أن كل أكواد الصرف مميزة داخل الطرد (الكود الكامل والرقم المعروض).
+     *
+     * @param list<string> $codes
+     */
+    public static function assertUniqueDisbursementCodes(array $codes, string $prefix, string $suffix = ''): void
+    {
+        $full = [];
+        $display = [];
+        $suffixOpt = $suffix !== '' ? $suffix : null;
+        $prefixOpt = $prefix !== '' ? $prefix : null;
+
+        foreach ($codes as $code) {
+            $code = strtoupper(preg_replace('/\s+/', '', trim($code)) ?? trim($code));
+            if ($code === '') {
+                continue;
+            }
+            if (isset($full[$code])) {
+                throw new \RuntimeException('كود الصرف مكرّر داخل الطرد: ' . $code);
+            }
+            $full[$code] = true;
+
+            $pin = self::displayForBeneficiary($code, $suffixOpt, $prefixOpt);
+            if ($pin !== '' && isset($display[$pin])) {
+                throw new \RuntimeException('رقم كود الصرف مكرّر داخل الطرد: ' . $pin);
+            }
+            if ($pin !== '') {
+                $display[$pin] = true;
+            }
+        }
+    }
+
+    /** رقم عشوائي فريد داخل الطرد (7 خانات) غير سهل التخمين. */
     public static function generateRandomPin(array &$used): int
     {
         $attempts = 0;
+        $maxAttempts = max(50000, (self::PIN_MAX - self::PIN_MIN) * 2);
         do {
             $pin = random_int(self::PIN_MIN, self::PIN_MAX);
             $attempts++;
-            if ($attempts > 50000) {
+            if ($attempts > $maxAttempts) {
                 throw new \RuntimeException('تعذّر توليد أكواد صرف فريدة — قلّل عدد المستفيدين.');
             }
-        } while (isset($used[$pin]));
+        } while (isset($used[$pin]) || self::isGuessablePin($pin));
 
         $used[$pin] = true;
         return $pin;
     }
 
-    /** 5 خانات مع أصفار على اليسار (للكشوف والكود الداخلي). */
+    /** أرقام متسلسلة أو مكرّرة يسهل تخمينها في المخزن. */
+    public static function isGuessablePin(int $pin): bool
+    {
+        if ($pin < self::PIN_MIN || $pin > self::PIN_MAX) {
+            return true;
+        }
+
+        $s = (string) $pin;
+        if ($s === str_repeat($s[0], strlen($s))) {
+            return true;
+        }
+
+        $asc = true;
+        $desc = true;
+        for ($i = 1, $len = strlen($s); $i < $len; $i++) {
+            $prev = (int) $s[$i - 1];
+            $cur = (int) $s[$i];
+            if ($cur !== $prev + 1) {
+                $asc = false;
+            }
+            if ($cur !== $prev - 1) {
+                $desc = false;
+            }
+        }
+
+        return $asc || $desc;
+    }
+
+    /** 7 خانات مع أصفار على اليسار (للكشوف والكود الداخلي). */
     public static function padPin(int|string $pin): string
     {
         $n = (int) self::normalizePin($pin);
@@ -113,8 +174,8 @@ final class ParcelCodeHelper
     }
 
     /**
-     * العرض الكامل في الكشوف: كود الطرد + 5 أرقام.
-     * مثال: SOCI00482
+     * العرض الكامل في الكشوف: كود الطرد + 7 أرقام.
+     * مثال: SOCI4829103
      */
     public static function displayFull(string $disbursementCode, ?string $suffix = null, ?string $prefix = null): string
     {
@@ -226,7 +287,7 @@ final class ParcelCodeHelper
 
     public static function matchSearchCandidates(string $query, string $prefix, string $suffix): array
     {
-        $normalized = preg_replace('/\s+/', '', trim($query)) ?? trim($query);
+        $normalized = preg_replace('/\s+/', '', ArabicFormat::toWesternDigits(trim($query))) ?? ArabicFormat::toWesternDigits(trim($query));
         if ($normalized === '') {
             return [];
         }

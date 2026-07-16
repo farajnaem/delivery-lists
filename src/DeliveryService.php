@@ -102,6 +102,12 @@ final class DeliveryService
         ];
     }
 
+    /** @return array<string, mixed> */
+    public static function stockStatsForDisplay(int $campaignId): array
+    {
+        return ArabicFormat::localizeStock(self::stockStats($campaignId));
+    }
+
     public static function isCampaignActive(array $campaign): bool
     {
         $closedAt = trim((string) ($campaign['delivery_closed_at'] ?? ''));
@@ -110,7 +116,7 @@ final class DeliveryService
 
     public static function search(int $campaignId, string $query): ?array
     {
-        $query = trim($query);
+        $query = ArabicFormat::toWesternDigits(trim($query));
         if ($query === '') {
             return null;
         }
@@ -265,17 +271,7 @@ final class DeliveryService
     /** @param array<string, mixed> $beneficiary */
     public static function enrichForDisplay(array $beneficiary, ?string $codeSuffix = null, ?string $codePrefix = null): array
     {
-        $code = trim((string) ($beneficiary['disbursement_code'] ?? ''));
-        $suffix = $codeSuffix ?? (string) ($beneficiary['parcel_code_suffix'] ?? '');
-        $prefix = $codePrefix ?? (string) ($beneficiary['parcel_code'] ?? '');
-        $beneficiary['display_code'] = $code !== ''
-            ? ParcelCodeHelper::displayForBeneficiary(
-                $code,
-                $suffix !== '' ? $suffix : null,
-                $prefix !== '' ? $prefix : null
-            )
-            : '';
-        return $beneficiary;
+        return ArabicFormat::localizeBeneficiary($beneficiary, $codePrefix, $codeSuffix);
     }
 
     /** @return list<array<string, mixed>> */

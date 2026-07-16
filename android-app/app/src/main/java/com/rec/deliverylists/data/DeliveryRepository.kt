@@ -17,7 +17,7 @@ import com.rec.deliverylists.data.remote.SyncRequest
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import retrofit2.HttpException
-import com.google.gson.Gson
+import com.rec.deliverylists.util.ArabicFormat
 import com.google.gson.JsonObject
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -140,7 +140,7 @@ class DeliveryRepository(
     suspend fun search(campaignId: Int, query: String): List<BeneficiaryEntity> {
         val q = query.trim()
         if (q.isEmpty()) return emptyList()
-        val norm = q.replace(" ", "")
+        val norm = ArabicFormat.toWestern(q).replace(" ", "")
         return beneficiaryDao.search(campaignId, q, norm)
     }
 

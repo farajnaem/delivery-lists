@@ -21,27 +21,28 @@ final class MessageTemplates
         string $timeFrom = '',
         string $timeTo = ''
     ): string {
-        $timeFrom = substr(trim($timeFrom), 0, 5);
-        $timeTo = substr(trim($timeTo), 0, 5);
-        $timePart = ($timeFrom !== '' && $timeTo !== '')
-            ? sprintf(' ، من الساعة %s إلى %s', $timeFrom, $timeTo)
-            : '';
+        $timePart = ArabicFormat::formatTimeRange12($timeFrom, $timeTo);
+        if ($timePart !== '') {
+            $timePart = ' ، ' . $timePart;
+        }
 
         $warehouse = self::warehouseLabel($campaign);
 
         return sprintf(
-            'السيد/ %s يدعوكم %s لاستلام %s وذلك يوم %s في %s ، شباك رقم %d%s ، كود رقم %s',
+            'السيد/ %s يدعوكم %s لاستلام %s وذلك يوم %s في %s ، شباك رقم %s%s ، كود رقم %s',
             trim($name),
             self::INVITATION_CENTER,
             trim($campaign['parcel_name'] ?? 'الطرد'),
-            $date,
+            ArabicFormat::formatDate($date),
             $warehouse,
-            $window,
+            ArabicFormat::toArabicDigits((string) $window),
             $timePart,
-            ParcelCodeHelper::displayForBeneficiary(
-                $disbursementCode,
-                (string) ($campaign['parcel_code_suffix'] ?? ''),
-                (string) ($campaign['parcel_code'] ?? '')
+            ArabicFormat::toArabicDigits(
+                ParcelCodeHelper::displayForBeneficiary(
+                    $disbursementCode,
+                    (string) ($campaign['parcel_code_suffix'] ?? ''),
+                    (string) ($campaign['parcel_code'] ?? '')
+                )
             )
         );
     }
@@ -77,10 +78,12 @@ final class MessageTemplates
         );
 
         if ($code !== '') {
-            $message .= ' ، كود رقم ' . ParcelCodeHelper::displayForBeneficiary(
-                $code,
-                (string) ($campaign['parcel_code_suffix'] ?? ''),
-                (string) ($campaign['parcel_code'] ?? '')
+            $message .= ' ، كود رقم ' . ArabicFormat::toArabicDigits(
+                ParcelCodeHelper::displayForBeneficiary(
+                    $code,
+                    (string) ($campaign['parcel_code_suffix'] ?? ''),
+                    (string) ($campaign['parcel_code'] ?? '')
+                )
             );
         }
 

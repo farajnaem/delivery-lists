@@ -199,19 +199,19 @@ final class ExcelExportService
         self::styleSectionTitle($sheet, 'A1:G1');
 
         $rows = [
-            ['تاريخ التقرير', date('Y-m-d H:i')],
+            ['تاريخ التقرير', self::arDateTime(date('Y-m-d H:i:s'))],
             ['اسم الطرد', $campaign['parcel_name']],
             ['المخزن', $campaign['warehouse_name']],
-            ['فترة التسليم', $campaign['delivery_start'] . ' — ' . $campaign['delivery_end']],
-            ['الكمية الافتتاحية', (int) ($stats['opening_quantity'] ?? 0)],
-            ['إجمالي المستفيدين', (int) ($stats['total_beneficiaries'] ?? 0)],
-            ['مُسلَّم', (int) ($stats['delivered'] ?? 0)],
-            ['بانتظار التسليم', (int) ($stats['pending'] ?? 0)],
-            ['الرصيد المتبقي', (int) ($stats['balance'] ?? 0)],
-            ['في الموعد', (int) ($stats['on_time'] ?? 0)],
-            ['متأخر', (int) ($stats['late'] ?? 0)],
-            ['تسليم اليوم', (int) ($stats['today_delivered'] ?? 0) . ' / ' . (int) ($stats['planned_today'] ?? 0)],
-            ['رسائل SMS معلّقة', SmsService::pendingCount((int) $campaign['id'])],
+            ['فترة التسليم', self::arDate((string) $campaign['delivery_start']) . ' — ' . self::arDate((string) $campaign['delivery_end'])],
+            ['الكمية الافتتاحية', self::ar((int) ($stats['opening_quantity'] ?? 0))],
+            ['إجمالي المستفيدين', self::ar((int) ($stats['total_beneficiaries'] ?? 0))],
+            ['مُسلَّم', self::ar((int) ($stats['delivered'] ?? 0))],
+            ['بانتظار التسليم', self::ar((int) ($stats['pending'] ?? 0))],
+            ['الرصيد المتبقي', self::ar((int) ($stats['balance'] ?? 0))],
+            ['في الموعد', self::ar((int) ($stats['on_time'] ?? 0))],
+            ['متأخر', self::ar((int) ($stats['late'] ?? 0))],
+            ['تسليم اليوم', self::ar((int) ($stats['today_delivered'] ?? 0)) . ' / ' . self::ar((int) ($stats['planned_today'] ?? 0))],
+            ['رسائل SMS معلّقة', self::ar(SmsService::pendingCount((int) $campaign['id']))],
         ];
 
         $r = 3;
@@ -237,13 +237,13 @@ final class ExcelExportService
         $row = $headerRow + 1;
         foreach ($daily as $day) {
             $sheet->fromArray([
-                $day['day_index'],
-                $day['date'],
-                $day['planned'],
-                $day['delivered'],
-                $day['pending'],
-                $day['on_time'],
-                $day['late'],
+                self::ar($day['day_index']),
+                self::arDate($day['date']),
+                self::ar($day['planned']),
+                self::ar($day['delivered']),
+                self::ar($day['pending']),
+                self::ar($day['on_time']),
+                self::ar($day['late']),
             ], null, 'A' . $row);
             $row++;
         }
@@ -355,19 +355,19 @@ final class ExcelExportService
                 default => '',
             };
             $sheet->fromArray([
-                $i + 1,
+                self::ar($i + 1),
                 $b['name'],
-                $b['national_id'],
+                self::ar($b['national_id']),
                 null,
                 null,
                 self::formatReceiptStatusForExport($b),
-                $b['delivery_date'],
-                $b['window_num'],
-                $b['time_from'],
-                $b['time_to'],
-                $b['actual_delivery_date'] ?? '',
+                self::arDate((string) $b['delivery_date']),
+                self::ar($b['window_num']),
+                self::arTime((string) $b['time_from']),
+                self::arTime((string) $b['time_to']),
+                self::arDate((string) ($b['actual_delivery_date'] ?? '')),
                 $typeLabel,
-                $b['delivered_at'] ?? '',
+                self::arDateTime((string) ($b['delivered_at'] ?? '')),
                 $b['delivered_by_name'] ?? '',
             ], null, 'A' . $row);
             self::setFullCodeCell($sheet, 'E' . $row, (string) ($b['disbursement_code'] ?? ''), $codePrefix, $codeSuffix);
@@ -411,14 +411,14 @@ final class ExcelExportService
                 default => 'معلّق',
             };
             $sheet->fromArray([
-                $i + 1,
+                self::ar($i + 1),
                 null,
                 $m['beneficiary_name'] ?? '',
                 null,
                 $m['message_text'] ?? '',
                 $status,
-                $m['created_at'] ?? '',
-                $m['sent_at'] ?? '',
+                self::arDateTime((string) ($m['created_at'] ?? '')),
+                self::arDateTime((string) ($m['sent_at'] ?? '')),
             ], null, 'A' . $row);
             self::setFullCodeCell(
                 $sheet,
@@ -462,9 +462,9 @@ final class ExcelExportService
         $parcelLabel = CampaignService::parcelLabel($campaign);
         $meta = [
             ['اسم الطرد', $campaign['parcel_name'], 'كود الطرد', $parcelLabel, '', ''],
-            ['عدد المستفيدين', count($all), 'اسم المخزن', $campaign['warehouse_name'], 'من', $campaign['delivery_start']],
-            ['إلى', $campaign['delivery_end'], 'أيام العمل', (int) $campaign['num_days'], 'شبابيك/يوم', (int) ($campaign['num_windows'] ?? 0)],
-            ['موقع المخزن', $campaign['warehouse_location'], 'مستفيد/شباك', (int) $campaign['per_window_capacity'], '', ''],
+            ['عدد المستفيدين', self::ar(count($all)), 'اسم المخزن', $campaign['warehouse_name'], 'من', self::arDate((string) $campaign['delivery_start'])],
+            ['إلى', self::arDate((string) $campaign['delivery_end']), 'أيام العمل', self::ar((int) $campaign['num_days']), 'شبابيك/يوم', self::ar((int) ($campaign['num_windows'] ?? 0))],
+            ['موقع المخزن', $campaign['warehouse_location'], 'مستفيد/شباك', self::ar((int) $campaign['per_window_capacity']), '', ''],
         ];
         $r = 2;
         foreach ($meta as $line) {
@@ -491,19 +491,19 @@ final class ExcelExportService
                 default => '',
             };
             $sheet->fromArray([
-                $i + 1,
+                self::ar($i + 1),
                 $b['name'],
-                $b['national_id'],
+                self::ar($b['national_id']),
                 null,
                 self::formatReceiptStatusForExport($b),
                 null,
-                $b['delivery_date'],
-                $b['window_num'],
-                $b['time_from'],
-                $b['time_to'],
-                $b['actual_delivery_date'] ?? '',
+                self::arDate((string) $b['delivery_date']),
+                self::ar($b['window_num']),
+                self::arTime((string) $b['time_from']),
+                self::arTime((string) $b['time_to']),
+                self::arDate((string) ($b['actual_delivery_date'] ?? '')),
                 $typeLabel,
-                $b['delivered_at'] ?? '',
+                self::arDateTime((string) ($b['delivered_at'] ?? '')),
             ], null, 'A' . $row);
             self::setFullCodeCell($sheet, 'F' . $row, (string) ($b['disbursement_code'] ?? ''), $codePrefix, $codeSuffix);
             self::setMobileCell($sheet, 'D' . $row, (string) $b['mobile']);
@@ -588,7 +588,7 @@ final class ExcelExportService
 
                 $parcelMeta = [
                     ['اسم الطرد', $campaign['parcel_name'], 'كود الطرد', CampaignService::parcelLabel($campaign), '', ''],
-                    ['تاريخ البداية', $campaign['delivery_start'], 'تاريخ النهاية', $campaign['delivery_end'], 'اسم المخزن', $campaign['warehouse_name']],
+                    ['تاريخ البداية', self::arDate((string) $campaign['delivery_start']), 'تاريخ النهاية', self::arDate((string) $campaign['delivery_end']), 'اسم المخزن', $campaign['warehouse_name']],
                     ['موقع المخزن', $campaign['warehouse_location'], '', '', '', ''],
                 ];
                 $r = 2;
@@ -605,8 +605,8 @@ final class ExcelExportService
                 $r++;
 
                 $windowMeta = [
-                    ['يوم التسليم', $first['delivery_date'], 'رقم الشباك', $w],
-                    ['عدد المستفيدين', count($items), 'ساعات العمل', $campaign['work_start'] . ' — ' . $campaign['work_end']],
+                    ['يوم التسليم', self::arDate((string) $first['delivery_date']), 'رقم الشباك', self::ar($w)],
+                    ['عدد المستفيدين', self::ar(count($items)), 'ساعات العمل', self::arTime((string) $campaign['work_start']) . ' — ' . self::arTime((string) $campaign['work_end'])],
                 ];
                 $windowStart = $r;
                 foreach ($windowMeta as $line) {
@@ -622,8 +622,8 @@ final class ExcelExportService
                 $row = $headerRow + 1;
                 foreach ($items as $i => $b) {
                     $sheet->fromArray([
-                        $i + 1,
-                        $b['national_id'],
+                        self::ar($i + 1),
+                        self::ar($b['national_id']),
                         $b['name'],
                         null,
                         null,
@@ -752,14 +752,34 @@ final class ExcelExportService
         self::applyPortraitPrint($sheet, $headerRow, $lastRow, 'C');
     }
 
+    private static function ar(mixed $value): string
+    {
+        return ArabicFormat::toArabicDigits((string) $value);
+    }
+
+    private static function arDate(?string $date): string
+    {
+        return $date === null || $date === '' ? '' : ArabicFormat::formatDate($date);
+    }
+
+    private static function arTime(?string $time): string
+    {
+        return $time === null || $time === '' ? '' : ArabicFormat::formatTime12($time);
+    }
+
+    private static function arDateTime(?string $datetime): string
+    {
+        return $datetime === null || $datetime === '' ? '' : ArabicFormat::formatDateTime($datetime);
+    }
+
     private static function setMobileCell(Worksheet $sheet, string $cell, string $mobile): void
     {
         $normalized = PhoneHelper::normalize($mobile);
-        if ($normalized !== '' && $normalized !== '0' && ctype_digit($normalized)) {
-            $sheet->setCellValueExplicit($cell, (int) $normalized, DataType::TYPE_NUMERIC);
-        } else {
-            $sheet->setCellValue($cell, $normalized);
+        if ($normalized === '' || $normalized === '0') {
+            return;
         }
+
+        $sheet->setCellValueExplicit($cell, self::ar($normalized), DataType::TYPE_STRING);
     }
 
     private static function setFullCodeCell(
@@ -775,10 +795,12 @@ final class ExcelExportService
 
         $sheet->setCellValueExplicit(
             $cell,
-            ParcelCodeHelper::displayFull(
-                $disbursementCode,
-                $codeSuffix !== '' ? $codeSuffix : null,
-                $codePrefix !== '' ? $codePrefix : null
+            self::ar(
+                ParcelCodeHelper::displayFull(
+                    $disbursementCode,
+                    $codeSuffix !== '' ? $codeSuffix : null,
+                    $codePrefix !== '' ? $codePrefix : null
+                )
             ),
             DataType::TYPE_STRING
         );

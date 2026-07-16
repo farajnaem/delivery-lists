@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS beneficiaries (
     updated_at DATETIME NULL,
     INDEX idx_beneficiaries_campaign (campaign_id),
     INDEX idx_beneficiaries_day_window (campaign_id, day_index, window_num),
-    INDEX idx_beneficiaries_code (campaign_id, disbursement_code),
+    UNIQUE KEY idx_beneficiaries_code (campaign_id, disbursement_code),
     INDEX idx_beneficiaries_national_id (campaign_id, national_id),
     INDEX idx_beneficiaries_status (campaign_id, receipt_status),
     INDEX idx_beneficiaries_updated (campaign_id, updated_at),

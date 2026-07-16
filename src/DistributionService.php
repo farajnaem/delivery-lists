@@ -93,7 +93,11 @@ final class DistributionService
         $dates = self::buildWorkDates((string) $campaign['delivery_start'], $numDays);
 
         $pins = self::allocateUniquePins($total);
+        if (count($pins) !== count(array_unique($pins))) {
+            throw new \RuntimeException('تعذّر توليد أكواد صرف فريدة — قلّل عدد المستفيدين.');
+        }
         $pinIdx = 0;
+        $assignedCodes = [];
         $sortOrder = 1;
         $idx = 0;
         $summary = $plan;
@@ -157,8 +161,12 @@ final class DistributionService
                 // أكواد + توزيع ساعات بالتساوي، ثم ترتيب الكشف أبجدياً حسب الاسم
                 $prepared = [];
                 foreach ($windowRows as $row) {
+                    if ($pinIdx >= count($pins)) {
+                        throw new \RuntimeException('تعذّر توليد أكواد صرف فريدة — عدد المستفيدين أكبر من المتاح.');
+                    }
                     $pin = $pins[$pinIdx++];
                     $code = ParcelCodeHelper::buildDisbursementCode($codePrefix, $codeSuffix, $pin);
+                    $assignedCodes[] = $code;
                     $prepared[] = [
                         'id' => (int) $row['id'],
                         'name' => (string) $row['name'],
@@ -214,6 +222,24 @@ final class DistributionService
 
         $flushBatch();
 
+        ParcelCodeHelper::assertUniqueDisbursementCodes($assignedCodes, $codePrefix, $codeSuffix);
+
+        $dupStmt = $pdo->prepare('
+            SELECT disbursement_code, COUNT(*) AS c
+            FROM beneficiaries
+            WHERE campaign_id = ? AND disbursement_code IS NOT NULL AND disbursement_code != \'\'
+            GROUP BY disbursement_code
+            HAVING c > 1
+            LIMIT 1
+        ');
+        $dupStmt->execute([$campaignId]);
+        $dup = $dupStmt->fetch();
+        if ($dup) {
+            throw new \RuntimeException(
+                'كود الصرف مكرّر في قاعدة البيانات: ' . (string) ($dup['disbursement_code'] ?? '')
+            );
+        }
+
         $deliveryEnd = $dates !== [] ? $dates[array_key_last($dates)] : (string) $campaign['delivery_start'];
         CampaignService::updateSchedule($campaignId, $numDays, $deliveryEnd);
         CampaignService::markGenerated($campaignId);
@@ -229,14 +255,19 @@ final class DistributionService
         if ($count < 1) {
             return [];
         }
-        if ($count > ParcelCodeHelper::PIN_MAX) {
-            throw new \RuntimeException('عدد المستفيدين أكبر من الحد الأقصى لأكواد الصرف (' . ParcelCodeHelper::PIN_MAX . ').');
+        $pool = ParcelCodeHelper::PIN_MAX - ParcelCodeHelper::PIN_MIN + 1;
+        if ($count > $pool) {
+            throw new \RuntimeException('عدد المستفيدين أكبر من الحد الأقصى لأكواد الصرف (' . number_format($pool) . ').');
         }
 
-        // أسرع بكثير من random_int مع فحص تصادم لكل مستفيد
-        $pins = range(ParcelCodeHelper::PIN_MIN, ParcelCodeHelper::PIN_MAX);
-        shuffle($pins);
-        return array_slice($pins, 0, $count);
+        // مجال 7 خانات كبير — عيّنة عشوائية دون بناء مصفوفة كاملة
+        $used = [];
+        $pins = [];
+        for ($i = 0; $i < $count; $i++) {
+            $pins[] = ParcelCodeHelper::generateRandomPin($used);
+        }
+
+        return $pins;
     }
 
     /** للعمليات القديمة بدون num_windows: يستنتج من الأيام والسعة السابقة. */

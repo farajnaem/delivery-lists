@@ -25,7 +25,7 @@ $defaultWindows = ((int) ($c['num_windows'] ?? 0) > 0) ? (string) (int) $c['num_
     <div class="form-group">
         <label>كود الطرد *</label>
         <input type="text" name="parcel_code" class="form-control" required placeholder="مثال: SOCI أو REC" value="<?= e($parcelCode) ?>" pattern="[A-Za-z0-9]+" title="أحرف وأرقام فقط">
-        <small class="text-muted">حرف أو مجموعة حروف تسبق الرقم. الكود النهائي = <strong>كود الطرد</strong> + <strong>5 أرقام عشوائية</strong> (مثل <strong>SOCI04821</strong>). في الرسائل وتسليم المخزن يظهر الرقم فقط بدون أصفار يسار.</small>
+        <small class="text-muted">حرف أو مجموعة حروف تسبق الرقم. الكود النهائي = <strong>كود الطرد</strong> + <strong>7 أرقام عشوائية</strong> (مثل <strong>SOCI4829103</strong>). في الرسائل وتسليم المخزن يظهر الرقم فقط.</small>
         <input type="hidden" name="parcel_code_suffix" value="<?= e($suffix) ?>">
     </div>
     <div class="form-group">

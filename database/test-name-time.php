@@ -31,9 +31,10 @@ $msg = MessageTemplates::appointment(
 );
 echo $msg . PHP_EOL;
 if (
-    !str_contains($msg, 'من الساعة 09:00 إلى 10:00')
-    || !str_contains($msg, 'شباك رقم 2')
+    !str_contains($msg, 'من الساعة ٩:٠٠ ص إلى ١٠:٠٠ ص')
+    || !str_contains($msg, 'شباك رقم ٢')
     || !str_contains($msg, 'في مخزن الشمال')
+    || !str_contains($msg, 'كود رقم ٤٨٢')
 ) {
     fwrite(STDERR, "message missing time/window/warehouse\n");
     exit(1);
@@ -57,7 +58,7 @@ $fromRow = MessageTemplates::appointmentFromBeneficiary($campaign, [
     'time_from' => '10:00',
     'time_to' => '11:00',
 ]);
-if (!str_contains($fromRow, 'في مخزن الشمال') || !str_contains($fromRow, 'شباك رقم 3')) {
+if (!str_contains($fromRow, 'في مخزن الشمال') || !str_contains($fromRow, 'شباك رقم ٣')) {
     fwrite(STDERR, "appointmentFromBeneficiary missing warehouse/window\n");
     exit(1);
 }

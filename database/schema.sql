@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS beneficiaries (
 
 CREATE INDEX IF NOT EXISTS idx_beneficiaries_campaign ON beneficiaries(campaign_id);
 CREATE INDEX IF NOT EXISTS idx_beneficiaries_day_window ON beneficiaries(campaign_id, day_index, window_num);
-CREATE INDEX IF NOT EXISTS idx_beneficiaries_code ON beneficiaries(campaign_id, disbursement_code);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_beneficiaries_code ON beneficiaries(campaign_id, disbursement_code);
 CREATE INDEX IF NOT EXISTS idx_beneficiaries_national_id ON beneficiaries(campaign_id, national_id);
 CREATE INDEX IF NOT EXISTS idx_beneficiaries_status ON beneficiaries(campaign_id, receipt_status);
 CREATE INDEX IF NOT EXISTS idx_beneficiaries_updated ON beneficiaries(campaign_id, updated_at);

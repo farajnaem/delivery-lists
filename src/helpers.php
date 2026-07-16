@@ -80,13 +80,32 @@ function asset(string $path): string
 
 function format_date(string $date): string
 {
-    $ts = strtotime($date);
-    return $ts ? date('Y-m-d', $ts) : $date;
+    return \App\ArabicFormat::formatDate($date);
 }
 
 function format_time(string $time): string
 {
-    return substr($time, 0, 5);
+    return \App\ArabicFormat::formatTime12($time);
+}
+
+function ar_digits(string|int|float|null $value): string
+{
+    return \App\ArabicFormat::toArabicDigits($value);
+}
+
+function ar_date(string $date): string
+{
+    return \App\ArabicFormat::formatDate($date);
+}
+
+function ar_time(string $time): string
+{
+    return \App\ArabicFormat::formatTime12($time);
+}
+
+function ar_datetime(string $datetime): string
+{
+    return \App\ArabicFormat::formatDateTime($datetime);
 }
 
 /** وقت حالي بصيغة متوافقة مع SQLite وMySQL. */

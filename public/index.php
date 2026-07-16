@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require dirname(__DIR__) . '/src/bootstrap.php';
 
+use App\ArabicFormat;
 use App\MobileAuth;
 use App\MobileSyncService;
 use App\Auth;
@@ -191,7 +192,7 @@ if (str_starts_with($uri, '/api/warehouse')) {
         if (!$result['ok']) {
             json_response($result, 400);
         }
-        $result['stock'] = DeliveryService::stockStats($campaignId);
+        $result['stock'] = DeliveryService::stockStatsForDisplay($campaignId);
         json_response($result);
     }
 
@@ -203,13 +204,13 @@ if (str_starts_with($uri, '/api/warehouse')) {
         $campaignId = (int) ($body['campaign_id'] ?? 0);
         $items = is_array($body['items'] ?? null) ? $body['items'] : [];
         $result = DeliveryService::syncBatch($campaignId, Auth::id() ?? 0, $items);
-        $result['stock'] = DeliveryService::stockStats($campaignId);
+        $result['stock'] = DeliveryService::stockStatsForDisplay($campaignId);
         json_response($result);
     }
 
     if ($uri === '/api/warehouse/stats' && $method === 'GET') {
         $campaignId = (int) ($_GET['campaign_id'] ?? 0);
-        json_response(['ok' => true, 'stock' => DeliveryService::stockStats($campaignId)]);
+        json_response(['ok' => true, 'stock' => DeliveryService::stockStatsForDisplay($campaignId)]);
     }
 
     if ($uri === '/api/warehouse/delivered' && $method === 'GET') {
@@ -218,7 +219,7 @@ if (str_starts_with($uri, '/api/warehouse')) {
         json_response([
             'ok' => true,
             'delivered' => DeliveryService::deliveredBeneficiaries($campaignId, $limit),
-            'total' => DeliveryService::deliveredCount($campaignId),
+            'total' => ArabicFormat::toArabicDigits((string) DeliveryService::deliveredCount($campaignId)),
         ]);
     }
 
@@ -264,7 +265,7 @@ if ($uri === '/warehouse/deliver' && $method === 'GET') {
     warehouse_view('warehouse/deliver', [
         'title' => $campaign['name'],
         'campaign' => $campaign,
-        'stock' => DeliveryService::stockStats($campaignId),
+        'stock' => DeliveryService::stockStatsForDisplay($campaignId),
         'recent' => DeliveryService::deliveredBeneficiaries($campaignId, 50),
         'canViewStock' => RoleHelper::canViewStock(Auth::role() ?? ''),
     ]);
@@ -582,12 +583,24 @@ if ($uri === '/campaigns/view' && $method === 'GET') {
             );
         }
     }
+    $previewRows = array_slice($preview, 0, 20);
+    $codePrefix = (string) ($campaign['parcel_code'] ?? '');
+    $codeSuffix = (string) ($campaign['parcel_code_suffix'] ?? '');
+    if (($campaign['status'] ?? '') === 'generated') {
+        $previewRows = array_map(
+            static fn (array $b): array => ArabicFormat::localizeBeneficiary($b, $codePrefix, $codeSuffix),
+            $previewRows
+        );
+    }
     view('campaigns/view', [
         'title' => $campaign['name'],
-        'campaign' => $campaign,
-        'stats' => $stats,
+        'campaign' => ArabicFormat::localizeCampaignTimes($campaign),
+        'stats' => array_map(
+            static fn ($v) => is_int($v) || is_float($v) ? ArabicFormat::toArabicDigits((string) $v) : $v,
+            $stats
+        ),
         'plan' => $plan,
-        'preview' => array_slice($preview, 0, 20),
+        'preview' => $previewRows,
         'canEdit' => RoleHelper::canEditCampaign(Auth::role() ?? ''),
         'canExport' => RoleHelper::canExport(Auth::role() ?? ''),
         'canViewStock' => RoleHelper::canViewStock(Auth::role() ?? ''),
@@ -599,8 +612,8 @@ if ($uri === '/campaigns/view' && $method === 'GET') {
             ? DeliveryService::deliveredBeneficiaries($id, 50)
             : [],
         'deliveredTotal' => ($campaign['status'] ?? '') === 'generated'
-            ? DeliveryService::deliveredCount($id)
-            : 0,
+            ? ArabicFormat::toArabicDigits((string) DeliveryService::deliveredCount($id))
+            : '٠',
     ]);
     exit;
 }

@@ -1,6 +1,4 @@
 <?php use App\ParcelCodeHelper; ?>
-<?php
-/** @var list<array> $deliveredList */
 /** @var int|null $totalDelivered */
 /** @var string|null $codePrefix */
 /** @var string|null $codeSuffix */
@@ -9,7 +7,7 @@ $codePrefix = $codePrefix ?? '';
 $codeSuffix = $codeSuffix ?? '';
 ?>
 <div class="card">
-    <h2>المستلمون (<?= (int) $totalDelivered ?>)</h2>
+    <h2>المستلمون (<?= e((string) $totalDelivered) ?>)</h2>
     <?php if (empty($deliveredList)): ?>
     <p class="text-muted">لا يوجد مستلمون مسجّلون بعد — ستظهر هنا فور تسجيل التسليم من المخزن.</p>
     <?php else: ?>
@@ -23,14 +21,10 @@ $codeSuffix = $codeSuffix ?? '';
         <tbody>
         <?php foreach ($deliveredList as $r): ?>
         <tr>
-            <td><?= e(ParcelCodeHelper::displayFull(
-                (string) ($r['disbursement_code'] ?? ''),
-                $codeSuffix !== '' ? $codeSuffix : null,
-                $codePrefix !== '' ? $codePrefix : null
-            )) ?></td>
+            <td><?= e($r['display_code'] ?? '') ?></td>
             <td><?= e($r['name']) ?></td>
             <td><?= e($r['national_id'] ?? '') ?></td>
-            <td><?= e($r['delivery_date'] ?? '') ?> — ش <?= (int) ($r['window_num'] ?? 0) ?></td>
+            <td><?= e($r['delivery_date'] ?? '') ?> — ش <?= e((string) ($r['window_num'] ?? '٠')) ?></td>
             <td><?= ($r['delivery_type'] ?? '') === 'late' ? 'متأخر' : 'في الموعد' ?></td>
             <td><?= e($r['delivered_at'] ?? '') ?></td>
             <td><?= e($r['delivered_by_name'] ?? '') ?></td>
@@ -40,7 +34,7 @@ $codeSuffix = $codeSuffix ?? '';
     </table>
     </div>
     <?php if (($totalDelivered ?? 0) > count($deliveredList)): ?>
-    <p class="text-muted">يعرض أول <?= count($deliveredList) ?> — للقائمة الكاملة نزّل <strong>تقرير Excel للتسليمات</strong>.</p>
+    <p class="text-muted">يعرض أول <?= e(ar_digits((string) count($deliveredList))) ?> — للقائمة الكاملة نزّل <strong>تقرير Excel للتسليمات</strong>.</p>
     <?php endif; ?>
     <?php endif; ?>
 </div>

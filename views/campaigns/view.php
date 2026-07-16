@@ -250,11 +250,7 @@ context_nav([
             <td><?= e($b['national_id']) ?></td>
             <td><?= e($b['mobile']) ?></td>
             <?php if ($isGenerated): ?>
-            <td><?= e(ParcelCodeHelper::displayFull(
-                (string) ($b['disbursement_code'] ?? ''),
-                (string) ($campaign['parcel_code_suffix'] ?? ''),
-                (string) ($campaign['parcel_code'] ?? '')
-            )) ?></td>
+            <td><?= e($b['display_code'] ?? '') ?></td>
             <td>
                 <?php if (($b['receipt_status'] ?? '') === 'مستلم'): ?>
                 <span class="badge-delivered-inline">مستلم</span>
@@ -262,10 +258,10 @@ context_nav([
                 <span class="badge-pending-inline">قيد التسليم</span>
                 <?php endif; ?>
             </td>
-            <td><?= e($b['delivery_date']) ?></td>
-            <td><?= (int) $b['window_num'] ?></td>
-            <td><?= e($b['time_from']) ?></td>
-            <td><?= e($b['time_to']) ?></td>
+            <td><?= e($b['delivery_date'] ?? '') ?></td>
+            <td><?= e((string) ($b['window_num'] ?? '')) ?></td>
+            <td><?= e($b['time_from'] ?? '') ?></td>
+            <td><?= e($b['time_to'] ?? '') ?></td>
             <?php endif; ?>
         </tr>
         <?php endforeach; ?>

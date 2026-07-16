@@ -1,8 +1,8 @@
 <?php
 $stats = $stock ?? [];
-$balance = (int) ($stats['balance'] ?? 0);
-$opening = (int) ($stats['opening_quantity'] ?? 0);
-$delivered = (int) ($stats['delivered'] ?? 0);
+$balance = (string) ($stats['balance'] ?? '٠');
+$opening = (string) ($stats['opening_quantity'] ?? '٠');
+$delivered = (string) ($stats['delivered'] ?? '٠');
 $campaignActive = !empty($stats['campaign_active']);
 ?>
 <header class="wh-header">
@@ -58,7 +58,7 @@ $campaignActive = !empty($stats['campaign_active']);
     <div id="searchSuccess" class="wh-alert wh-alert-success hidden"></div>
 
     <div class="wh-recent">
-        <h2 class="wh-section-title">سجل الاستلام (<span id="deliveredTotal"><?= (int) $delivered ?></span>)</h2>
+        <h2 class="wh-section-title">سجل الاستلام (<span id="deliveredTotal"><?= e($delivered) ?></span>)</h2>
         <ul id="recentList" class="wh-recent-list">
             <?php foreach ($recent as $r): ?>
             <li>

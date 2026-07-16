@@ -18,20 +18,23 @@ function assert_eq($expected, $actual, string $label): void
     }
 }
 
-$code = ParcelCodeHelper::buildDisbursementCode('REC', '', 482);
-assert_eq('REC00482', $code, 'build code with pad');
+$code = ParcelCodeHelper::buildDisbursementCode('REC', '', 4829103);
+assert_eq('REC4829103', $code, 'build code with pad');
 
-assert_eq('482', ParcelCodeHelper::displayForBeneficiary($code, null, 'REC'), 'beneficiary pin no zeros');
-assert_eq('REC00482', ParcelCodeHelper::displayFull($code, null, 'REC'), 'full code with letters');
+assert_eq('4829103', ParcelCodeHelper::displayForBeneficiary($code, null, 'REC'), 'beneficiary pin');
+assert_eq('REC4829103', ParcelCodeHelper::displayFull($code, null, 'REC'), 'full code with letters');
 
 $used = [];
 $p1 = ParcelCodeHelper::generateRandomPin($used);
 $p2 = ParcelCodeHelper::generateRandomPin($used);
 assert_eq(true, $p1 !== $p2, 'unique pins');
-assert_eq(5, strlen(ParcelCodeHelper::padPin($p1)), 'pad width 5');
+assert_eq(7, strlen(ParcelCodeHelper::padPin($p1)), 'pad width 7');
+assert_eq(true, $p1 >= ParcelCodeHelper::PIN_MIN, 'pin min 7 digits');
+assert_eq(true, ParcelCodeHelper::isGuessablePin(1234567), 'sequential detected');
+assert_eq(true, ParcelCodeHelper::isGuessablePin(1111111), 'repeated detected');
 
-$candidates = ParcelCodeHelper::matchSearchCandidates('482', 'REC', '');
-assert_eq(true, in_array('REC00482', $candidates, true), 'search by digits finds padded code');
+$candidates = ParcelCodeHelper::matchSearchCandidates('4829103', 'REC', '');
+assert_eq(true, in_array('REC4829103', $candidates, true), 'search by digits finds padded code');
 
 echo $failures === 0 ? "ALL PASSED\n" : "FAILURES: {$failures}\n";
 exit($failures === 0 ? 0 : 1);

@@ -81,7 +81,7 @@ CREATE TABLE IF NOT EXISTS delivery_events (
     echo "OK: delivery_events table\n";
 
     $indexes = [
-        'idx_beneficiaries_code' => 'CREATE INDEX IF NOT EXISTS idx_beneficiaries_code ON beneficiaries(campaign_id, disbursement_code)',
+        'idx_beneficiaries_code' => 'CREATE UNIQUE INDEX IF NOT EXISTS idx_beneficiaries_code ON beneficiaries(campaign_id, disbursement_code)',
         'idx_beneficiaries_national_id' => 'CREATE INDEX IF NOT EXISTS idx_beneficiaries_national_id ON beneficiaries(campaign_id, national_id)',
         'idx_beneficiaries_status' => 'CREATE INDEX IF NOT EXISTS idx_beneficiaries_status ON beneficiaries(campaign_id, receipt_status)',
         'idx_delivery_events_client' => 'CREATE UNIQUE INDEX IF NOT EXISTS idx_delivery_events_client ON delivery_events(client_id) WHERE client_id IS NOT NULL',
@@ -111,33 +111,85 @@ CREATE TABLE IF NOT EXISTS sms_outbox (
     echo "OK: idx_sms_outbox_campaign\n";
 }
 
-// تحديث أكواد الصرف: بدون أصفار + رسائل بالرقم التسلسلي فقط
+// إصلاح أكواد الصرف المكرّرة ثم فرض التفرد داخل كل طرد
 try {
-    $rows = $pdo->query('
-        SELECT b.id, b.sort_order, b.message_text, c.parcel_code_suffix
-        FROM beneficiaries b
-        JOIN campaigns c ON c.id = b.campaign_id
-        WHERE b.sort_order > 0
+    $campaigns = $pdo->query('SELECT id, parcel_code, parcel_code_suffix FROM campaigns')->fetchAll();
+    $dupRows = $pdo->query('
+        SELECT campaign_id, disbursement_code
+        FROM beneficiaries
+        WHERE disbursement_code IS NOT NULL AND disbursement_code != \'\'
+        GROUP BY campaign_id, disbursement_code
+        HAVING COUNT(*) > 1
     ')->fetchAll();
-    $updCode = $pdo->prepare('UPDATE beneficiaries SET disbursement_code = ?, message_text = ? WHERE id = ?');
-    foreach ($rows as $row) {
-        $serial = (int) $row['sort_order'];
-        $suffix = (string) ($row['parcel_code_suffix'] ?? '');
-        $code = \App\ParcelCodeHelper::buildDisbursementCode(\App\ParcelCodeHelper::DEFAULT_PREFIX, $suffix, $serial);
-        $message = (string) ($row['message_text'] ?? '');
-        if ($message !== '') {
-            $message = preg_replace(
-                '/كود\s+[^،]+،/u',
-                'كود ' . \App\ParcelCodeHelper::displaySerial($serial) . '،',
-                $message,
-                1
-            ) ?? $message;
+
+    if ($dupRows !== []) {
+        $campaignMap = [];
+        foreach ($campaigns as $c) {
+            $campaignMap[(int) $c['id']] = $c;
         }
-        $updCode->execute([$code, $message, $row['id']]);
+        $usedByCampaign = [];
+        $existing = $pdo->query('
+            SELECT campaign_id, disbursement_code
+            FROM beneficiaries
+            WHERE disbursement_code IS NOT NULL AND disbursement_code != \'\'
+        ')->fetchAll();
+        foreach ($existing as $row) {
+            $cid = (int) $row['campaign_id'];
+            $usedByCampaign[$cid][strtoupper((string) $row['disbursement_code'])] = true;
+        }
+
+        $fixStmt = $pdo->prepare('UPDATE beneficiaries SET disbursement_code = ? WHERE id = ?');
+        $dupBeneficiaries = $pdo->query('
+            SELECT b.id, b.campaign_id, b.disbursement_code
+            FROM beneficiaries b
+            JOIN (
+                SELECT campaign_id, disbursement_code
+                FROM beneficiaries
+                WHERE disbursement_code IS NOT NULL AND disbursement_code != \'\'
+                GROUP BY campaign_id, disbursement_code
+                HAVING COUNT(*) > 1
+            ) d ON d.campaign_id = b.campaign_id AND d.disbursement_code = b.disbursement_code
+            ORDER BY b.campaign_id ASC, b.id ASC
+        ')->fetchAll();
+
+        $seen = [];
+        foreach ($dupBeneficiaries as $row) {
+            $cid = (int) $row['campaign_id'];
+            $code = strtoupper((string) $row['disbursement_code']);
+            $key = $cid . '|' . $code;
+            if (!isset($seen[$key])) {
+                $seen[$key] = true;
+                continue;
+            }
+
+            $campaign = $campaignMap[$cid] ?? null;
+            $prefix = (string) ($campaign['parcel_code'] ?? \App\ParcelCodeHelper::DEFAULT_PREFIX);
+            $suffix = (string) ($campaign['parcel_code_suffix'] ?? '');
+            $used = &$usedByCampaign[$cid];
+            $pin = \App\ParcelCodeHelper::generateRandomPin($used);
+            $newCode = \App\ParcelCodeHelper::buildDisbursementCode($prefix, $suffix, $pin);
+            $used[strtoupper($newCode)] = true;
+            $fixStmt->execute([$newCode, (int) $row['id']]);
+        }
+        echo "OK: disbursement_code dedupe\n";
+    } else {
+        echo "SKIP: disbursement_code dedupe (none)\n";
     }
-    echo "OK: disbursement_code format migration\n";
+
+    if ($isMysql) {
+        try {
+            $pdo->exec('ALTER TABLE beneficiaries DROP INDEX idx_beneficiaries_code');
+        } catch (Throwable) {
+            // قد يكون الفهرس فريداً مسبقاً أو غير موجود
+        }
+        $pdo->exec('CREATE UNIQUE INDEX idx_beneficiaries_code ON beneficiaries(campaign_id, disbursement_code)');
+    } else {
+        $pdo->exec('DROP INDEX IF EXISTS idx_beneficiaries_code');
+        $pdo->exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_beneficiaries_code ON beneficiaries(campaign_id, disbursement_code)');
+    }
+    echo "OK: unique disbursement_code per campaign\n";
 } catch (Throwable $e) {
-    echo "SKIP: disbursement_code format migration\n";
+    echo 'WARN: disbursement_code uniqueness — ' . $e->getMessage() . "\n";
 }
 
 // تعبئة updated_at للسجلات القديمة
