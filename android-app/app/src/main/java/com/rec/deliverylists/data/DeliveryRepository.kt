@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import retrofit2.HttpException
 import com.rec.deliverylists.util.ArabicFormat
+import com.google.gson.Gson
 import com.google.gson.JsonObject
 import java.text.SimpleDateFormat
 import java.util.Date

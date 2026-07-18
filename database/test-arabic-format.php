@@ -25,5 +25,10 @@ assert_eq('9:00 ص', ArabicFormat::formatTime12('09:00'), 'time 12h am');
 assert_eq('12:00 م', ArabicFormat::formatTime12('12:00'), 'noon');
 assert_eq('2026-07-16', ArabicFormat::formatDate('2026-07-16'), 'western date');
 
+$protected = ArabicFormat::protectWesternDigits('الكود: ١٢٣ بتاريخ 2026');
+assert_eq(true, str_contains($protected, '123'), 'protect converts eastern to western');
+assert_eq(false, (bool) preg_match('/[٠-٩]/u', $protected), 'protect has no eastern digits');
+assert_eq(true, str_contains($protected, "\u{200E}"), 'protect embeds LRM for Excel RTL');
+
 echo $failures === 0 ? "ALL PASSED\n" : "FAILURES: {$failures}\n";
 exit($failures === 0 ? 0 : 1);

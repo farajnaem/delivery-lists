@@ -28,7 +28,7 @@ final class MessageTemplates
 
         $warehouse = self::warehouseLabel($campaign);
 
-        return sprintf(
+        $message = sprintf(
             'السيد/ %s يدعوكم %s لاستلام %s وذلك يوم %s في %s ، شباك رقم %d%s ، كود رقم %s',
             trim($name),
             self::INVITATION_CENTER,
@@ -43,6 +43,9 @@ final class MessageTemplates
                 (string) ($campaign['parcel_code'] ?? '')
             )
         );
+
+        // فرض أرقام لاتينية في Excel/الهاتف حتى مع واجهة عربية RTL
+        return ArabicFormat::protectWesternDigits($message);
     }
 
     /** إعادة بناء رسالة الموعد من صف مستفيد (للتصدير حتى لو النص القديم قديم). */
@@ -83,7 +86,7 @@ final class MessageTemplates
             );
         }
 
-        return $message;
+        return ArabicFormat::protectWesternDigits($message);
     }
 
     /** اسم المخزن يظهر في كل رسالة؛ لا يُترك فارغاً. */

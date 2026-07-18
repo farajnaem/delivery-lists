@@ -48,8 +48,5 @@
         </a>
         <?php endforeach; ?>
     </div>
-    <?php if (!empty($canViewOperations)): ?>
-    <p style="margin-top:1rem"><a href="<?= e(url('/')) ?>">← العودة لعمليات التوزيع</a></p>
-    <?php endif; ?>
     <?php endif; ?>
 </main>

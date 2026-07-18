@@ -133,7 +133,8 @@ context_nav([
 </div>
 
 <div class="card">
-    <h2>الإجراءات</h2>
+    <h2>عمليات الكشوف</h2>
+    <p class="text-muted" style="margin-top:0;margin-bottom:0.85rem">توليد ورفع وتنزيل — روابط المتابعة والتسليم والتعديل في الشريط أعلاه فقط.</p>
     <div class="actions-row">
         <?php if (!empty($canEdit)): ?>
         <?php if (!$isGenerated && ($stats['total'] ?? 0) > 0): ?>
@@ -164,17 +165,8 @@ context_nav([
         <a href="<?= e(url('/campaigns/export?id=' . (int)$campaign['id'])) ?>" class="btn">تنزيل Excel الكامل</a>
         <?php endif; ?>
 
-        <?php if ($isGenerated && !empty($canViewStock)): ?>
-        <a href="<?= e(url('/campaigns/stock?id=' . (int)$campaign['id'])) ?>" class="btn btn-outline">متابعة المخزن</a>
+        <?php if ($isGenerated && !empty($canViewStock) && !empty($canExport)): ?>
         <a href="<?= e(url('/campaigns/export-deliveries?id=' . (int)$campaign['id'])) ?>" class="btn btn-outline">تقرير التسليمات</a>
-        <?php endif; ?>
-
-        <?php if ($isGenerated && !empty($canDeliver)): ?>
-        <a href="<?= e(url('/warehouse/deliver?campaign_id=' . (int)$campaign['id'])) ?>" class="btn btn-outline">التسليم الرسمي</a>
-        <?php endif; ?>
-
-        <?php if (!empty($canEdit)): ?>
-        <a href="<?= e(url('/campaigns/edit?id=' . (int)$campaign['id'])) ?>" class="btn btn-outline">تعديل / حذف</a>
         <?php endif; ?>
     </div>
     <p class="text-muted" style="margin-top:0.75rem">

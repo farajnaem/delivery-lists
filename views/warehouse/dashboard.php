@@ -102,12 +102,6 @@ context_nav([
 </div>
 <?php endif; ?>
 
-<?php if (!empty($canDeliver)): ?>
-<div class="card">
-    <a href="<?= e(url('/warehouse/deliver?campaign_id=' . (int) $campaign['id'])) ?>" class="btn">فتح التسليم الرسمي</a>
-</div>
-<?php endif; ?>
-
 <?php if (!empty($lateList)): ?>
 <div class="card">
     <h2>متأخرون عن موعدهم (<?= count($lateList) ?>+)</h2>

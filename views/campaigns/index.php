@@ -1,10 +1,7 @@
 <?php use App\Auth; ?>
 <?php
-$indexActions = [];
-if (!empty($canDeliver) && (Auth::role() ?? '') !== 'admin') {
-    $indexActions[] = ['label' => 'تسليم المخزن', 'url' => '/warehouse', 'primary' => true];
-}
-context_nav([['label' => 'عمليات التوزيع']], $indexActions);
+// تسليم المخزن يظهر مرة واحدة في الشريط العلوي (nav) — لا نكرره هنا
+context_nav([['label' => 'عمليات التوزيع']]);
 ?>
 <h1>عمليات التوزيع</h1>
 <?php if (!empty($canCreate)): ?>

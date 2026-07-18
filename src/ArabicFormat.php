@@ -24,6 +24,20 @@ final class ArabicFormat
         return str_replace(self::ARABIC, self::WESTERN, (string) ($value ?? ''));
     }
 
+    /**
+     * يضمن أرقاماً لاتينية (123) ويمنع Excel من عرضها بالصيغة الهندية (١٢٣)
+     * داخل أوراق RTL عبر تضمين علامة اتجاه LTR حول كل تسلسل أرقام.
+     */
+    public static function protectWesternDigits(string|int|float|null $value): string
+    {
+        $text = self::toWesternDigits($value);
+        if ($text === '') {
+            return '';
+        }
+
+        return preg_replace('/\d+/', "\u{200E}$0\u{200E}", $text) ?? $text;
+    }
+
     public static function formatTime12(string $time24, bool $arabicDigits = false): string
     {
         $time24 = self::toWesternDigits(trim($time24));

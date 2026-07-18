@@ -4,63 +4,74 @@
 
 ## المتطلبات
 
-- Android Studio Ladybug أو أحدث
-- JDK 17
+- Android Studio Ladybug أو أحدث / JDK 17
 - Android SDK 34
 
-## إعداد عنوان السيرفر
+## عنوان السيرفر
 
-عدّل `SERVER_URL` في [`app/build.gradle.kts`](app/build.gradle.kts):
+مضبوط حاليًا على الإنتاج في `app/build.gradle.kts`:
 
-```kotlin
-// debug — محاكي أندرويد يصل لـ localhost على الجهاز المضيف
-buildConfigField("String", "SERVER_URL", "\"http://10.0.2.2:8090\"")
-
-// release — رابط الإنتاج على Coolify
-buildConfigField("String", "SERVER_URL", "\"https://delivery.rec-soc.org\"")
-```
-
-على **هاتف حقيقي** للتجربة المحلية استخدم IP الشبكة المحلية:
 `https://delivery.rec-soc.org`
 
-## بناء APK
+للتجربة المحلية على المحاكي يمكن مؤقتًا تغيير debug إلى `http://10.0.2.2:8090`.
 
-```bash
-cd android-app
-./gradlew assembleRelease
+## بناء Debug (تجربة سريعة)
+
+```bat
+gradlew.bat assembleDebug
 ```
 
-الملف الناتج:
-`app/build/outputs/apk/release/app-release-unsigned.apk`
+الملف: `app\build\outputs\apk\debug\app-debug.apk`
 
-## التوقيع (release)
+## بناء Release موقّع (للتجربة الميدانية)
 
-```bash
-keytool -genkey -v -keystore delivery-release.keystore -alias delivery -keyalg RSA -keysize 2048 -validity 10000
+أسهل طريقة:
+
+```bat
+بناء-release.bat
 ```
 
-أضف في `app/build.gradle.kts` (خارج Git):
+السكربت:
+1. ينشئ `delivery-release.keystore` مرة واحدة إن لم يوجد
+2. يكتب `keystore.properties` (خارج Git)
+3. يشغّل `assembleRelease`
 
-```kotlin
-signingConfigs {
-    create("release") {
-        storeFile = file("../delivery-release.keystore")
-        storePassword = "..."
-        keyAlias = "delivery"
-        keyPassword = "..."
-    }
-}
-buildTypes { release { signingConfig = signingConfigs.getByName("release") } }
+أو يدويًا:
+
+1. انسخ `keystore.properties.example` → `keystore.properties` واملأ القيم
+2. أنشئ المفتاح:
+
+```bat
+keytool -genkeypair -v -keystore delivery-release.keystore -alias delivery -keyalg RSA -keysize 2048 -validity 10000
 ```
+
+3. ابنِ:
+
+```bat
+gradlew.bat assembleRelease
+```
+
+الملف الناتج (عند وجود التوقيع):
+
+`app\build\outputs\apk\release\app-release.apk`
+
+> احفظ نسخة احتياطية من الـ keystore وكلمة المرور. فقدانها يمنع تحديث التطبيق بنفس التوقيع.
+
+## متى نستخدم Release؟
+
+| الهدف | الأنسب |
+|--------|--------|
+| تجربة سريعة على جهازك | Debug |
+| تجربة ميدانية مع أمين مخزن | **Release موقّع الآن** |
+| منتج نهائي (Tabs / Hilt / اختبارات / ProGuard) | بعد مراحل إعادة التصميم 1–3 |
 
 ## التثبيت على الهاتف
 
-1. فعّل «مصادر غير معروفة» في إعدادات أندرويد
-2. انسخ APK للهاتف وثبّته
+1. فعّل «مصادر غير معروفة»
+2. انسخ APK وثبّته
 3. سجّل الدخول بحساب **أمين مخزن**
-4. اختر العملية واضغط **تحميل/تحديث** (إلزامي قبل التسليم)
-5. افتح التسليم — يعمل بدون إنترنت
-6. عند الاتصال: مزامنة تلقائية كل 15 دقيقة + زر «مزامنة الآن»
+4. حمّل العملية قبل التسليم
+5. التسليم يعمل بدون إنترنت؛ المزامنة عند الاتصال
 
 ## API الموبايل
 
@@ -73,10 +84,6 @@ buildTypes { release { signingConfig = signingConfigs.getByName("release") } }
 
 ## مبدأ المزامنة
 
-- الهاتف يرفع **فقط** التسليمات من outbox المحلي
-- السيرفر يرسل **فقط** السجلات المتغيرة منذ `last_sync_token`
-- عند التعارض: **السيرفر يغلب** — لا يُفقد ما سُجّل على السيرفر
-
-## Gradle Wrapper
-
-إذا لم يكن `gradlew` موجوداً، من Android Studio: **File → New → Import Project** واختر مجلد `android-app`.
+- الهاتف يرفع فقط تسليمات الـ outbox
+- السيرفر يرسل السجلات المتغيرة منذ آخر مزامنة
+- عند التعارض: **السيرفر يغلب**

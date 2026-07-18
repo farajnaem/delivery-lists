@@ -411,11 +411,11 @@ final class ExcelExportService
                 default => 'معلّق',
             };
             $sheet->fromArray([
-                self::ar($i + 1),
+                ArabicFormat::protectWesternDigits((string) ($i + 1)),
                 null,
                 $m['beneficiary_name'] ?? '',
                 null,
-                $m['message_text'] ?? '',
+                ArabicFormat::protectWesternDigits((string) ($m['message_text'] ?? '')),
                 $status,
                 self::arDateTime((string) ($m['created_at'] ?? '')),
                 self::arDateTime((string) ($m['sent_at'] ?? '')),
@@ -714,7 +714,11 @@ final class ExcelExportService
             $location !== '' ? 'الموقع: ' . $location : '',
             'عدد الرسائل: ' . count($beneficiaries),
         ]);
-        $sheet->setCellValue('A1', implode(' — ', $metaParts));
+        $sheet->setCellValueExplicit(
+            'A1',
+            ArabicFormat::protectWesternDigits(implode(' — ', $metaParts)),
+            DataType::TYPE_STRING
+        );
         $sheet->mergeCells('A1:C1');
         $sheet->getStyle('A1')->getFont()->setBold(true);
         $sheet->getStyle('A1')->getFill()
@@ -727,15 +731,28 @@ final class ExcelExportService
 
         $row = $headerRow + 1;
         foreach ($beneficiaries as $i => $b) {
-            $sheet->setCellValue('A' . $row, $i + 1);
-            self::setMobileCell(
-                $sheet,
-                'B' . $row,
-                PhoneHelper::messageRecipient((string) ($b['mobile'] ?? ''))
+            // أرقام لاتينية كنص صريح حتى لا يحوّلها Excel للهندية في ورقة RTL
+            $sheet->setCellValueExplicit(
+                'A' . $row,
+                ArabicFormat::protectWesternDigits((string) ($i + 1)),
+                DataType::TYPE_STRING
             );
+            $mobile = PhoneHelper::messageRecipient((string) ($b['mobile'] ?? ''));
+            if ($mobile !== '' && $mobile !== '0') {
+                $sheet->setCellValueExplicit(
+                    'B' . $row,
+                    ArabicFormat::protectWesternDigits($mobile),
+                    DataType::TYPE_STRING
+                );
+            }
             // نبني النص من القالب الحالي حتى يظهر اسم المخزن دائماً (حتى لو message_text قديم).
-            $sheet->setCellValue('C' . $row, MessageTemplates::appointmentFromBeneficiary($campaign, $b));
-            $sheet->getStyle('C' . $row)->getAlignment()->setWrapText(true);
+            $sheet->setCellValueExplicit(
+                'C' . $row,
+                MessageTemplates::appointmentFromBeneficiary($campaign, $b),
+                DataType::TYPE_STRING
+            );
+            $sheet->getStyle('A' . $row . ':C' . $row)->getAlignment()->setWrapText(true);
+            $sheet->getStyle('A' . $row . ':C' . $row)->getNumberFormat()->setFormatCode('@');
             $row++;
         }
 
