@@ -5,8 +5,8 @@
     "start_url": "/warehouse",
     "display": "standalone",
     "orientation": "portrait",
-    "background_color": "#f8fafc",
-    "theme_color": "#1d4ed8",
+    "background_color": "#F7F8F8",
+    "theme_color": "#0F766E",
     "lang": "ar",
     "dir": "rtl",
     "icons": [

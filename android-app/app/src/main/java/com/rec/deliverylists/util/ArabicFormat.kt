@@ -35,4 +35,24 @@ object ArabicFormat {
             t
         }
     }
+
+    /** عرض نسبي لآخر مزامنة من timestamp بالميلي ثانية. */
+    fun formatLastSync(atMillis: Long?): String {
+        if (atMillis == null || atMillis <= 0L) return "لم تتم المزامنة بعد"
+        val diff = System.currentTimeMillis() - atMillis
+        if (diff < 0) return "الآن"
+        val minutes = diff / 60_000L
+        val hours = minutes / 60L
+        val days = hours / 24L
+        return when {
+            minutes < 1 -> "الآن"
+            minutes < 60 -> "منذ $minutes د"
+            hours < 24 -> "منذ $hours س"
+            days < 7 -> "منذ $days يوم"
+            else -> {
+                val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US)
+                sdf.format(java.util.Date(atMillis))
+            }
+        }
+    }
 }

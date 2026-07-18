@@ -16,7 +16,7 @@
     <?php if (!empty($actions)): ?>
     <div class="context-actions">
         <?php foreach ($actions as $action): ?>
-        <a href="<?= e(url($action['url'])) ?>" class="btn <?= !empty($action['primary']) ? '' : 'btn-outline' ?> btn-sm"><?= e($action['label']) ?></a>
+        <a href="<?= e(url($action['url'])) ?>" class="btn btn-sm <?= !empty($action['primary']) ? '' : 'btn-outline' ?>"><?= e($action['label']) ?></a>
         <?php endforeach; ?>
     </div>
     <?php endif; ?>

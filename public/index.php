@@ -849,5 +849,30 @@ if ($uri === '/users/deactivate' && $method === 'POST') {
     redirect('/users');
 }
 
+if ($uri === '/users/delete' && $method === 'POST') {
+    Auth::requireRole(fn ($r) => RoleHelper::canManageUsers($r));
+    if (!Csrf::verify($_POST['_csrf'] ?? null)) {
+        flash('error', 'انتهت صلاحية النموذج.');
+        redirect('/users');
+    }
+    $id = (int) ($_POST['user_id'] ?? 0);
+    if ($id === (int) (Auth::id() ?? 0)) {
+        flash('error', 'لا يمكنك حذف حسابك.');
+        redirect('/users');
+    }
+    $user = UserService::find($id);
+    if (!$user) {
+        flash('error', 'المستخدم غير موجود.');
+        redirect('/users');
+    }
+    if ($user['role'] === 'admin' && UserService::adminCount() <= 1) {
+        flash('error', 'لا يمكن حذف آخر مدير نشط في النظام.');
+        redirect('/users');
+    }
+    UserService::delete($id);
+    flash('success', 'تم حذف المستخدم.');
+    redirect('/users');
+}
+
 http_response_code(404);
 view('errors/notfound', ['title' => 'غير موجود']);

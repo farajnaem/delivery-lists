@@ -6,13 +6,26 @@ $totalDelivered = $totalDelivered ?? count($deliveredList ?? []);
 $codePrefix = $codePrefix ?? '';
 $codeSuffix = $codeSuffix ?? '';
 ?>
-<div class="card">
-    <h2>المستلمون (<?= e((string) $totalDelivered) ?>)</h2>
+<div class="card table-panel" data-table-filterable>
+    <div class="table-toolbar">
+        <div>
+            <div class="panel-title">المستلمون (<?= e(ar_digits((string) $totalDelivered)) ?>)</div>
+        </div>
+        <?php if (!empty($deliveredList)): ?>
+        <div class="table-toolbar-search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input type="search" placeholder="بحث…" data-table-search aria-label="بحث المستلمين">
+        </div>
+        <?php endif; ?>
+    </div>
     <?php if (empty($deliveredList)): ?>
-    <p class="text-muted">لا يوجد مستلمون مسجّلون بعد — ستظهر هنا فور تسجيل التسليم من المخزن.</p>
+    <div class="empty-state" data-empty-row>
+        <strong>لا يوجد مستلمون مسجّلون بعد</strong>
+        <span>ستظهر هنا فور تسجيل التسليم من المخزن.</span>
+    </div>
     <?php else: ?>
     <div class="table-wrap">
-    <table class="table">
+    <table class="data-table">
         <thead>
             <tr>
                 <th>الكود</th><th>الاسم</th><th>الهوية</th><th>موعده</th><th>النوع</th><th>وقت التسليم</th><th>بواسطة</th>
@@ -25,7 +38,13 @@ $codeSuffix = $codeSuffix ?? '';
             <td><?= e($r['name']) ?></td>
             <td><?= e($r['national_id'] ?? '') ?></td>
             <td><?= e($r['delivery_date'] ?? '') ?> — ش <?= e((string) ($r['window_num'] ?? '0')) ?></td>
-            <td><?= ($r['delivery_type'] ?? '') === 'late' ? 'متأخر' : 'في الموعد' ?></td>
+            <td>
+                <?php if (($r['delivery_type'] ?? '') === 'late'): ?>
+                <span class="badge badge-warning">متأخر</span>
+                <?php else: ?>
+                <span class="badge badge-ok">في الموعد</span>
+                <?php endif; ?>
+            </td>
             <td><?= e($r['delivered_at'] ?? '') ?></td>
             <td><?= e($r['delivered_by_name'] ?? '') ?></td>
         </tr>
@@ -34,7 +53,7 @@ $codeSuffix = $codeSuffix ?? '';
     </table>
     </div>
     <?php if (($totalDelivered ?? 0) > count($deliveredList)): ?>
-    <p class="text-muted">يعرض أول <?= e((string) count($deliveredList)) ?> — للقائمة الكاملة نزّل <strong>تقرير Excel للتسليمات</strong>.</p>
+    <p class="text-muted" style="padding:0.75rem 1rem">يعرض أول <?= e(ar_digits((string) count($deliveredList))) ?> — للقائمة الكاملة نزّل <strong>تقرير Excel للتسليمات</strong>.</p>
     <?php endif; ?>
     <?php endif; ?>
 </div>

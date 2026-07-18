@@ -71,6 +71,13 @@ final class UserService
         $stmt->execute([$id]);
     }
 
+    public static function delete(int $id): void
+    {
+        $pdo = Database::getConnection();
+        $stmt = $pdo->prepare('DELETE FROM users WHERE id = ?');
+        $stmt->execute([$id]);
+    }
+
     public static function adminCount(): int
     {
         $pdo = Database::getConnection();

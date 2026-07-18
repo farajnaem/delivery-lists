@@ -1,22 +1,31 @@
-<h1>عملية توزيع جديدة</h1>
-<?php context_nav([
-    ['label' => 'العمليات', 'url' => '/'],
-    ['label' => 'عملية جديدة'],
-]); ?>
-<p class="text-muted">ارفع ملف Excel المرشحين وأدخل بيانات الطرد والمخزن.</p>
+<?php
+page_header(
+    'عملية توزيع جديدة',
+    [
+        ['label' => 'العمليات', 'url' => '/'],
+        ['label' => 'عملية جديدة'],
+    ],
+    [],
+    'ارفع ملف Excel المرشحين وأدخل بيانات الطرد والمخزن.'
+);
+?>
 
 <form method="post" action="<?= e(url('/campaigns/create')) ?>" enctype="multipart/form-data" class="card">
     <?= \App\Csrf::field() ?>
 
-    <h2>ملف المرشحين</h2>
-    <div class="form-group">
-        <label>Excel (xlsx) *</label>
-        <input type="file" name="excel_file" class="form-control" accept=".xlsx,.xls" required>
-        <small class="text-muted">الأعمدة المعتمدة: <strong>اسم رب الأسرة</strong>، <strong>رقم الهوية</strong>، <strong>رقم التواصل</strong>، حالة الاستلام (اختياري).</small>
+    <div class="form-section">
+        <div class="form-section-title">ملف المرشحين</div>
+        <div class="form-section-desc">الأعمدة المعتمدة: اسم رب الأسرة، رقم الهوية، رقم التواصل، وحالة الاستلام (اختياري).</div>
+        <div class="form-group">
+            <label class="field-label">Excel (xlsx) *</label>
+            <input type="file" name="excel_file" class="form-control" accept=".xlsx,.xls" required>
+        </div>
     </div>
 
     <?php partial('campaigns/_form_fields', ['prefix' => 'create']); ?>
 
-    <button type="submit" class="btn" style="margin-top:1rem">إنشاء واستيراد</button>
-    <a href="<?= e(url('/')) ?>" class="btn btn-outline" style="margin-top:1rem">إلغاء</a>
+    <div class="actions-row" style="margin-top:0.5rem">
+        <button type="submit" class="btn">إنشاء واستيراد</button>
+        <a href="<?= e(url('/')) ?>" class="btn btn-outline">إلغاء</a>
+    </div>
 </form>

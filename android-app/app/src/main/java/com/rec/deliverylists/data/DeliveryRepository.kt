@@ -45,7 +45,7 @@ class DeliveryRepository(
     suspend fun login(email: String, password: String): Result<Unit> = apiCall {
         val res = api.login(LoginRequest(email.trim(), password))
         if (!res.ok || res.token.isNullOrBlank() || res.user == null) {
-            throw IllegalStateException(res.error ?: "فشل تسجيل الدخول")
+            throw IllegalStateException(res.error ?: "بيانات الدخول غير صحيحة")
         }
         session.save(res.token, res.user.name, res.user.email)
     }
@@ -147,9 +147,9 @@ class DeliveryRepository(
 
     suspend fun confirmDelivery(campaignId: Int, beneficiary: BeneficiaryEntity): Result<Unit> = runCatching {
         val campaign = campaignDao.get(campaignId) ?: throw IllegalStateException("العملية غير موجودة")
-        if (!campaign.campaignActive) throw IllegalStateException("تم إنهاء عملية التسليم")
-        if (beneficiary.receiptStatus == STATUS_DELIVERED) throw IllegalStateException("مُسلَّم مسبقاً")
-        if (campaign.balance <= 0) throw IllegalStateException("لا يوجد رصيد")
+        if (!campaign.campaignActive) throw IllegalStateException("تم إنهاء عملية التسليم — لا يمكن التسجيل")
+        if (beneficiary.receiptStatus == STATUS_DELIVERED) throw IllegalStateException("هذا المستفيد مُسلَّم مسبقاً")
+        if (campaign.balance <= 0) throw IllegalStateException("لا يوجد رصيد متاح في المخزن")
 
         val now = nowString()
         beneficiaryDao.markLocalDelivered(campaignId, beneficiary.id, STATUS_DELIVERED, now, "on_time")
@@ -223,7 +223,7 @@ class DeliveryRepository(
     }
 
     private fun readApiError(error: Throwable): String {
-        if (error is IllegalStateException) return error.message ?: "خطأ"
+        if (error is IllegalStateException) return error.message ?: "حدث خطأ غير متوقع"
         if (error is HttpException) {
             val body = error.response()?.errorBody()?.string()
             if (!body.isNullOrBlank()) {
@@ -233,12 +233,32 @@ class DeliveryRepository(
                 }.getOrNull()?.let { return it }
             }
             return when (error.code()) {
-                401 -> "غير مصرّح — سجّل الدخول"
-                403 -> "ليس لديك صلاحية"
-                else -> "خطأ من السيرفر (${error.code()})"
+                401 -> "انتهت صلاحية الدخول — سجّل الدخول مجدداً"
+                403 -> "ليس لديك صلاحية لهذا الإجراء"
+                404 -> "البيانات غير موجودة على السيرفر"
+                408, 504 -> "انتهت مهلة الاتصال — حاول مرة أخرى"
+                500, 502, 503 -> "السيرفر غير متاح حالياً — حاول لاحقاً"
+                else -> "تعذّر الاتصال بالسيرفر (${error.code()})"
             }
         }
-        return error.message ?: "فشل الاتصال"
+        val name = error.javaClass.simpleName
+        val msg = error.message.orEmpty()
+        return when {
+            name.contains("UnknownHost", ignoreCase = true) ||
+                msg.contains("Unable to resolve host", ignoreCase = true) ->
+                "لا يوجد اتصال بالإنترنت"
+
+            name.contains("SocketTimeout", ignoreCase = true) ||
+                msg.contains("timeout", ignoreCase = true) ->
+                "انتهت مهلة الاتصال — تحقق من الشبكة"
+
+            name.contains("ConnectException", ignoreCase = true) ||
+                msg.contains("failed to connect", ignoreCase = true) ->
+                "تعذّر الوصول للسيرفر — تحقق من الإنترنت"
+
+            msg.isNotBlank() -> msg
+            else -> "فشل الاتصال — حاول مرة أخرى"
+        }
     }
 
     private suspend fun updateStockLocal(campaignId: Int, stock: StockDto, campaign: CampaignDto?) {

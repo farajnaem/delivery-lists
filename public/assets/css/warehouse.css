@@ -1,9 +1,9 @@
 :root {
-    --wh-primary: #1d4ed8;
-    --wh-primary-light: #dbeafe;
-    --wh-bg: #f8fafc;
+    --wh-primary: #0F766E;
+    --wh-primary-light: #E6F4F2;
+    --wh-bg: #F7F8F8;
     --wh-surface: #fff;
-    --wh-text: #0f172a;
+    --wh-text: #0B1220;
     --wh-muted: #64748b;
     --wh-border: #e2e8f0;
     --wh-success: #16a34a;
@@ -14,7 +14,7 @@
 * { box-sizing: border-box; }
 body.warehouse-app {
     margin: 0;
-    font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+    font-family: "IBM Plex Sans Arabic", "Segoe UI", Tahoma, sans-serif;
     background: var(--wh-bg);
     color: var(--wh-text);
     line-height: 1.5;

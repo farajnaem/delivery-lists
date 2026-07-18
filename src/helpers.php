@@ -176,6 +176,26 @@ function context_nav(array $crumbs, array $actions = []): void
     partial('partials/context-nav', ['crumbs' => $crumbs, 'actions' => $actions]);
 }
 
+/**
+ * ترويسة صفحة موحّدة: عنوان + مسار + أوصاف + إجراءات.
+ *
+ * @param list<array{label:string,url?:string}> $crumbs
+ * @param list<array{label:string,url?:string,primary?:bool,class?:string,modal?:string,type?:string}> $actions
+ */
+function page_header(
+    string $title,
+    array $crumbs = [],
+    array $actions = [],
+    string $description = ''
+): void {
+    partial('partials/page-header', [
+        'title' => $title,
+        'crumbs' => $crumbs,
+        'actions' => $actions,
+        'description' => $description,
+    ]);
+}
+
 function validate_campaign_data(array $data): ?string
 {
     if ($data['name'] === '' || $data['parcel_name'] === '') {
