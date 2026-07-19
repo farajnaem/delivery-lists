@@ -33,6 +33,8 @@ private val LightScheme = lightColorScheme(
     onSurfaceVariant = Muted,
     error = Danger,
     onError = Color.White,
+    errorContainer = Color(0xFFFEE2E2),
+    onErrorContainer = Color(0xFF991B1B),
     outline = Color(0xFFE2E8F0),
 )
 

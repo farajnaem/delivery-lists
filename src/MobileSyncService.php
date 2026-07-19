@@ -114,6 +114,49 @@ final class MobileSyncService
         ];
     }
 
+    /**
+     * تسليم فوري من الموبايل (أونلاين) — يمنع التسليم المزدوج بين الأجهزة.
+     *
+     * @return array<string, mixed>
+     */
+    public static function deliver(int $campaignId, int $beneficiaryId, int $userId, ?string $clientId): array
+    {
+        $campaign = CampaignService::find($campaignId);
+        if (!$campaign || ($campaign['status'] ?? '') !== 'generated') {
+            throw new \RuntimeException('العملية غير جاهزة.');
+        }
+
+        $result = DeliveryService::markDelivered($campaignId, $beneficiaryId, $userId, $clientId);
+        $codeSuffix = (string) ($campaign['parcel_code_suffix'] ?? '');
+        $codePrefix = (string) ($campaign['parcel_code'] ?? '');
+        $beneficiary = null;
+        if (!empty($result['beneficiary']) && is_array($result['beneficiary'])) {
+            $beneficiary = self::formatBeneficiary($result['beneficiary'], $codeSuffix, $codePrefix);
+        } elseif ($beneficiaryId > 0) {
+            $pdo = Database::getConnection();
+            $stmt = $pdo->prepare('SELECT * FROM beneficiaries WHERE id = ? AND campaign_id = ? LIMIT 1');
+            $stmt->execute([$beneficiaryId, $campaignId]);
+            $row = $stmt->fetch();
+            if ($row) {
+                $beneficiary = self::formatBeneficiary($row, $codeSuffix, $codePrefix);
+            }
+        }
+
+        $stats = DeliveryService::stockStats($campaignId);
+
+        return [
+            'ok' => !empty($result['ok']),
+            'already' => !empty($result['already']),
+            'error' => $result['error'] ?? null,
+            'beneficiary' => $beneficiary,
+            'stock' => self::formatStock($stats),
+            'campaign' => self::formatCampaign($campaign),
+            'sync_token' => self::campaignSyncToken($campaignId),
+            'recent_delivered' => DeliveryService::deliveredBeneficiaries($campaignId, 50),
+            'late' => DeliveryService::pendingLate($campaignId, 100),
+        ];
+    }
+
     public static function campaignSyncToken(int $campaignId): string
     {
         $pdo = Database::getConnection();

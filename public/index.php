@@ -148,6 +148,25 @@ if (str_starts_with($uri, '/api/mobile')) {
         }
     }
 
+    if ($uri === '/api/mobile/deliver' && $method === 'POST') {
+        $body = read_json_body();
+        $campaignId = (int) ($body['campaign_id'] ?? 0);
+        $beneficiaryId = (int) ($body['beneficiary_id'] ?? 0);
+        $clientId = isset($body['client_id']) ? (string) $body['client_id'] : null;
+        try {
+            $result = MobileSyncService::deliver(
+                $campaignId,
+                $beneficiaryId,
+                MobileAuth::userId() ?? 0,
+                $clientId
+            );
+            $status = (!empty($result['ok']) || !empty($result['already'])) ? 200 : 400;
+            json_response($result, $status);
+        } catch (\Throwable $e) {
+            json_response(['ok' => false, 'error' => $e->getMessage()], 400);
+        }
+    }
+
     json_response(['ok' => false, 'error' => 'غير موجود'], 404);
 }
 

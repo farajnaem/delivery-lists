@@ -122,4 +122,22 @@ data class SyncResponse(
     val error: String? = null,
 )
 
+data class DeliverRequest(
+    val campaign_id: Int,
+    val beneficiary_id: Int,
+    val client_id: String,
+)
+
+data class DeliverResponse(
+    val ok: Boolean = false,
+    val already: Boolean = false,
+    val error: String? = null,
+    val beneficiary: BeneficiaryDto? = null,
+    val stock: StockDto? = null,
+    val campaign: CampaignDto? = null,
+    val sync_token: String? = null,
+    val recent_delivered: List<RecentDeliveredDto> = emptyList(),
+    val late: List<RecentDeliveredDto> = emptyList(),
+)
+
 data class HealthResponse(val ok: Boolean, val service: String? = null)

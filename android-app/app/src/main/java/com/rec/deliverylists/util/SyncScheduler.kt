@@ -19,10 +19,17 @@ object SyncScheduler {
         val request = PeriodicWorkRequestBuilder<SyncWorker>(15, TimeUnit.MINUTES)
             .setConstraints(constraints)
             .build()
-        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+        val wm = WorkManager.getInstance(context)
+        wm.enqueueUniquePeriodicWork(
             WORK_NAME,
-            ExistingPeriodicWorkPolicy.KEEP,
+            ExistingPeriodicWorkPolicy.UPDATE,
             request,
+        )
+        // مزامنة فورية عند فتح التطبيق (بالإضافة للدورية)
+        wm.enqueue(
+            androidx.work.OneTimeWorkRequestBuilder<SyncWorker>()
+                .setConstraints(constraints)
+                .build(),
         )
     }
 }

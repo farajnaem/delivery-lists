@@ -15,6 +15,9 @@ interface CampaignDao {
     @Query("SELECT * FROM campaigns WHERE id = :id LIMIT 1")
     suspend fun get(id: Int): CampaignEntity?
 
+    @Query("SELECT * FROM campaigns WHERE id = :id LIMIT 1")
+    fun observe(id: Int): Flow<CampaignEntity?>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(items: List<CampaignEntity>)
 

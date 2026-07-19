@@ -24,4 +24,9 @@ interface DeliveryApi {
     suspend fun sync(
         @Body body: SyncRequest,
     ): SyncResponse
+
+    @POST("/api/mobile/deliver")
+    suspend fun deliver(
+        @Body body: DeliverRequest,
+    ): DeliverResponse
 }
