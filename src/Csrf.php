@@ -25,7 +25,15 @@ final class Csrf
     {
         return is_string($token)
             && isset($_SESSION[self::KEY])
+            && is_string($_SESSION[self::KEY])
+            && $_SESSION[self::KEY] !== ''
             && hash_equals($_SESSION[self::KEY], $token);
+    }
+
+    /** رسالة موحّدة عند فشل التحقق — ليست انتهاء حساب المستخدم */
+    public static function failureMessage(): string
+    {
+        return 'انتهت صلاحية النموذج — حدّث الصفحة (F5) ثم أعد المحاولة. هذا ليس عطلاً في حسابك.';
     }
 
     public static function refresh(): string

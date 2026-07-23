@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS beneficiaries (
     delivery_type TEXT,
     actual_delivery_date TEXT,
     updated_at TEXT,
+    delivery_batch_id INTEGER,
     FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE,
     FOREIGN KEY (delivered_by) REFERENCES users(id)
 );
@@ -90,6 +91,23 @@ CREATE TABLE IF NOT EXISTS delivery_events (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_delivery_events_client ON delivery_events(client_id) WHERE client_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS delivery_batches (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    campaign_id INTEGER NOT NULL,
+    reason TEXT NOT NULL DEFAULT '',
+    delivered_count INTEGER NOT NULL DEFAULT 0,
+    created_by INTEGER,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    undone_at TEXT,
+    undone_by INTEGER,
+    undo_reason TEXT,
+    FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE,
+    FOREIGN KEY (created_by) REFERENCES users(id),
+    FOREIGN KEY (undone_by) REFERENCES users(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_delivery_batches_campaign ON delivery_batches(campaign_id);
 
 CREATE TABLE IF NOT EXISTS sms_outbox (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

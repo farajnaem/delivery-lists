@@ -22,6 +22,7 @@ final class RoleHelper
             'تصدير Excel والتقارير',
             'متابعة المخزن وإنهاء/إعادة فتح التسليم',
             'تسليم من المخزن (ويب + تطبيق)',
+            'تسليم جماعي يدوي وتصحيح الحالات والتراجع عن الدفعات',
             'إلغاء التسليمات',
             'نسخ احتياطي لقاعدة البيانات',
         ],
@@ -97,6 +98,12 @@ final class RoleHelper
 
     /** إلغاء التسليمات — مدير النظام فقط */
     public static function canCancelDeliveries(string $role): bool
+    {
+        return $role === 'admin';
+    }
+
+    /** تسليم جماعي يدوي + تصحيح فردي + تراجع دفعة — مدير النظام فقط */
+    public static function canBulkDeliver(string $role): bool
     {
         return $role === 'admin';
     }

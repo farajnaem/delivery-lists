@@ -89,6 +89,14 @@ $delPct = $opening > 0 ? (int) round(($delivered / $opening) * 100) : 0;
 </div>
 <?php endif; ?>
 
+<?php if (!empty($canBulkDeliver)): ?>
+<div class="card">
+    <h2 class="panel-title" style="margin-bottom:0.75rem">تسليم جماعي وتصحيح (مدير)</h2>
+    <p class="text-muted">مطابقة سريعة للطرد، استبعاد من لم يستلم، تصحيح فردي بعد التسليم، والتراجع عن دفعة كاملة.</p>
+    <a class="btn" href="<?= e(url('/campaigns/bulk-delivery?id=' . (int) $campaign['id'])) ?>">فتح التسليم الجماعي والتصحيح</a>
+</div>
+<?php endif; ?>
+
 <?php if (!empty($canEdit)): ?>
 <div class="card">
     <h2 class="panel-title" style="margin-bottom:0.75rem">الكمية الافتتاحية</h2>

@@ -117,7 +117,7 @@ final class DatabaseBackupService
     private static function exportMysqlToFile(string $dest): void
     {
         $pdo = Database::getConnection();
-        $tables = ['users', 'campaigns', 'beneficiaries', 'delivery_events', 'sms_outbox'];
+        $tables = ['users', 'campaigns', 'beneficiaries', 'delivery_events', 'delivery_batches', 'sms_outbox'];
         $sql = "-- كشوفات التسليم — نسخة احتياطية MySQL\n";
         $sql .= '-- ' . date('Y-m-d H:i:s') . "\n\nSET FOREIGN_KEY_CHECKS=0;\n\n";
 

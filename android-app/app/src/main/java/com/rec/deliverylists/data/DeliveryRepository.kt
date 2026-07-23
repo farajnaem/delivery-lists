@@ -478,7 +478,13 @@ class DeliveryRepository(
         } catch (error: Throwable) {
             if (error is HttpException && error.code() == 401 && shouldClearSession(error)) {
                 session.clear()
-                Result.failure(IllegalStateException("انتهت الجلسة — سجّل الدخول مجدداً"))
+                Result.failure(
+                    IllegalStateException(
+                        readApiError(error).ifBlank {
+                            "انتهت صلاحية الجلسة — سجّل الدخول مجدداً (قد يحدث بعد تحديث السيرفر)"
+                        },
+                    ),
+                )
             } else {
                 Result.failure(IllegalStateException(readApiError(error)))
             }
@@ -509,7 +515,7 @@ class DeliveryRepository(
                 }.getOrNull()?.let { return it }
             }
             return when (error.code()) {
-                401 -> "انتهت صلاحية الدخول — سجّل الدخول مجدداً"
+                401 -> "انتهت صلاحية الجلسة — سجّل الدخول مجدداً (قد يحدث بعد تحديث السيرفر)"
                 403 -> "ليس لديك صلاحية لهذا الإجراء"
                 404 -> "البيانات غير موجودة على السيرفر"
                 408, 504 -> "انتهت مهلة الاتصال — حاول مرة أخرى"

@@ -21,7 +21,12 @@ foreach (array_filter(array_map('trim', explode(";\n", $sql))) as $statement) {
     if ($statement === '') {
         continue;
     }
-    $pdo->exec($statement);
+    try {
+        $pdo->exec($statement);
+    } catch (Throwable $e) {
+        // جداول موجودة مسبقاً أو فهارس تعتمد على أعمدة تُضاف لاحقاً في migrate
+        echo 'SKIP schema stmt: ' . $e->getMessage() . "\n";
+    }
 }
 
 if (PHP_SAPI !== 'cli') {

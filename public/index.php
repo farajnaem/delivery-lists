@@ -34,7 +34,7 @@ if ($uri === '/setup' || $uri === '/setup.php') {
     }
     if ($method === 'POST') {
         if (!Csrf::verify($_POST['_csrf'] ?? null)) {
-            flash('error', 'انتهت صلاحية النموذج.');
+            flash('error', Csrf::failureMessage());
             redirect('/setup');
         }
         require dirname(__DIR__) . '/database/install.php';
@@ -72,7 +72,7 @@ if ($uri === '/login' && $method === 'GET') {
 
 if ($uri === '/login' && $method === 'POST') {
     if (!Csrf::verify($_POST['_csrf'] ?? null)) {
-        flash('error', 'انتهت صلاحية النموذج.');
+        flash('error', Csrf::failureMessage());
         redirect('/login');
     }
     if (Auth::attempt($_POST['email'] ?? '', $_POST['password'] ?? '')) {
@@ -312,6 +312,7 @@ if ($uri === '/campaigns/stock' && $method === 'GET') {
         'canDeliver' => RoleHelper::canDeliver(Auth::role() ?? ''),
         'canExport' => RoleHelper::canViewStock(Auth::role() ?? ''),
         'canCancelDeliveries' => RoleHelper::canCancelDeliveries(Auth::role() ?? ''),
+        'canBulkDeliver' => RoleHelper::canBulkDeliver(Auth::role() ?? ''),
         'smsPending' => SmsService::pendingCount($id),
         'smsEnabled' => SmsService::isEnabled(),
     ]);
@@ -322,7 +323,7 @@ if ($uri === '/campaigns/opening-quantity' && $method === 'POST') {
     Auth::requireRole(fn ($r) => RoleHelper::canEditCampaign($r));
     $id = (int) ($_POST['campaign_id'] ?? 0);
     if (!Csrf::verify($_POST['_csrf'] ?? null)) {
-        flash('error', 'انتهت صلاحية النموذج.');
+        flash('error', Csrf::failureMessage());
         redirect('/campaigns/stock?id=' . $id);
     }
     CampaignService::updateOpeningQuantity($id, (int) ($_POST['opening_quantity'] ?? 0));
@@ -334,7 +335,7 @@ if ($uri === '/campaigns/close-delivery' && $method === 'POST') {
     Auth::requireRole(fn ($r) => RoleHelper::canCloseDelivery($r));
     $id = (int) ($_POST['campaign_id'] ?? 0);
     if (!Csrf::verify($_POST['_csrf'] ?? null)) {
-        flash('error', 'انتهت صلاحية النموذج.');
+        flash('error', Csrf::failureMessage());
         redirect('/campaigns/stock?id=' . $id);
     }
     CampaignService::closeDelivery($id);
@@ -346,12 +347,143 @@ if ($uri === '/campaigns/reopen-delivery' && $method === 'POST') {
     Auth::requireRole(fn ($r) => RoleHelper::canCloseDelivery($r));
     $id = (int) ($_POST['campaign_id'] ?? 0);
     if (!Csrf::verify($_POST['_csrf'] ?? null)) {
-        flash('error', 'انتهت صلاحية النموذج.');
+        flash('error', Csrf::failureMessage());
         redirect('/campaigns/stock?id=' . $id);
     }
     CampaignService::reopenDelivery($id);
     flash('success', 'تم إعادة فتح عملية التسليم.');
     redirect('/campaigns/stock?id=' . $id);
+}
+
+if ($uri === '/campaigns/bulk-delivery' && $method === 'GET') {
+    Auth::requireRole(fn ($r) => RoleHelper::canBulkDeliver($r));
+    $id = (int) ($_GET['id'] ?? 0);
+    $campaign = CampaignService::find($id);
+    if (!$campaign || ($campaign['status'] ?? '') !== 'generated') {
+        flash('error', 'العملية غير جاهزة.');
+        redirect('/');
+    }
+    $tab = (string) ($_GET['tab'] ?? 'bulk');
+    if (!in_array($tab, ['bulk', 'correct', 'batches'], true)) {
+        $tab = 'bulk';
+    }
+    view('campaigns/bulk-delivery', [
+        'title' => 'تسليم جماعي وتصحيح',
+        'campaign' => $campaign,
+        'stock' => DeliveryService::stockStats($id),
+        'pendingList' => DeliveryService::pendingBeneficiariesForAdmin($id),
+        'deliveredList' => DeliveryService::deliveredBeneficiariesForAdmin($id),
+        'batches' => DeliveryService::listDeliveryBatches($id),
+        'tab' => $tab,
+    ]);
+    exit;
+}
+
+if ($uri === '/campaigns/bulk-delivery/confirm' && $method === 'POST') {
+    Auth::requireRole(fn ($r) => RoleHelper::canBulkDeliver($r));
+    $id = (int) ($_POST['campaign_id'] ?? 0);
+    if (!Csrf::verify($_POST['_csrf'] ?? null)) {
+        flash('error', Csrf::failureMessage());
+        redirect('/campaigns/bulk-delivery?id=' . $id);
+    }
+
+    $mode = (string) ($_POST['deliver_mode'] ?? 'selected');
+    $ids = [];
+    if ($mode === 'all_except') {
+        // الكشف كامل محدَّد — نرسل فقط المستبعدين (من لم يستلموا) لتفادي حد PHP
+        $excludeRaw = $_POST['exclude_ids'] ?? [];
+        if (!is_array($excludeRaw)) {
+            $excludeRaw = [];
+        }
+        $exclude = array_fill_keys(
+            array_map('intval', array_filter($excludeRaw, static fn ($v) => (int) $v > 0)),
+            true
+        );
+        foreach (DeliveryService::pendingBeneficiariesForAdmin($id) as $row) {
+            $bid = (int) ($row['id'] ?? 0);
+            if ($bid > 0 && !isset($exclude[$bid])) {
+                $ids[] = $bid;
+            }
+        }
+    } else {
+        $ids = $_POST['beneficiary_ids'] ?? [];
+        if (!is_array($ids)) {
+            $ids = [];
+        }
+    }
+
+    $result = DeliveryService::bulkMarkDelivered(
+        $id,
+        (int) (Auth::id() ?? 0),
+        $ids,
+        (string) ($_POST['reason'] ?? '')
+    );
+    if (!$result['ok']) {
+        flash('error', $result['error'] ?? 'فشل التسليم الجماعي.');
+        redirect('/campaigns/bulk-delivery?id=' . $id . '&tab=bulk');
+    }
+    flash(
+        'success',
+        'تم تسليم ' . (int) ($result['delivered'] ?? 0) . ' مستفيد في الدفعة #' . (int) ($result['batch_id'] ?? 0)
+        . (!empty($result['skipped']) ? ' (تخطي ' . (int) $result['skipped'] . ')' : '')
+    );
+    redirect('/campaigns/bulk-delivery?id=' . $id . '&tab=batches');
+}
+
+if ($uri === '/campaigns/bulk-delivery/undo' && $method === 'POST') {
+    Auth::requireRole(fn ($r) => RoleHelper::canBulkDeliver($r));
+    $id = (int) ($_POST['campaign_id'] ?? 0);
+    $batchId = (int) ($_POST['batch_id'] ?? 0);
+    if (!Csrf::verify($_POST['_csrf'] ?? null)) {
+        flash('error', Csrf::failureMessage());
+        redirect('/campaigns/bulk-delivery?id=' . $id . '&tab=batches');
+    }
+    $result = DeliveryService::undoDeliveryBatch(
+        $id,
+        $batchId,
+        (int) (Auth::id() ?? 0),
+        (string) ($_POST['reason'] ?? '')
+    );
+    if (!$result['ok']) {
+        flash('error', $result['error'] ?? 'فشل التراجع.');
+        redirect('/campaigns/bulk-delivery?id=' . $id . '&tab=batches');
+    }
+    flash('success', 'تم التراجع عن الدفعة — أُرجع ' . (int) ($result['undone'] ?? 0) . ' مستفيد.');
+    redirect('/campaigns/bulk-delivery?id=' . $id . '&tab=batches');
+}
+
+if ($uri === '/campaigns/bulk-delivery/correct' && $method === 'POST') {
+    Auth::requireRole(fn ($r) => RoleHelper::canBulkDeliver($r));
+    $id = (int) ($_POST['campaign_id'] ?? 0);
+    if (!Csrf::verify($_POST['_csrf'] ?? null)) {
+        flash('error', Csrf::failureMessage());
+        redirect('/campaigns/bulk-delivery?id=' . $id . '&tab=correct');
+    }
+    $toDeliver = $_POST['to_deliver'] ?? [];
+    $toUndeliver = $_POST['to_undeliver'] ?? [];
+    if (!is_array($toDeliver)) {
+        $toDeliver = [];
+    }
+    if (!is_array($toUndeliver)) {
+        $toUndeliver = [];
+    }
+    $result = DeliveryService::correctDeliveryStatuses(
+        $id,
+        (int) (Auth::id() ?? 0),
+        $toDeliver,
+        $toUndeliver,
+        (string) ($_POST['reason'] ?? '')
+    );
+    if (!$result['ok']) {
+        flash('error', $result['error'] ?? 'فشل التصحيح.');
+        redirect('/campaigns/bulk-delivery?id=' . $id . '&tab=correct');
+    }
+    flash(
+        'success',
+        'تم التصحيح — مستلم جديد: ' . (int) ($result['delivered'] ?? 0)
+        . ' | إرجاع: ' . (int) ($result['undelivered'] ?? 0)
+    );
+    redirect('/campaigns/bulk-delivery?id=' . $id . '&tab=correct');
 }
 
 if ($uri === '/' || $uri === '/campaigns') {
@@ -377,7 +509,7 @@ if ($uri === '/campaigns/create' && $method === 'GET') {
 if ($uri === '/campaigns/create' && $method === 'POST') {
     Auth::requireRole(fn ($r) => RoleHelper::canCreateCampaign($r));
     if (!Csrf::verify($_POST['_csrf'] ?? null)) {
-        flash('error', 'انتهت صلاحية النموذج.');
+        flash('error', Csrf::failureMessage());
         redirect('/campaigns/create');
     }
 
@@ -436,7 +568,7 @@ if ($uri === '/campaigns/edit' && $method === 'POST') {
     Auth::requireRole(fn ($r) => RoleHelper::canEditCampaign($r));
     $id = (int) ($_POST['campaign_id'] ?? $_GET['id'] ?? 0);
     if (!Csrf::verify($_POST['_csrf'] ?? null)) {
-        flash('error', 'انتهت صلاحية النموذج.');
+        flash('error', Csrf::failureMessage());
         redirect('/campaigns/edit?id=' . $id);
     }
     $campaign = CampaignService::find($id);
@@ -460,7 +592,7 @@ if ($uri === '/campaigns/delete' && $method === 'POST') {
     Auth::requireRole(fn ($r) => RoleHelper::canEditCampaign($r));
     $id = (int) ($_POST['campaign_id'] ?? 0);
     if (!Csrf::verify($_POST['_csrf'] ?? null)) {
-        flash('error', 'انتهت صلاحية النموذج.');
+        flash('error', Csrf::failureMessage());
         redirect('/campaigns/view?id=' . $id);
     }
     $campaign = CampaignService::find($id);
@@ -486,7 +618,7 @@ if ($uri === '/campaigns/undo-deliveries' && $method === 'POST') {
     Auth::requireRole(fn ($r) => RoleHelper::canCancelDeliveries($r));
     $id = (int) ($_POST['campaign_id'] ?? 0);
     if (!Csrf::verify($_POST['_csrf'] ?? null)) {
-        flash('error', 'انتهت صلاحية النموذج.');
+        flash('error', Csrf::failureMessage());
         redirect('/campaigns/edit?id=' . $id);
     }
     $campaign = CampaignService::find($id);
@@ -507,7 +639,7 @@ if ($uri === '/campaigns/clear-beneficiaries' && $method === 'POST') {
     Auth::requireRole(fn ($r) => RoleHelper::canEditCampaign($r));
     $id = (int) ($_POST['campaign_id'] ?? 0);
     if (!Csrf::verify($_POST['_csrf'] ?? null)) {
-        flash('error', 'انتهت صلاحية النموذج.');
+        flash('error', Csrf::failureMessage());
         redirect('/campaigns/view?id=' . $id);
     }
     if (CampaignService::deliveredCount($id) > 0) {
@@ -531,7 +663,7 @@ if ($uri === '/admin/database' && $method === 'GET') {
 if ($uri === '/admin/database/backup' && $method === 'POST') {
     Auth::requireRole(fn ($r) => RoleHelper::canManageDatabase($r));
     if (!Csrf::verify($_POST['_csrf'] ?? null)) {
-        flash('error', 'انتهت صلاحية النموذج.');
+        flash('error', Csrf::failureMessage());
         redirect('/admin/database');
     }
     try {
@@ -546,7 +678,7 @@ if ($uri === '/admin/database/backup' && $method === 'POST') {
 if ($uri === '/admin/database/restore' && $method === 'POST') {
     Auth::requireRole(fn ($r) => RoleHelper::canManageDatabase($r));
     if (!Csrf::verify($_POST['_csrf'] ?? null)) {
-        flash('error', 'انتهت صلاحية النموذج.');
+        flash('error', Csrf::failureMessage());
         redirect('/admin/database');
     }
     try {
@@ -561,7 +693,7 @@ if ($uri === '/admin/database/restore' && $method === 'POST') {
 if ($uri === '/admin/database/delete' && $method === 'POST') {
     Auth::requireRole(fn ($r) => RoleHelper::canManageDatabase($r));
     if (!Csrf::verify($_POST['_csrf'] ?? null)) {
-        flash('error', 'انتهت صلاحية النموذج.');
+        flash('error', Csrf::failureMessage());
         redirect('/admin/database');
     }
     try {
@@ -641,7 +773,7 @@ if ($uri === '/campaigns/import' && $method === 'POST') {
     Auth::requireRole(fn ($r) => RoleHelper::canEditCampaign($r));
     $id = (int) ($_POST['campaign_id'] ?? 0);
     if (!Csrf::verify($_POST['_csrf'] ?? null)) {
-        flash('error', 'انتهت صلاحية النموذج.');
+        flash('error', Csrf::failureMessage());
         redirect('/campaigns/view?id=' . $id);
     }
     try {
@@ -662,7 +794,7 @@ if ($uri === '/campaigns/generate' && $method === 'POST') {
     Auth::requireRole(fn ($r) => RoleHelper::canEditCampaign($r));
     $id = (int) ($_POST['campaign_id'] ?? 0);
     if (!Csrf::verify($_POST['_csrf'] ?? null)) {
-        flash('error', 'انتهت صلاحية النموذج.');
+        flash('error', Csrf::failureMessage());
         redirect('/campaigns/view?id=' . $id);
     }
     try {
@@ -756,7 +888,7 @@ if ($uri === '/campaigns/sms-send' && $method === 'POST') {
     Auth::requireRole(fn ($r) => RoleHelper::canEditCampaign($r));
     $id = (int) ($_POST['campaign_id'] ?? 0);
     if (!Csrf::verify($_POST['_csrf'] ?? null)) {
-        flash('error', 'انتهت صلاحية النموذج.');
+        flash('error', Csrf::failureMessage());
         redirect('/campaigns/stock?id=' . $id);
     }
     if (!SmsService::isEnabled()) {
@@ -781,7 +913,7 @@ if ($uri === '/users' && $method === 'GET') {
 if ($uri === '/users/create' && $method === 'POST') {
     Auth::requireRole(fn ($r) => RoleHelper::canManageUsers($r));
     if (!Csrf::verify($_POST['_csrf'] ?? null)) {
-        flash('error', 'انتهت صلاحية النموذج.');
+        flash('error', Csrf::failureMessage());
         redirect('/users');
     }
     $name = trim($_POST['name'] ?? '');
@@ -808,7 +940,7 @@ if ($uri === '/users/create' && $method === 'POST') {
 if ($uri === '/users/update' && $method === 'POST') {
     Auth::requireRole(fn ($r) => RoleHelper::canManageUsers($r));
     if (!Csrf::verify($_POST['_csrf'] ?? null)) {
-        flash('error', 'انتهت صلاحية النموذج.');
+        flash('error', Csrf::failureMessage());
         redirect('/users');
     }
     $id = (int) ($_POST['user_id'] ?? 0);
@@ -846,7 +978,7 @@ if ($uri === '/users/update' && $method === 'POST') {
 if ($uri === '/users/deactivate' && $method === 'POST') {
     Auth::requireRole(fn ($r) => RoleHelper::canManageUsers($r));
     if (!Csrf::verify($_POST['_csrf'] ?? null)) {
-        flash('error', 'انتهت صلاحية النموذج.');
+        flash('error', Csrf::failureMessage());
         redirect('/users');
     }
     $id = (int) ($_POST['user_id'] ?? 0);
@@ -871,7 +1003,7 @@ if ($uri === '/users/deactivate' && $method === 'POST') {
 if ($uri === '/users/delete' && $method === 'POST') {
     Auth::requireRole(fn ($r) => RoleHelper::canManageUsers($r));
     if (!Csrf::verify($_POST['_csrf'] ?? null)) {
-        flash('error', 'انتهت صلاحية النموذج.');
+        flash('error', Csrf::failureMessage());
         redirect('/users');
     }
     $id = (int) ($_POST['user_id'] ?? 0);

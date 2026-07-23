@@ -116,7 +116,7 @@ DB_DRIVER=mysql
 | 502 / Health check failed | انتظر 90 ثانية أو راجع Logs |
 | **502 Bad Gateway عند توليد الكشوف** | البروكسي قطع الاتصال. في Coolify: Settings → Advanced → زد Proxy/Request timeout إلى **1800** ثانية، ثم Redeploy. لا تغلق المتصفح أثناء التوليد. |
 | خطأ قاعدة بيانات | تحقق من `DATABASE_URL` وربط MySQL |
-| تطبيق أندرويد: انتهت الجلسة | 1) ضع `APP_KEY` ثابت في Coolify ثم Redeploy 2) ثبّت APK **1.0.4** فأعلى 3) سجّل دخول من جديد |
+| تطبيق أندرويد: انتهت الجلسة على كل الجوالات | السبب الأشيع: تغيّر `APP_KEY` بعد Redeploy. **الحل:** 1) في Coolify → Environment ضع `APP_KEY` = نص عشوائي ثابت طويل (لا تتركه فارغاً ولا تغيّره لاحقاً) 2) Redeploy مرة واحدة 3) كل أمناء المخزن يسجّلون دخولاً من جديد مرة واحدة. للتحقق: `/api/mobile/health` يجب أن يظهر `"mobile_sessions_stable": true` |
 | روابط خاطئة / CSS لا يعمل | تأكد `APP_URL=https://...` بدون `/` في النهاية |
 | `/setup` لا يفتح | المستخدمون موجودون — استخدم `/login` |
 

@@ -14,18 +14,24 @@ mkdir -p storage/uploads storage/exports database
 chown -R www-data:www-data storage database 2>/dev/null || true
 
 # مفتاح ثابت لجلسات تطبيق الموبايل — ضروري عبر إعادة النشر
+# بدون APP_KEY في Coolify: كل Redeploy قد يولّد مفتاحاً جديداً → «انتهت صلاحية الجلسة» على كل الجوالات
 if [ -z "${APP_KEY:-}" ]; then
     if [ -f storage/.app_key ]; then
         APP_KEY="$(tr -d '\r\n' < storage/.app_key)"
         export APP_KEY
-        echo "Loaded APP_KEY from storage/.app_key"
+        echo "WARNING: Loaded APP_KEY from storage/.app_key — set APP_KEY in Coolify Environment to keep mobile sessions after redeploy."
     else
         APP_KEY="$(php -r 'echo bin2hex(random_bytes(32));')"
         printf '%s' "$APP_KEY" > storage/.app_key
         chown www-data:www-data storage/.app_key 2>/dev/null || true
         export APP_KEY
-        echo "WARNING: Generated APP_KEY into storage/.app_key — set APP_KEY in Coolify to keep mobile sessions after redeploy."
+        echo "ERROR: Generated a NEW APP_KEY — all existing Android sessions are now invalid. Set a fixed APP_KEY in Coolify immediately."
     fi
+else
+    echo "APP_KEY loaded from environment (mobile sessions stable across redeploy)."
+    # احفظ نسخة في التخزين كنسخة احتياطية محلية فقط
+    printf '%s' "$APP_KEY" > storage/.app_key
+    chown www-data:www-data storage/.app_key 2>/dev/null || true
 fi
 
 has_mysql_config() {

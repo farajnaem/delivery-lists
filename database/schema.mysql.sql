@@ -53,12 +53,14 @@ CREATE TABLE IF NOT EXISTS beneficiaries (
     delivery_type VARCHAR(20) NULL,
     actual_delivery_date VARCHAR(20) NULL,
     updated_at DATETIME NULL,
+    delivery_batch_id INT NULL,
     INDEX idx_beneficiaries_campaign (campaign_id),
     INDEX idx_beneficiaries_day_window (campaign_id, day_index, window_num),
     UNIQUE KEY idx_beneficiaries_code (campaign_id, disbursement_code),
     INDEX idx_beneficiaries_national_id (campaign_id, national_id),
     INDEX idx_beneficiaries_status (campaign_id, receipt_status),
     INDEX idx_beneficiaries_updated (campaign_id, updated_at),
+    INDEX idx_beneficiaries_batch (delivery_batch_id),
     CONSTRAINT fk_beneficiaries_campaign FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE,
     CONSTRAINT fk_beneficiaries_deliverer FOREIGN KEY (delivered_by) REFERENCES users(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -86,6 +88,22 @@ CREATE TABLE IF NOT EXISTS delivery_events (
     CONSTRAINT fk_events_beneficiary FOREIGN KEY (beneficiary_id) REFERENCES beneficiaries(id) ON DELETE CASCADE,
     CONSTRAINT fk_events_campaign FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE,
     CONSTRAINT fk_events_deliverer FOREIGN KEY (delivered_by) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS delivery_batches (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    campaign_id INT NOT NULL,
+    reason VARCHAR(1000) NOT NULL DEFAULT '',
+    delivered_count INT NOT NULL DEFAULT 0,
+    created_by INT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    undone_at DATETIME NULL,
+    undone_by INT NULL,
+    undo_reason VARCHAR(1000) NULL,
+    INDEX idx_delivery_batches_campaign (campaign_id),
+    CONSTRAINT fk_batches_campaign FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE,
+    CONSTRAINT fk_batches_creator FOREIGN KEY (created_by) REFERENCES users(id),
+    CONSTRAINT fk_batches_undoer FOREIGN KEY (undone_by) REFERENCES users(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS sms_outbox (

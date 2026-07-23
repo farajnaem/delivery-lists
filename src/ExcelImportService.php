@@ -60,10 +60,8 @@ final class ExcelImportService
             $statusCol = $map['status'];
             $status = $statusCol !== null
                 ? trim((string) ($row[$statusCol] ?? ''))
-                : 'قيد التسليم';
-            if ($status === '' || $status === 'تم التسليم') {
-                $status = 'قيد التسليم';
-            }
+                : DeliveryService::STATUS_PENDING;
+            $status = DeliveryService::normalizeReceiptStatus($status);
 
             $items[] = [
                 'name' => $name,

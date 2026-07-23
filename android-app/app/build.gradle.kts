@@ -26,8 +26,8 @@ android {
         applicationId = "com.rec.deliverylists"
         minSdk = 26
         targetSdk = 34
-        versionCode = 10
-        versionName = "1.0.9"
+        versionCode = 12
+        versionName = "1.1.0"
         buildConfigField("String", "SERVER_URL", "\"https://delivery.rec-soc.org\"")
     }
 

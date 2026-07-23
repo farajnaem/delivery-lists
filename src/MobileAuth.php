@@ -59,10 +59,15 @@ final class MobileAuth
         ];
     }
 
+    /** سبب آخر فشل مصادقة (للتشخيص في الـ API) */
+    private static ?string $lastAuthFailure = null;
+
     public static function authenticateRequest(): bool
     {
+        self::$lastAuthFailure = null;
         $token = self::bearerTokenFromRequest();
         if ($token === null) {
+            self::$lastAuthFailure = 'missing_token';
             return false;
         }
 
@@ -71,6 +76,9 @@ final class MobileAuth
             $user = self::userFromStoredToken($token);
         }
         if ($user === null) {
+            if (self::$lastAuthFailure === null) {
+                self::$lastAuthFailure = 'invalid_token';
+            }
             return false;
         }
 
@@ -81,10 +89,19 @@ final class MobileAuth
     public static function requireAuth(): void
     {
         if (!self::authenticateRequest()) {
+            $reason = self::$lastAuthFailure ?? 'invalid_token';
+            $message = match ($reason) {
+                'missing_token' => 'غير مصرّح — سجّل الدخول',
+                'token_expired' => 'انتهت صلاحية الجلسة — سجّل الدخول مجدداً',
+                'user_inactive' => 'الحساب غير نشط — راجع المدير',
+                'bad_role' => 'هذا الحساب غير مسموح له بالدخول من التطبيق',
+                default => 'انتهت صلاحية الجلسة أو تغيّر مفتاح السيرفر — سجّل الدخول مجدداً',
+            };
             json_response([
                 'ok' => false,
-                'error' => 'غير مصرّح — سجّل الدخول',
+                'error' => $message,
                 'error_code' => 'auth_required',
+                'auth_reason' => $reason,
             ], 401);
         }
     }
@@ -115,9 +132,14 @@ final class MobileAuth
     {
         $parsed = self::parseSignedToken($token);
         if ($parsed === null) {
+            // توقيع غير صالح غالباً بعد تغيّر APP_KEY عند إعادة النشر
+            if (str_starts_with($token, self::TOKEN_PREFIX . '.')) {
+                self::$lastAuthFailure = 'invalid_signature';
+            }
             return null;
         }
         if ($parsed['exp'] < time()) {
+            self::$lastAuthFailure = 'token_expired';
             return null;
         }
 
@@ -144,12 +166,15 @@ final class MobileAuth
         }
 
         if (!$row || !(int) ($row['is_active'] ?? 0)) {
+            self::$lastAuthFailure = 'user_inactive';
             return null;
         }
         if (!empty($row['expires_at']) && strtotime((string) $row['expires_at']) < time()) {
+            self::$lastAuthFailure = 'token_expired';
             return null;
         }
         if (!in_array((string) ($row['role'] ?? ''), ['warehouse_keeper', 'admin'], true)) {
+            self::$lastAuthFailure = 'bad_role';
             return null;
         }
 
@@ -169,10 +194,12 @@ final class MobileAuth
         $stmt->execute([$userId]);
         $row = $stmt->fetch();
         if (!$row || !(int) ($row['is_active'] ?? 0)) {
+            self::$lastAuthFailure = 'user_inactive';
             return null;
         }
         $role = (string) ($row['role'] ?? '');
         if (!in_array($role, ['warehouse_keeper', 'admin'], true)) {
+            self::$lastAuthFailure = 'bad_role';
             return null;
         }
 
@@ -187,7 +214,7 @@ final class MobileAuth
     private static function mintToken(int $userId, int $expiresTs): string
     {
         $payload = $userId . '.' . $expiresTs;
-        $sig = hash_hmac('sha256', $payload, self::appSecret());
+        $sig = hash_hmac('sha256', $payload, self::appSecrets()[0]);
         return self::TOKEN_PREFIX . '.' . $payload . '.' . $sig;
     }
 
@@ -206,25 +233,41 @@ final class MobileAuth
         }
 
         $payload = $parts[1] . '.' . $parts[2];
-        $expected = hash_hmac('sha256', $payload, self::appSecret());
-        if (!hash_equals($expected, strtolower($parts[3]))) {
-            return null;
+        $sig = strtolower($parts[3]);
+        foreach (self::appSecrets() as $secret) {
+            $expected = hash_hmac('sha256', $payload, $secret);
+            if (hash_equals($expected, $sig)) {
+                return [
+                    'user_id' => (int) $parts[1],
+                    'exp' => (int) $parts[2],
+                ];
+            }
         }
 
-        return [
-            'user_id' => (int) $parts[1],
-            'exp' => (int) $parts[2],
-        ];
+        return null;
     }
 
-    private static function appSecret(): string
+    /**
+     * أسرار التوقيع: APP_KEY الحالي أولاً، ثم PREVIOUS_APP_KEY للترحيل بعد تغيير المفتاح.
+     *
+     * @return list<string>
+     */
+    private static function appSecrets(): array
     {
+        $secrets = [];
         $key = trim((string) env('APP_KEY', ''));
         if ($key !== '') {
-            return $key;
+            $secrets[] = $key;
+        }
+        $previous = trim((string) env('PREVIOUS_APP_KEY', ''));
+        if ($previous !== '' && !in_array($previous, $secrets, true)) {
+            $secrets[] = $previous;
+        }
+        if ($secrets !== []) {
+            return $secrets;
         }
 
-        // سر مستقر مشتق من إعدادات السيرفر — يفضّل تعيين APP_KEY في Coolify
+        // سر مشتق — غير مستقر عبر Redeploy؛ عيّن APP_KEY في Coolify دائماً للإنتاج
         $seed = implode('|', [
             (string) env('APP_URL', 'delivery-lists'),
             (string) env('DB_PASS', ''),
@@ -233,7 +276,12 @@ final class MobileAuth
             'mobile-auth-v1',
         ]);
 
-        return hash('sha256', $seed);
+        return [hash('sha256', $seed)];
+    }
+
+    private static function appSecret(): string
+    {
+        return self::appSecrets()[0];
     }
 
     private static function bearerTokenFromRequest(): ?string

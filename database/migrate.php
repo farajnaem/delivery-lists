@@ -253,4 +253,85 @@ CREATE TABLE IF NOT EXISTS mobile_tokens (
     }
 }
 
+// دفعات التسليم الجماعي + عمود الربط على المستفيدين
+try {
+    if ($isMysql) {
+        $pdo->exec('
+CREATE TABLE IF NOT EXISTS delivery_batches (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    campaign_id INT NOT NULL,
+    reason VARCHAR(1000) NOT NULL DEFAULT \'\',
+    delivered_count INT NOT NULL DEFAULT 0,
+    created_by INT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    undone_at DATETIME NULL,
+    undone_by INT NULL,
+    undo_reason VARCHAR(1000) NULL,
+    INDEX idx_delivery_batches_campaign (campaign_id),
+    CONSTRAINT fk_batches_campaign FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE,
+    CONSTRAINT fk_batches_creator FOREIGN KEY (created_by) REFERENCES users(id),
+    CONSTRAINT fk_batches_undoer FOREIGN KEY (undone_by) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+');
+    } else {
+        $pdo->exec('
+CREATE TABLE IF NOT EXISTS delivery_batches (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    campaign_id INTEGER NOT NULL,
+    reason TEXT NOT NULL DEFAULT \'\',
+    delivered_count INTEGER NOT NULL DEFAULT 0,
+    created_by INTEGER,
+    created_at TEXT NOT NULL DEFAULT (datetime(\'now\')),
+    undone_at TEXT,
+    undone_by INTEGER,
+    undo_reason TEXT,
+    FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE,
+    FOREIGN KEY (created_by) REFERENCES users(id),
+    FOREIGN KEY (undone_by) REFERENCES users(id)
+)
+');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_delivery_batches_campaign ON delivery_batches(campaign_id)');
+    }
+    echo "OK: delivery_batches table\n";
+} catch (Throwable $e) {
+    echo 'WARN: delivery_batches — ' . $e->getMessage() . "\n";
+}
+
+try {
+    if ($isMysql) {
+        $pdo->exec('ALTER TABLE beneficiaries ADD COLUMN delivery_batch_id INT NULL');
+    } else {
+        $pdo->exec('ALTER TABLE beneficiaries ADD COLUMN delivery_batch_id INTEGER');
+    }
+    echo "OK: beneficiaries.delivery_batch_id\n";
+} catch (Throwable $e) {
+    $msg = $e->getMessage();
+    $already = str_contains($msg, 'Duplicate column')
+        || str_contains($msg, 'duplicate column')
+        || str_contains($msg, 'exists');
+    echo ($already ? "SKIP: beneficiaries.delivery_batch_id (exists)\n" : "WARN: beneficiaries.delivery_batch_id — {$msg}\n");
+}
+
+try {
+    if ($isMysql) {
+        $pdo->exec('CREATE INDEX idx_beneficiaries_batch ON beneficiaries(delivery_batch_id)');
+    } else {
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_beneficiaries_batch ON beneficiaries(delivery_batch_id)');
+    }
+    echo "OK: idx_beneficiaries_batch\n";
+} catch (Throwable) {
+    echo "SKIP: idx_beneficiaries_batch\n";
+}
+
+// توحيد حالات الاستلام القديمة من Excel («بانتظار الاستلام» → «قيد التسليم»)
+try {
+    $pending = 'قيد التسليم';
+    $alt = 'بانتظار الاستلام';
+    $stmt = $pdo->prepare('UPDATE beneficiaries SET receipt_status = ? WHERE receipt_status = ?');
+    $stmt->execute([$pending, $alt]);
+    echo 'OK: normalize receipt_status بانتظار الاستلام → قيد التسليم (' . $stmt->rowCount() . " rows)\n";
+} catch (Throwable $e) {
+    echo 'WARN: normalize receipt_status — ' . $e->getMessage() . "\n";
+}
+
 echo "Migration complete.\n";

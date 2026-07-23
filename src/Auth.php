@@ -23,6 +23,10 @@ final class Auth
             'email' => $user['email'],
             'role' => $user['role'],
         ];
+        // تجديد معرّف الجلسة بعد الدخول — يحافظ على بيانات الجلسة (بما فيها CSRF)
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_regenerate_id(true);
+        }
         return true;
     }
 
