@@ -87,6 +87,69 @@ $delPct = $opening > 0 ? (int) round(($delivered / $opening) * 100) : 0;
     </form>
     <?php endif; ?>
 </div>
+
+<?php
+$keepers = $keeperStats['keepers'] ?? [];
+$bulkStats = $keeperStats['bulk'] ?? ['today' => 0, 'total' => 0];
+$hasBulk = ((int) ($bulkStats['total'] ?? 0)) > 0;
+$keeperTodaySum = 0;
+$keeperTotalSum = 0;
+foreach ($keepers as $k) {
+    $keeperTodaySum += (int) ($k['today'] ?? 0);
+    $keeperTotalSum += (int) ($k['total'] ?? 0);
+}
+?>
+<div class="card table-panel">
+    <div class="table-toolbar">
+        <div>
+            <div class="panel-title">التسليم حسب أمين المخزن</div>
+            <p class="text-muted" style="margin:0.35rem 0 0;font-size:0.9rem">عدد ما سجّله كل حساب ميدانياً — التسليم الجماعي منفصل أدناه.</p>
+        </div>
+    </div>
+    <?php if (empty($keepers) && !$hasBulk): ?>
+    <div class="empty-state">
+        <strong>لا توجد تسليمات مسجّلة بعد</strong>
+        <span>ستظهر هنا أعداد كل أمين مخزن فور بدء التسليم.</span>
+    </div>
+    <?php else: ?>
+    <div class="table-wrap">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>أمين المخزن</th>
+                <th>اليوم</th>
+                <th>الإجمالي</th>
+            </tr>
+        </thead>
+        <tbody>
+        <?php foreach ($keepers as $k): ?>
+            <tr>
+                <td><?= e($k['name'] ?? 'غير معروف') ?></td>
+                <td><?= ar_digits((int) ($k['today'] ?? 0)) ?></td>
+                <td><?= ar_digits((int) ($k['total'] ?? 0)) ?></td>
+            </tr>
+        <?php endforeach; ?>
+        <?php if ($hasBulk): ?>
+            <tr>
+                <td>تسليم جماعي (مدير)</td>
+                <td><?= ar_digits((int) ($bulkStats['today'] ?? 0)) ?></td>
+                <td><?= ar_digits((int) ($bulkStats['total'] ?? 0)) ?></td>
+            </tr>
+        <?php endif; ?>
+        </tbody>
+        <?php if (count($keepers) > 1 || $hasBulk): ?>
+        <tfoot>
+            <tr>
+                <th>المجموع</th>
+                <th><?= ar_digits($keeperTodaySum + (int) ($bulkStats['today'] ?? 0)) ?></th>
+                <th><?= ar_digits($keeperTotalSum + (int) ($bulkStats['total'] ?? 0)) ?></th>
+            </tr>
+        </tfoot>
+        <?php endif; ?>
+    </table>
+    </div>
+    <?php endif; ?>
+</div>
 <?php endif; ?>
 
 <?php if (!empty($canBulkDeliver)): ?>

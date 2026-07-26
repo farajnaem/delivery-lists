@@ -300,6 +300,7 @@ if ($uri === '/campaigns/stock' && $method === 'GET') {
         redirect('/');
     }
     $deliveredTotal = DeliveryService::deliveredCount($id);
+    $canCloseDelivery = RoleHelper::canCloseDelivery(Auth::role() ?? '');
     view('warehouse/dashboard', [
         'title' => 'متابعة المخزن',
         'campaign' => $campaign,
@@ -307,8 +308,9 @@ if ($uri === '/campaigns/stock' && $method === 'GET') {
         'deliveredList' => DeliveryService::deliveredBeneficiaries($id, 100),
         'deliveredTotal' => $deliveredTotal,
         'lateList' => DeliveryService::pendingLate($id, 50),
+        'keeperStats' => $canCloseDelivery ? DeliveryService::deliveriesByKeeper($id) : null,
         'canEdit' => RoleHelper::canEditCampaign(Auth::role() ?? ''),
-        'canCloseDelivery' => RoleHelper::canCloseDelivery(Auth::role() ?? ''),
+        'canCloseDelivery' => $canCloseDelivery,
         'canDeliver' => RoleHelper::canDeliver(Auth::role() ?? ''),
         'canExport' => RoleHelper::canViewStock(Auth::role() ?? ''),
         'canCancelDeliveries' => RoleHelper::canCancelDeliveries(Auth::role() ?? ''),

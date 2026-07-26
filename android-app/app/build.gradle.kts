@@ -20,15 +20,19 @@ val keystoreProperties: Map<String, String> =
 
 android {
     namespace = "com.rec.deliverylists"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.rec.deliverylists"
         minSdk = 26
-        targetSdk = 34
-        versionCode = 12
-        versionName = "1.1.0"
+        targetSdk = 35
+        versionCode = 13
+        versionName = "1.1.1"
         buildConfigField("String", "SERVER_URL", "\"https://delivery.rec-soc.org\"")
+        // أجهزة ميدانية: ARM فقط (TECNO/MediaTek وغيرها)
+        ndk {
+            abiFilters += listOf("armeabi-v7a", "arm64-v8a")
+        }
     }
 
     signingConfigs {
@@ -39,6 +43,10 @@ android {
                 storeFile = rootProject.file(keystoreProperties.getValue("storeFile"))
                 storePassword = keystoreProperties.getValue("storePassword")
             }
+            // HiOS/TECNO Android 15: V2 فقط قد يفشل Package Installer
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
         }
     }
 
@@ -83,6 +91,10 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+        // محاذاة مكتبات .so لصفحات 16KB على Android 15
+        jniLibs {
+            useLegacyPackaging = false
         }
     }
 }

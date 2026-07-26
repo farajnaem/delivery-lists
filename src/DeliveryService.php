@@ -131,6 +131,64 @@ final class DeliveryService
         return ArabicFormat::localizeStock(self::stockStats($campaignId));
     }
 
+    /**
+     * إحصائيات التسليم حسب أمين المخزن (ميداني) + إجمالي التسليم الجماعي منفصل.
+     *
+     * @return array{keepers: list<array{user_id: ?int, name: string, today: int, total: int}>, bulk: array{today: int, total: int}}
+     */
+    public static function deliveriesByKeeper(int $campaignId): array
+    {
+        $pdo = Database::getConnection();
+        $today = date('Y-m-d');
+        $delivered = self::STATUS_DELIVERED;
+
+        $stmt = $pdo->prepare("
+            SELECT b.delivered_by AS user_id,
+                   COALESCE(u.name, 'غير معروف') AS name,
+                   COUNT(*) AS total,
+                   SUM(CASE WHEN b.actual_delivery_date = ? THEN 1 ELSE 0 END) AS today_count
+            FROM beneficiaries b
+            LEFT JOIN users u ON u.id = b.delivered_by
+            WHERE b.campaign_id = ?
+              AND b.receipt_status = ?
+              AND (b.delivery_batch_id IS NULL OR b.delivery_batch_id = 0)
+            GROUP BY b.delivered_by, u.name
+            ORDER BY total DESC, name ASC
+        ");
+        $stmt->execute([$today, $campaignId, $delivered]);
+        $keepers = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $keepers[] = [
+                'user_id' => isset($row['user_id']) && $row['user_id'] !== null && $row['user_id'] !== ''
+                    ? (int) $row['user_id']
+                    : null,
+                'name' => (string) ($row['name'] ?? 'غير معروف'),
+                'today' => (int) ($row['today_count'] ?? 0),
+                'total' => (int) ($row['total'] ?? 0),
+            ];
+        }
+
+        $bulkStmt = $pdo->prepare("
+            SELECT COUNT(*) AS total,
+                   SUM(CASE WHEN actual_delivery_date = ? THEN 1 ELSE 0 END) AS today_count
+            FROM beneficiaries
+            WHERE campaign_id = ?
+              AND receipt_status = ?
+              AND delivery_batch_id IS NOT NULL
+              AND delivery_batch_id > 0
+        ");
+        $bulkStmt->execute([$today, $campaignId, $delivered]);
+        $bulkRow = $bulkStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+
+        return [
+            'keepers' => $keepers,
+            'bulk' => [
+                'today' => (int) ($bulkRow['today_count'] ?? 0),
+                'total' => (int) ($bulkRow['total'] ?? 0),
+            ],
+        ];
+    }
+
     public static function isCampaignActive(array $campaign): bool
     {
         $closedAt = trim((string) ($campaign['delivery_closed_at'] ?? ''));
