@@ -41,7 +41,10 @@ final class DeliveryService
         $delivered = $pdo->quote(self::STATUS_DELIVERED);
         $stmt = $pdo->query("
             SELECT c.*,
-                   (SELECT COUNT(*) FROM beneficiaries b WHERE b.campaign_id = c.id) AS beneficiary_count,
+                   (SELECT COUNT(*) FROM beneficiaries b
+                    WHERE b.campaign_id = c.id
+                      AND b.day_index IS NOT NULL AND b.day_index > 0
+                      AND b.disbursement_code IS NOT NULL AND b.disbursement_code != '') AS beneficiary_count,
                    (SELECT COUNT(*) FROM beneficiaries b WHERE b.campaign_id = c.id AND b.receipt_status = {$delivered}) AS delivered_count
             FROM campaigns c
             WHERE c.status = 'generated'
@@ -58,7 +61,10 @@ final class DeliveryService
         $delivered = $pdo->quote(self::STATUS_DELIVERED);
         $stmt = $pdo->query("
             SELECT c.*,
-                   (SELECT COUNT(*) FROM beneficiaries b WHERE b.campaign_id = c.id) AS beneficiary_count,
+                   (SELECT COUNT(*) FROM beneficiaries b
+                    WHERE b.campaign_id = c.id
+                      AND b.day_index IS NOT NULL AND b.day_index > 0
+                      AND b.disbursement_code IS NOT NULL AND b.disbursement_code != '') AS beneficiary_count,
                    (SELECT COUNT(*) FROM beneficiaries b WHERE b.campaign_id = c.id AND b.receipt_status = {$delivered}) AS delivered_count
             FROM campaigns c
             WHERE c.status = 'generated'
@@ -80,7 +86,14 @@ final class DeliveryService
             SELECT COUNT(*) FROM beneficiaries
             WHERE campaign_id = {$campaignId} AND receipt_status = " . $pdo->quote(self::STATUS_DELIVERED) . '
         ')->fetchColumn();
-        $pending = $total - $delivered;
+        $assignedPending = (int) $pdo->query("
+            SELECT COUNT(*) FROM beneficiaries
+            WHERE campaign_id = {$campaignId}
+              AND receipt_status != " . $pdo->quote(self::STATUS_DELIVERED) . "
+              AND day_index IS NOT NULL AND day_index > 0
+              AND disbursement_code IS NOT NULL AND disbursement_code != ''
+        ")->fetchColumn();
+        $pending = $assignedPending;
 
         $opening = (int) ($campaign['opening_quantity'] ?? 0);
         if ($opening <= 0) {

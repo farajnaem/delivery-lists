@@ -188,14 +188,85 @@ final class CampaignService
             SELECT COUNT(*) FROM beneficiaries
             WHERE campaign_id = {$campaignId} AND receipt_status = 'مستلم'
         ")->fetchColumn();
-        $days = $pdo->prepare('SELECT day_index, delivery_date, COUNT(*) AS cnt FROM beneficiaries WHERE campaign_id = ? GROUP BY day_index, delivery_date ORDER BY day_index');
+        $assigned = (int) $pdo->query("
+            SELECT COUNT(*) FROM beneficiaries
+            WHERE campaign_id = {$campaignId}
+              AND day_index IS NOT NULL AND day_index > 0
+              AND disbursement_code IS NOT NULL AND disbursement_code != ''
+        ")->fetchColumn();
+        $days = $pdo->prepare('
+            SELECT day_index, delivery_date, COUNT(*) AS cnt,
+                   COUNT(DISTINCT window_num) AS windows
+            FROM beneficiaries
+            WHERE campaign_id = ?
+              AND day_index IS NOT NULL AND day_index > 0
+            GROUP BY day_index, delivery_date
+            ORDER BY day_index
+        ');
         $days->execute([$campaignId]);
         return [
             'total' => $total,
             'delivered' => $delivered,
             'pending' => $total - $delivered,
+            'assigned' => $assigned,
+            'unassigned' => max(0, $total - $assigned),
             'days' => $days->fetchAll(),
         ];
+    }
+
+    public static function unassignedBeneficiaries(int $campaignId, ?int $limit = null): array
+    {
+        $pdo = Database::getConnection();
+        $sql = '
+            SELECT id, name, mobile
+            FROM beneficiaries
+            WHERE campaign_id = ?
+              AND (
+                    day_index IS NULL OR day_index = 0
+                    OR disbursement_code IS NULL OR disbursement_code = \'\'
+                  )
+            ORDER BY id ASC
+        ';
+        if ($limit !== null && $limit > 0) {
+            $sql .= ' LIMIT ' . (int) $limit;
+        }
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([$campaignId]);
+        return $stmt->fetchAll();
+    }
+
+    public static function maxDayIndex(int $campaignId): int
+    {
+        $pdo = Database::getConnection();
+        $stmt = $pdo->prepare('SELECT COALESCE(MAX(day_index), 0) FROM beneficiaries WHERE campaign_id = ?');
+        $stmt->execute([$campaignId]);
+        return (int) $stmt->fetchColumn();
+    }
+
+    public static function maxSortOrder(int $campaignId): int
+    {
+        $pdo = Database::getConnection();
+        $stmt = $pdo->prepare('SELECT COALESCE(MAX(sort_order), 0) FROM beneficiaries WHERE campaign_id = ?');
+        $stmt->execute([$campaignId]);
+        return (int) $stmt->fetchColumn();
+    }
+
+    /** آخر تاريخ توزيع معتمد، أو null إن لم يُعتمد أي يوم. */
+    public static function lastAssignedDate(int $campaignId): ?string
+    {
+        $pdo = Database::getConnection();
+        $stmt = $pdo->prepare('
+            SELECT delivery_date
+            FROM beneficiaries
+            WHERE campaign_id = ?
+              AND day_index IS NOT NULL AND day_index > 0
+              AND delivery_date IS NOT NULL AND delivery_date != \'\'
+            ORDER BY day_index DESC, delivery_date DESC
+            LIMIT 1
+        ');
+        $stmt->execute([$campaignId]);
+        $date = $stmt->fetchColumn();
+        return $date ? (string) $date : null;
     }
 
     public static function updateOpeningQuantity(int $id, int $quantity): void

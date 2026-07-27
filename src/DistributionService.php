@@ -68,6 +68,14 @@ final class DistributionService
             throw new \RuntimeException('العملية غير موجودة.');
         }
 
+        $stats = CampaignService::stats($campaignId);
+        if ((int) ($stats['assigned'] ?? 0) > 0) {
+            throw new \RuntimeException(
+                'يوجد أيام توزيع معتمدة مسبقاً. استخدم «اعتماد يوم توزيع» حتى لا تتغير أكواد ورسائل الأيام السابقة. '
+                . 'لإعادة توزيع الكل من الصفر يجب ألا يكون هناك مستفيدون معيّنون لأيام.'
+            );
+        }
+
         if (!ParcelCodeHelper::validatePrefix((string) ($campaign['parcel_code'] ?? ''))) {
             throw new \RuntimeException('أدخل كود الطرد (حرف أو مجموعة حروف مثل SOCI أو REC).');
         }
@@ -249,19 +257,257 @@ final class DistributionService
         return $summary;
     }
 
+    /**
+     * اعتماد يوم توزيع واحد من المستفيدين غير المعيّنين فقط.
+     * لا يمس الأيام السابقة (أكواد / رسائل / مواعيد).
+     *
+     * @return array{
+     *   day_index:int,
+     *   date:string,
+     *   beneficiaries:int,
+     *   windows:int,
+     *   per_window:list<int>,
+     *   unassigned_remaining:int
+     * }
+     */
+    public static function generateDay(
+        int $campaignId,
+        int $beneficiaryCount,
+        int $numWindows,
+        ?string $deliveryDate = null,
+    ): array {
+        extend_runtime(600);
+        @ignore_user_abort(true);
+
+        $campaign = CampaignService::find($campaignId);
+        if (!$campaign) {
+            throw new \RuntimeException('العملية غير موجودة.');
+        }
+        if (!ParcelCodeHelper::validatePrefix((string) ($campaign['parcel_code'] ?? ''))) {
+            throw new \RuntimeException('أدخل كود الطرد (حرف أو مجموعة حروف مثل SOCI أو REC).');
+        }
+
+        $beneficiaryCount = max(1, $beneficiaryCount);
+        $numWindows = max(1, $numWindows);
+
+        $unassigned = CampaignService::unassignedBeneficiaries($campaignId);
+        $available = count($unassigned);
+        if ($available < 1) {
+            throw new \RuntimeException('لا يوجد مستفيدون غير معيّنين — ارفع Excel أو انتظر دفعة جديدة.');
+        }
+        if ($beneficiaryCount > $available) {
+            throw new \RuntimeException("المتبقي غير المعيّن {$available} فقط — لا يمكن اعتماد {$beneficiaryCount}.");
+        }
+
+        $dayRows = array_slice($unassigned, 0, $beneficiaryCount);
+        $dayIndex = CampaignService::maxDayIndex($campaignId) + 1;
+        $date = self::resolveNextDayDate($campaign, $deliveryDate);
+        $windowBuckets = self::splitCount($beneficiaryCount, $numWindows);
+        $codePrefix = (string) ($campaign['parcel_code'] ?? ParcelCodeHelper::DEFAULT_PREFIX);
+        $codeSuffix = (string) ($campaign['parcel_code_suffix'] ?? '');
+        $usedPins = self::usedPinsForCampaign($campaignId, $codePrefix, $codeSuffix);
+        $pins = self::allocateUniquePins($beneficiaryCount, $usedPins);
+        $pinIdx = 0;
+        $assignedCodes = [];
+        $sortOrder = CampaignService::maxSortOrder($campaignId) + 1;
+        $genNow = db_now();
+        $pdo = Database::getConnection();
+
+        $upd = $pdo->prepare('
+            UPDATE beneficiaries SET
+                mobile = ?,
+                disbursement_code = ?, delivery_date = ?, window_num = ?,
+                time_from = ?, time_to = ?, message_text = ?,
+                day_index = ?, sort_order = ?, updated_at = ?
+            WHERE id = ? AND campaign_id = ?
+              AND (day_index IS NULL OR day_index = 0 OR disbursement_code IS NULL OR disbursement_code = \'\')
+        ');
+
+        $pdo->beginTransaction();
+        try {
+            $rowOffset = 0;
+            for ($w = 0; $w < $numWindows; $w++) {
+                $windowCount = $windowBuckets[$w];
+                $windowRows = array_slice($dayRows, $rowOffset, $windowCount);
+                $rowOffset += $windowCount;
+                if ($windowCount === 0) {
+                    continue;
+                }
+
+                $prepared = [];
+                foreach ($windowRows as $row) {
+                    $pin = $pins[$pinIdx++];
+                    $code = ParcelCodeHelper::buildDisbursementCode($codePrefix, $codeSuffix, $pin);
+                    $assignedCodes[] = $code;
+                    $prepared[] = [
+                        'id' => (int) $row['id'],
+                        'name' => (string) $row['name'],
+                        'mobile' => PhoneHelper::normalize($row['mobile']),
+                        'code' => $code,
+                    ];
+                }
+
+                $slots = self::buildTimeSlots(
+                    (string) $campaign['work_start'],
+                    (string) $campaign['work_end'],
+                    count($prepared)
+                );
+                foreach ($prepared as $i => &$item) {
+                    $item['time_from'] = $slots[$i]['from'];
+                    $item['time_to'] = $slots[$i]['to'];
+                }
+                unset($item);
+
+                usort($prepared, static fn ($a, $b) => self::compareNames($a['name'], $b['name']));
+
+                foreach ($prepared as $item) {
+                    $message = MessageTemplates::appointment(
+                        $campaign,
+                        $item['name'],
+                        $date,
+                        $item['code'],
+                        $w + 1,
+                        $item['time_from'],
+                        $item['time_to']
+                    );
+                    $upd->execute([
+                        $item['mobile'],
+                        $item['code'],
+                        $date,
+                        $w + 1,
+                        $item['time_from'],
+                        $item['time_to'],
+                        $message,
+                        $dayIndex,
+                        $sortOrder,
+                        $genNow,
+                        $item['id'],
+                        $campaignId,
+                    ]);
+                    if ($upd->rowCount() < 1) {
+                        throw new \RuntimeException('تعذّر اعتماد أحد المستفيدين (ربما تغيّرت حالته). أعد المحاولة.');
+                    }
+                    $sortOrder++;
+                }
+            }
+
+            ParcelCodeHelper::assertUniqueDisbursementCodes($assignedCodes, $codePrefix, $codeSuffix);
+
+            $dupStmt = $pdo->prepare('
+                SELECT disbursement_code, COUNT(*) AS c
+                FROM beneficiaries
+                WHERE campaign_id = ? AND disbursement_code IS NOT NULL AND disbursement_code != \'\'
+                GROUP BY disbursement_code
+                HAVING c > 1
+                LIMIT 1
+            ');
+            $dupStmt->execute([$campaignId]);
+            $dup = $dupStmt->fetch();
+            if ($dup) {
+                throw new \RuntimeException(
+                    'كود الصرف مكرّر في قاعدة البيانات: ' . (string) ($dup['disbursement_code'] ?? '')
+                );
+            }
+
+            $pdo->commit();
+        } catch (\Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
+        }
+
+        $maxDay = CampaignService::maxDayIndex($campaignId);
+        CampaignService::updateSchedule($campaignId, max(1, $maxDay), $date);
+        CampaignService::markGenerated($campaignId);
+        $total = (int) (CampaignService::stats($campaignId)['total'] ?? 0);
+        if ((int) ($campaign['opening_quantity'] ?? 0) <= 0 && $total > 0) {
+            CampaignService::updateOpeningQuantity($campaignId, $total);
+        }
+
+        $remaining = (int) (CampaignService::stats($campaignId)['unassigned'] ?? 0);
+
+        return [
+            'day_index' => $dayIndex,
+            'date' => $date,
+            'beneficiaries' => $beneficiaryCount,
+            'windows' => $numWindows,
+            'per_window' => $windowBuckets,
+            'unassigned_remaining' => $remaining,
+        ];
+    }
+
+    /** تاريخ اليوم التالي المقترح (يتخطى الجمعة). */
+    public static function suggestNextDayDate(array $campaign): string
+    {
+        return self::resolveNextDayDate($campaign, null);
+    }
+
+    private static function resolveNextDayDate(array $campaign, ?string $requested): string
+    {
+        $requested = trim((string) $requested);
+        if ($requested !== '') {
+            $ts = strtotime($requested);
+            if ($ts === false) {
+                throw new \RuntimeException('تاريخ اليوم غير صالح.');
+            }
+            if ((int) date('N', $ts) === 5) {
+                throw new \RuntimeException('لا يمكن اعتماد يوم جمعة — اختر يوماً آخر.');
+            }
+            return date('Y-m-d', $ts);
+        }
+
+        $campaignId = (int) ($campaign['id'] ?? 0);
+        $last = $campaignId > 0 ? CampaignService::lastAssignedDate($campaignId) : null;
+        if ($last) {
+            $ts = strtotime($last . ' +1 day') ?: time();
+        } else {
+            $ts = strtotime((string) ($campaign['delivery_start'] ?? 'now')) ?: time();
+        }
+
+        $guard = 0;
+        while ((int) date('N', $ts) === 5 && $guard < 14) {
+            $ts = strtotime('+1 day', $ts) ?: ($ts + 86400);
+            $guard++;
+        }
+        return date('Y-m-d', $ts);
+    }
+
+    /**
+     * @return array<int, true> pins already used in campaign
+     */
+    private static function usedPinsForCampaign(int $campaignId, string $prefix, string $suffix): array
+    {
+        $pdo = Database::getConnection();
+        $stmt = $pdo->prepare("
+            SELECT disbursement_code
+            FROM beneficiaries
+            WHERE campaign_id = ?
+              AND disbursement_code IS NOT NULL AND disbursement_code != ''
+        ");
+        $stmt->execute([$campaignId]);
+        $used = [];
+        while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
+            $code = (string) ($row['disbursement_code'] ?? '');
+            $pin = ParcelCodeHelper::pinAsInt($code, $suffix !== '' ? $suffix : null, $prefix !== '' ? $prefix : null);
+            if ($pin >= ParcelCodeHelper::PIN_MIN) {
+                $used[$pin] = true;
+            }
+        }
+        return $used;
+    }
+
     /** @return list<int> */
-    private static function allocateUniquePins(int $count): array
+    private static function allocateUniquePins(int $count, array $used = []): array
     {
         if ($count < 1) {
             return [];
         }
         $pool = ParcelCodeHelper::PIN_MAX - ParcelCodeHelper::PIN_MIN + 1;
-        if ($count > $pool) {
-            throw new \RuntimeException('عدد المستفيدين أكبر من الحد الأقصى لأكواد الصرف (' . number_format($pool) . ').');
+        if ($count > $pool - count($used)) {
+            throw new \RuntimeException('عدد المستفيدين أكبر من الحد الأقصى لأكواد الصرف المتاحة.');
         }
 
-        // مجال 7 خانات كبير — عيّنة عشوائية دون بناء مصفوفة كاملة
-        $used = [];
         $pins = [];
         for ($i = 0; $i < $count; $i++) {
             $pins[] = ParcelCodeHelper::generateRandomPin($used);

@@ -45,7 +45,7 @@ final class MobileSyncService
         return [
             'campaigns' => $campaigns,
             'hint' => $campaigns === []
-                ? 'لا توجد عمليات مُولَّدة. من لوحة المدير: ارفع Excel ثم اضغط «توليد الكشوف». حساب التطبيق يجب أن يكون بدور «أمين مخزن» أو «مدير النظام».'
+                ? 'لا توجد عمليات مُولَّدة. من لوحة المدير: ارفع Excel ثم اضغط «اعتماد يوم توزيع» أو «توليد الكشوف». حساب التطبيق يجب أن يكون بدور «أمين مخزن» أو «مدير النظام».'
                 : null,
         ];
     }
@@ -64,6 +64,8 @@ final class MobileSyncService
             FROM beneficiaries b
             LEFT JOIN users u ON u.id = b.delivered_by
             WHERE b.campaign_id = ?
+              AND b.day_index IS NOT NULL AND b.day_index > 0
+              AND b.disbursement_code IS NOT NULL AND b.disbursement_code != \'\'
             ORDER BY b.sort_order ASC, b.id ASC
         ');
         $stmt->execute([$campaignId]);
@@ -189,6 +191,8 @@ final class MobileSyncService
             LEFT JOIN users u ON u.id = b.delivered_by
             WHERE b.campaign_id = ?
               AND b.updated_at > ?
+              AND b.day_index IS NOT NULL AND b.day_index > 0
+              AND b.disbursement_code IS NOT NULL AND b.disbursement_code != \'\'
             ORDER BY b.updated_at ASC, b.id ASC
         ');
         $stmt->execute([$campaignId, $since]);

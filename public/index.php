@@ -717,7 +717,8 @@ if ($uri === '/campaigns/view' && $method === 'GET') {
     $stats = CampaignService::stats($id);
     $preview = CampaignService::beneficiaries($id);
     $plan = null;
-    if (($stats['total'] ?? 0) > 0) {
+    $suggestedDayDate = DistributionService::suggestNextDayDate($campaign);
+    if ((int) ($stats['unassigned'] ?? 0) > 0 && (int) ($stats['assigned'] ?? 0) === 0) {
         $perWindow = max(1, (int) $campaign['per_window_capacity']);
         $numWindows = \App\DistributionService::resolveNumWindows(
             $campaign,
@@ -748,11 +749,9 @@ if ($uri === '/campaigns/view' && $method === 'GET') {
     view('campaigns/view', [
         'title' => $campaign['name'],
         'campaign' => ArabicFormat::localizeCampaignTimes($campaign),
-        'stats' => array_map(
-            static fn ($v) => is_int($v) || is_float($v) ? ArabicFormat::toArabicDigits((string) $v) : $v,
-            $stats
-        ),
+        'stats' => $stats,
         'plan' => $plan,
+        'suggestedDayDate' => $suggestedDayDate,
         'preview' => $previewRows,
         'canEdit' => RoleHelper::canEditCampaign(Auth::role() ?? ''),
         'canExport' => RoleHelper::canExport(Auth::role() ?? ''),
@@ -806,6 +805,34 @@ if ($uri === '/campaigns/generate' && $method === 'POST') {
         $sheets = $summary['total_delivery_sheets'] ?? 0;
         $days = $summary['num_days'] ?? 0;
         flash('success', "تم التوليد: {$summary['total']} مستفيد → طاقة يومية {$daily} ({$windows} شبابيك) → {$days} أيام عمل (بدون جمعة) → {$sheets} كشف.");
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+    }
+    redirect('/campaigns/view?id=' . $id);
+}
+
+if ($uri === '/campaigns/generate-day' && $method === 'POST') {
+    Auth::requireRole(fn ($r) => RoleHelper::canEditCampaign($r));
+    $id = (int) ($_POST['campaign_id'] ?? 0);
+    if (!Csrf::verify($_POST['_csrf'] ?? null)) {
+        flash('error', Csrf::failureMessage());
+        redirect('/campaigns/view?id=' . $id);
+    }
+    try {
+        $count = (int) ($_POST['day_beneficiaries'] ?? 0);
+        $windows = (int) ($_POST['day_windows'] ?? 0);
+        $date = trim((string) ($_POST['day_date'] ?? ''));
+        $summary = DistributionService::generateDay(
+            $id,
+            $count,
+            $windows,
+            $date !== '' ? $date : null
+        );
+        $perWin = implode('، ', array_map('strval', $summary['per_window'] ?? []));
+        flash(
+            'success',
+            "تم اعتماد اليوم {$summary['day_index']} ({$summary['date']}): {$summary['beneficiaries']} مستفيد على {$summary['windows']} شباك ({$perWin}). المتبقي غير معيّن: {$summary['unassigned_remaining']}."
+        );
     } catch (Throwable $e) {
         flash('error', $e->getMessage());
     }

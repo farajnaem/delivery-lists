@@ -1,6 +1,6 @@
 <?php
 use App\CampaignService;
-use App\ParcelCodeHelper;
+
 $isGenerated = ($campaign['status'] ?? '') === 'generated';
 $parcelLabel = CampaignService::parcelLabel($campaign);
 $dayStats = $stats['days'] ?? [];
@@ -8,6 +8,13 @@ $perWindow = max(1, (int) ($campaign['per_window_capacity'] ?? 400));
 $planSafe = is_array($plan ?? null) ? $plan : [];
 $numWindows = max(1, (int) ($planSafe['num_windows'] ?? $campaign['num_windows'] ?? 4));
 $dailyCapacity = (int) ($planSafe['daily_capacity'] ?? ($numWindows * $perWindow));
+$unassigned = (int) ($stats['unassigned'] ?? max(0, (int) ($stats['total'] ?? 0) - (int) ($stats['assigned'] ?? 0)));
+$assigned = (int) ($stats['assigned'] ?? 0);
+$defaultDayCount = min($unassigned, max(1, $numWindows * $perWindow));
+if ($unassigned > 0 && $defaultDayCount < 1) {
+    $defaultDayCount = min($unassigned, 1200);
+}
+$suggestedDayDate = (string) ($suggestedDayDate ?? $campaign['delivery_start'] ?? '');
 
 $viewActions = [];
 if ($isGenerated && !empty($canViewStock)) {
@@ -43,21 +50,20 @@ page_header(
         <div class="stat-value"><?= ar_digits((int) ($stats['total'] ?? 0)) ?></div>
     </div>
     <div class="stat-card">
-        <div class="stat-label">أيام العمل</div>
-        <div class="stat-value"><?= ar_digits((int) ($planSafe['num_days'] ?? $campaign['num_days'])) ?></div>
+        <div class="stat-label">معيّنون / غير معيّنين</div>
+        <div class="stat-value"><?= ar_digits($assigned) ?> / <?= ar_digits($unassigned) ?></div>
+        <div class="stat-meta">الأيام المعتمدة لا تُعاد كتابتها</div>
     </div>
     <div class="stat-card">
-        <div class="stat-label">شبابيك / يوم</div>
-        <div class="stat-value"><?= ar_digits($numWindows) ?></div>
-        <div class="stat-meta"><?= ar_digits($perWindow) ?> مستفيد / شباك</div>
+        <div class="stat-label">أيام معتمدة</div>
+        <div class="stat-value"><?= ar_digits(count($dayStats)) ?></div>
+        <div class="stat-meta">افتراضي: <?= ar_digits($numWindows) ?> شباك × <?= ar_digits($perWindow) ?></div>
     </div>
     <div class="stat-card">
-        <div class="stat-label">طاقة يومية</div>
+        <div class="stat-label">طاقة يومية افتراضية</div>
         <div class="stat-value"><?= ar_digits($dailyCapacity) ?></div>
         <?php if (!empty($deliveryStats)): ?>
         <div class="stat-meta">رصيد: <?= ar_digits((int) ($deliveryStats['balance'] ?? 0)) ?></div>
-        <?php elseif (!empty($plan)): ?>
-        <div class="stat-meta"><?= ar_digits((int) $plan['total_delivery_sheets']) ?> كشف تسليم</div>
         <?php endif; ?>
     </div>
 </div>
@@ -80,17 +86,43 @@ page_header(
 </div>
 <?php endif; ?>
 
-<?php if (!empty($plan)): ?>
+<?php if (!empty($dayStats)): ?>
 <div class="card table-panel">
     <div class="table-toolbar">
         <div>
-            <div class="panel-title">خطة التوزيع</div>
+            <div class="panel-title">الأيام المعتمدة</div>
+            <div class="panel-subtitle">كل يوم ثابت: أكواده ورسائله وكشوفه لا تتأثر باعتماد يوم لاحق</div>
+        </div>
+    </div>
+    <div class="table-wrap">
+    <table class="data-table">
+        <thead>
+            <tr><th>اليوم</th><th>التاريخ</th><th>المستفيدون</th><th>الشبابيك</th></tr>
+        </thead>
+        <tbody>
+        <?php foreach ($dayStats as $day): ?>
+        <tr>
+            <td><?= ar_digits((int) ($day['day_index'] ?? 0)) ?></td>
+            <td><?= e((string) ($day['delivery_date'] ?? '')) ?></td>
+            <td><?= ar_digits((int) ($day['cnt'] ?? 0)) ?></td>
+            <td><?= ar_digits((int) ($day['windows'] ?? 0)) ?></td>
+        </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
+    </div>
+</div>
+<?php endif; ?>
+
+<?php if (!empty($plan) && $assigned === 0): ?>
+<div class="card table-panel">
+    <div class="table-toolbar">
+        <div>
+            <div class="panel-title">معاينة خطة كاملة (اختياري)</div>
             <div class="panel-subtitle">
-                <?= ar_digits((int) $plan['total']) ?> مستفيد
-                ÷ طاقة يومية <?= ar_digits((int) ($plan['daily_capacity'] ?? $dailyCapacity)) ?>
-                = <?= ar_digits((int) $plan['num_days']) ?> أيام عمل
-                → <?= ar_digits((int) $plan['total_delivery_sheets']) ?> كشف
-                — الجمعة مستثناة
+                لو ولّدت الكل دفعة واحدة بالطاقة الافتراضية:
+                <?= ar_digits((int) $plan['total']) ?> ÷ <?= ar_digits((int) ($plan['daily_capacity'] ?? $dailyCapacity)) ?>
+                = <?= ar_digits((int) $plan['num_days']) ?> أيام
             </div>
         </div>
     </div>
@@ -129,34 +161,64 @@ page_header(
         <p><strong>الحالة:</strong>
             <?php if ($isGenerated): ?>
             <span class="badge badge-ok">مُولَّد <?= e($campaign['generated_at'] ?? '') ?></span>
-            <?php if (!\App\CampaignService::isDeliveryOpen($campaign)): ?>
+            <?php if (!CampaignService::isDeliveryOpen($campaign)): ?>
             <span class="badge badge-pending">التسليم مُنهى</span>
             <?php else: ?>
             <span class="badge badge-ok">التسليم مفتوح</span>
             <?php endif; ?>
             <?php else: ?>
-            <span class="badge badge-pending">مسودة — اضغط «توليد الكشوف»</span>
+            <span class="badge badge-pending">مسودة — اعتمد يوماً أو ولّد الكل</span>
             <?php endif; ?>
         </p>
     </div>
 </div>
 
+<?php if (!empty($canEdit) && (int) ($stats['total'] ?? 0) > 0 && $unassigned > 0): ?>
+<div class="card">
+    <h2 class="panel-title" style="margin-bottom:0.35rem">اعتماد يوم توزيع</h2>
+    <p class="text-muted" style="margin-bottom:1rem">
+        حدّد مستفيدي هذا اليوم وعدد الشبابيك فقط. الأيام السابقة تبقى كما هي بدون تغيير أكواد أو رسائل.
+        المتبقي غير المعيّن: <strong><?= ar_digits($unassigned) ?></strong>
+    </p>
+    <form method="post" action="<?= e(url('/campaigns/generate-day')) ?>" class="grid-2" data-confirm="اعتماد هذا اليوم؟ لن يُمسّ أي يوم سابق.">
+        <?= \App\Csrf::field() ?>
+        <input type="hidden" name="campaign_id" value="<?= (int) $campaign['id'] ?>">
+        <div>
+            <label class="field-label">تاريخ اليوم *</label>
+            <input type="date" name="day_date" class="form-control" required value="<?= e($suggestedDayDate) ?>">
+        </div>
+        <div>
+            <label class="field-label">عدد المستفيدين لهذا اليوم *</label>
+            <input type="number" name="day_beneficiaries" class="form-control" min="1" max="<?= $unassigned ?>" required value="<?= (int) $defaultDayCount ?>">
+        </div>
+        <div>
+            <label class="field-label">عدد الشبابيك *</label>
+            <input type="number" name="day_windows" class="form-control" min="1" required value="<?= (int) $numWindows ?>">
+            <span class="field-hint">يُوزَّع العدد على الشبابيك بالتساوي قدر الإمكان.</span>
+        </div>
+        <div style="display:flex;align-items:flex-end">
+            <button type="submit" class="btn">اعتماد اليوم وتوليد كشوفه</button>
+        </div>
+    </form>
+</div>
+<?php endif; ?>
+
 <div class="card">
     <div class="panel-header">
         <div>
             <h2 class="panel-title">عمليات الكشوف</h2>
-            <div class="panel-subtitle">توليد ورفع وتنزيل — المتابعة والتسليم والتعديل من شريط الصفحة</div>
+            <div class="panel-subtitle">التوصية: اعتمد يوماً بيوم. التوليد الكامل للكل دفعة واحدة فقط إن لم يُعتمد أي يوم بعد.</div>
         </div>
     </div>
     <div class="actions-row">
         <?php if (!empty($canEdit)): ?>
-        <?php if (!$isGenerated && ($stats['total'] ?? 0) > 0): ?>
-        <form method="post" action="<?= e(url('/campaigns/generate')) ?>" data-confirm="توليد الكشوف حسب الخطة أعلاه؟">
+        <?php if ($assigned === 0 && (int) ($stats['total'] ?? 0) > 0): ?>
+        <form method="post" action="<?= e(url('/campaigns/generate')) ?>" data-confirm="توليد كل الأيام دفعة واحدة بالطاقة الافتراضية؟ الأفضل عادةً اعتماد يوم بيوم.">
             <?= \App\Csrf::field() ?>
             <input type="hidden" name="campaign_id" value="<?= (int) $campaign['id'] ?>">
-            <button type="submit" class="btn">توليد الكشوف</button>
+            <button type="submit" class="btn btn-outline">توليد الكل دفعة واحدة</button>
         </form>
-        <?php elseif (!$isGenerated): ?>
+        <?php elseif ((int) ($stats['total'] ?? 0) === 0): ?>
         <form method="post" action="<?= e(url('/campaigns/import')) ?>" enctype="multipart/form-data" class="actions-row">
             <?= \App\Csrf::field() ?>
             <input type="hidden" name="campaign_id" value="<?= (int) $campaign['id'] ?>">
@@ -164,31 +226,23 @@ page_header(
             <button type="submit" class="btn btn-outline">رفع Excel</button>
         </form>
         <?php endif; ?>
-
-        <?php if ($isGenerated && !empty($canEdit)): ?>
-        <form method="post" action="<?= e(url('/campaigns/generate')) ?>" data-confirm="إعادة توليد الكشوف؟">
-            <?= \App\Csrf::field() ?>
-            <input type="hidden" name="campaign_id" value="<?= (int) $campaign['id'] ?>">
-            <button type="submit" class="btn btn-outline">إعادة التوليد</button>
-        </form>
-        <?php endif; ?>
         <?php endif; ?>
 
         <?php if ($isGenerated && !empty($canExport)): ?>
-        <a href="<?= e(url('/campaigns/export?id=' . (int)$campaign['id'])) ?>" class="btn">تنزيل Excel الكامل</a>
+        <a href="<?= e(url('/campaigns/export?id=' . (int) $campaign['id'])) ?>" class="btn">تنزيل Excel الكامل</a>
         <?php endif; ?>
 
         <?php if ($isGenerated && !empty($canViewStock) && !empty($canExport)): ?>
-        <a href="<?= e(url('/campaigns/export-deliveries?id=' . (int)$campaign['id'])) ?>" class="btn btn-outline">تقرير التسليمات</a>
+        <a href="<?= e(url('/campaigns/export-deliveries?id=' . (int) $campaign['id'])) ?>" class="btn btn-outline">تقرير التسليمات</a>
         <?php endif; ?>
     </div>
     <p class="text-muted" style="margin-top:0.75rem">
-        Excel الكامل: <strong>الكشف الإجمالي</strong> + كشوف التسليم لكل الأيام.
+        Excel الكامل: <strong>الكشف الإجمالي</strong> + كشوف التسليم للأيام المعتمدة.
         الرسائل وكشوف يوم معيّن تُنزَّل من الجدول أدناه (يوم بيوم).
     </p>
 </div>
 
-<?php if ($isGenerated && !empty($canExport) && !empty($plan['days'])): ?>
+<?php if ($isGenerated && !empty($canExport) && !empty($dayStats)): ?>
 <div class="card table-panel" data-table-filterable>
     <div class="table-toolbar">
         <div>
@@ -208,28 +262,17 @@ page_header(
             </tr>
         </thead>
         <tbody>
-        <?php foreach ($plan['days'] as $day): ?>
-            <?php
-            $di = (int) $day['day_index'];
-            $dayDate = $day['date'] ?? ($dayStats[$di - 1]['delivery_date'] ?? '');
-            if ($dayDate === '' && !empty($dayStats)) {
-                foreach ($dayStats as $ds) {
-                    if ((int) ($ds['day_index'] ?? 0) === $di) {
-                        $dayDate = $ds['delivery_date'] ?? '';
-                        break;
-                    }
-                }
-            }
-            ?>
+        <?php foreach ($dayStats as $day): ?>
+            <?php $di = (int) ($day['day_index'] ?? 0); ?>
             <tr>
                 <td>اليوم <?= ar_digits($di) ?></td>
-                <td><?= e((string) $dayDate) ?></td>
-                <td><?= ar_digits((int) ($day['beneficiaries'] ?? 0)) ?></td>
+                <td><?= e((string) ($day['delivery_date'] ?? '')) ?></td>
+                <td><?= ar_digits((int) ($day['cnt'] ?? 0)) ?></td>
                 <td>
-                    <a class="btn btn-sm btn-outline" href="<?= e(url('/campaigns/export-messages?id=' . (int)$campaign['id'] . '&day=' . $di)) ?>">رسائل يوم <?= ar_digits($di) ?></a>
+                    <a class="btn btn-sm btn-outline" href="<?= e(url('/campaigns/export-messages?id=' . (int) $campaign['id'] . '&day=' . $di)) ?>">رسائل يوم <?= ar_digits($di) ?></a>
                 </td>
                 <td>
-                    <a class="btn btn-sm btn-outline" href="<?= e(url('/campaigns/export-day?id=' . (int)$campaign['id'] . '&day=' . $di)) ?>">تسليم يوم <?= ar_digits($di) ?></a>
+                    <a class="btn btn-sm btn-outline" href="<?= e(url('/campaigns/export-day?id=' . (int) $campaign['id'] . '&day=' . $di)) ?>">تسليم يوم <?= ar_digits($di) ?></a>
                 </td>
             </tr>
         <?php endforeach; ?>
@@ -243,7 +286,7 @@ page_header(
 <div class="card table-panel" data-table-filterable>
     <div class="table-toolbar">
         <div>
-            <div class="panel-title">معاينة (أول 20 مستفيد<?= $isGenerated ? ' — بعد التوليد' : '' ?>)</div>
+            <div class="panel-title">معاينة (أول 20 مستفيد<?= $isGenerated ? ' — بعد التعيين' : '' ?>)</div>
         </div>
         <div class="table-toolbar-search">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
@@ -300,7 +343,7 @@ page_header(
     <h2 class="panel-title">المستلمون</h2>
     <div class="empty-state">
         <strong>لا يوجد مستلمون بعد</strong>
-        <span>ستظهر القائمة بعد تسجيل التسليم من <a href="<?= e(url('/warehouse/deliver?campaign_id=' . (int)$campaign['id'])) ?>">صفحة المخزن</a>.</span>
+        <span>ستظهر القائمة بعد تسجيل التسليم من <a href="<?= e(url('/warehouse/deliver?campaign_id=' . (int) $campaign['id'])) ?>">صفحة المخزن</a>.</span>
     </div>
 </div>
 <?php endif; ?>
