@@ -246,8 +246,11 @@ page_header(
 <div class="card table-panel" data-table-filterable>
     <div class="table-toolbar">
         <div>
-            <div class="panel-title">تنزيل يوم بيوم</div>
-            <div class="panel-subtitle">الرسائل منفصلة: جوال / أوريدو — صدّر يوم التسليم عند الاقتراب منه</div>
+            <div class="panel-title">تنزيل يوم بيوم — رسائل وكشوف تسليم</div>
+            <div class="panel-subtitle">
+                صدّر رسائل وكشف اليوم المعتمد للطباعة/الإرسال.
+                المتأخر عن موعده يبقى قابلاً للتسليم حتى إنهاء العملية (لا يُلغى بمرور اليوم).
+            </div>
         </div>
     </div>
     <div class="table-wrap">

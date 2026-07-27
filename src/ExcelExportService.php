@@ -19,6 +19,30 @@ final class ExcelExportService
     private const SECTION_FILL = 'EEF2F7';
     private const META_LABEL_FILL = 'F5F7FA';
 
+    /** مستفيد معتمد في يوم توزيع (لديه كود ويوم). */
+    private static function isAssigned(array $b): bool
+    {
+        return (int) ($b['day_index'] ?? 0) > 0
+            && trim((string) ($b['disbursement_code'] ?? '')) !== '';
+    }
+
+    /**
+     * @param list<array<string, mixed>> $all
+     * @return list<array<string, mixed>>
+     */
+    private static function assignedOnly(array $all): array
+    {
+        return array_values(array_filter($all, [self::class, 'isAssigned']));
+    }
+
+    /** @param list<array<string, mixed>> $all */
+    private static function assertHasAssigned(array $all): void
+    {
+        if (self::assignedOnly($all) === []) {
+            throw new \RuntimeException('يجب اعتماد يوم توزيع أو توليد الكشوف أولاً قبل التصدير.');
+        }
+    }
+
     public static function export(int $campaignId): string
     {
         extend_runtime();
@@ -28,10 +52,8 @@ final class ExcelExportService
             throw new \RuntimeException('العملية غير موجودة.');
         }
 
-        $all = CampaignService::beneficiariesDetailed($campaignId);
-        if ($all === [] || empty($all[0]['disbursement_code'])) {
-            throw new \RuntimeException('يجب توليد الكشوف أولاً قبل التصدير.');
-        }
+        $all = self::assignedOnly(CampaignService::beneficiariesDetailed($campaignId));
+        self::assertHasAssigned($all);
 
         $spreadsheet = new Spreadsheet();
         $spreadsheet->getDefaultStyle()->getFont()->setName('Arial')->setSize(10);
@@ -56,10 +78,8 @@ final class ExcelExportService
         }
 
         $dayIndex = max(1, $dayIndex);
-        $all = CampaignService::beneficiariesDetailed($campaignId);
-        if ($all === [] || empty($all[0]['disbursement_code'])) {
-            throw new \RuntimeException('يجب توليد الكشوف أولاً قبل التصدير.');
-        }
+        $all = self::assignedOnly(CampaignService::beneficiariesDetailed($campaignId));
+        self::assertHasAssigned($all);
 
         $dayRows = array_values(array_filter(
             $all,
@@ -98,10 +118,8 @@ final class ExcelExportService
         }
 
         $dayIndex = max(1, $dayIndex);
-        $all = CampaignService::beneficiariesDetailed($campaignId);
-        if ($all === [] || empty($all[0]['disbursement_code'])) {
-            throw new \RuntimeException('يجب توليد الكشوف أولاً قبل التصدير.');
-        }
+        $all = self::assignedOnly(CampaignService::beneficiariesDetailed($campaignId));
+        self::assertHasAssigned($all);
 
         $dayRows = array_values(array_filter(
             $all,
@@ -155,10 +173,8 @@ final class ExcelExportService
             throw new \RuntimeException('العملية غير موجودة.');
         }
 
-        $all = CampaignService::beneficiariesDetailed($campaignId);
-        if ($all === [] || empty($all[0]['disbursement_code'])) {
-            throw new \RuntimeException('يجب توليد الكشوف أولاً.');
-        }
+        $all = self::assignedOnly(CampaignService::beneficiariesDetailed($campaignId));
+        self::assertHasAssigned($all);
 
         $stats = DeliveryService::stockStats($campaignId);
         $today = date('Y-m-d');
