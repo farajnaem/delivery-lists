@@ -10,10 +10,12 @@ final class PhoneHelper
     public const CARRIER_OOREDOO = 'ooredoo';
     public const CARRIER_OTHER = 'other';
 
-    /** يحوّل رقم الجوال إلى أرقام فقط بدون صفر في البداية (للتصدير والرسائل). */
+    /** يحوّل رقم الجوال إلى أرقام لاتينية فقط بدون صفر في البداية (للتصدير والرسائل). */
     public static function normalize(string $mobile): string
     {
-        $digits = preg_replace('/\D/u', '', $mobile) ?? '';
+        // مهم: الأرقام الهندية (٠١٢) ليست ASCII — بدون التحويل يمسحها \D وتضيع الأرقام.
+        $mobile = ArabicFormat::toWesternDigits($mobile);
+        $digits = preg_replace('/\D+/', '', $mobile) ?? '';
         $digits = ltrim($digits, '0');
         return $digits !== '' ? $digits : '0';
     }

@@ -107,8 +107,12 @@ final class ExcelExportService
         return self::saveSpreadsheet($spreadsheet, $campaign, $suffix);
     }
 
-    /** تصدير كشوف الرسائل ليوم واحد فقط. */
-    public static function exportMessagesForDay(int $campaignId, int $dayIndex): string
+    /**
+     * تصدير رسائل يوم واحد.
+     * $carrier = jawwal | ooredoo | other → ملف Excel واحد.
+     * $carrier = null → ZIP فيه ملف لكل شبكة موجودة.
+     */
+    public static function exportMessagesForDay(int $campaignId, int $dayIndex, ?string $carrier = null): string
     {
         extend_runtime();
 
@@ -129,20 +133,149 @@ final class ExcelExportService
             throw new \RuntimeException('لا يوجد مستفيدون لليوم المحدد.');
         }
 
-        $spreadsheet = new Spreadsheet();
-        $spreadsheet->getDefaultStyle()->getFont()->setName('Arial')->setSize(10);
-        $spreadsheet->removeSheetByIndex(0);
-        self::buildMessagesSheets($spreadsheet, $dayRows, $campaign);
+        $groups = self::groupByCarrier($dayRows);
+        $date = (string) ($dayRows[0]['delivery_date'] ?? '');
+        $carrier = $carrier !== null ? strtolower(trim($carrier)) : null;
 
-        if ($spreadsheet->getSheetCount() === 0) {
+        if ($carrier !== null) {
+            $label = match ($carrier) {
+                PhoneHelper::CARRIER_JAWWAL => 'جوال',
+                PhoneHelper::CARRIER_OOREDOO => 'أوريدو',
+                PhoneHelper::CARRIER_OTHER => 'غير_مصنفة',
+                default => throw new \RuntimeException('شبكة غير معروفة.'),
+            };
+            $items = $groups[$carrier] ?? [];
+            if ($items === []) {
+                throw new \RuntimeException("لا توجد رسائل لشبكة {$label} في هذا اليوم.");
+            }
+            $suffix = 'رسائل_' . $label . '_يوم' . $dayIndex . ($date !== '' ? '_' . $date : '');
+            return self::savePlainMessagesSpreadsheet($campaign, $items, $suffix);
+        }
+
+        $files = [];
+        foreach (
+            [
+                PhoneHelper::CARRIER_JAWWAL => 'جوال',
+                PhoneHelper::CARRIER_OOREDOO => 'أوريدو',
+                PhoneHelper::CARRIER_OTHER => 'غير_مصنفة',
+            ] as $key => $label
+        ) {
+            $items = $groups[$key] ?? [];
+            if ($items === []) {
+                continue;
+            }
+            $suffix = 'رسائل_' . $label . '_يوم' . $dayIndex . ($date !== '' ? '_' . $date : '');
+            $files[$label . '.xlsx'] = self::savePlainMessagesSpreadsheet($campaign, $items, $suffix);
+        }
+
+        if ($files === []) {
             throw new \RuntimeException('لا توجد رسائل لهذا اليوم.');
         }
-        $spreadsheet->setActiveSheetIndex(0);
+        if (count($files) === 1) {
+            return array_values($files)[0];
+        }
 
-        $date = (string) ($dayRows[0]['delivery_date'] ?? '');
-        $suffix = 'رسائل_يوم' . $dayIndex . ($date !== '' ? '_' . $date : '');
+        return self::zipFiles(
+            $campaign,
+            $files,
+            'رسائل_يوم' . $dayIndex . ($date !== '' ? '_' . $date : '')
+        );
+    }
 
-        return self::saveSpreadsheet($spreadsheet, $campaign, $suffix);
+    /**
+     * @param list<array<string,mixed>> $beneficiaries
+     * @return array{jawwal:list<array<string,mixed>>,ooredoo:list<array<string,mixed>>,other:list<array<string,mixed>>}
+     */
+    private static function groupByCarrier(array $beneficiaries): array
+    {
+        $groups = [
+            PhoneHelper::CARRIER_JAWWAL => [],
+            PhoneHelper::CARRIER_OOREDOO => [],
+            PhoneHelper::CARRIER_OTHER => [],
+        ];
+        foreach ($beneficiaries as $beneficiary) {
+            $carrier = PhoneHelper::carrier((string) ($beneficiary['mobile'] ?? ''));
+            if (!isset($groups[$carrier])) {
+                $carrier = PhoneHelper::CARRIER_OTHER;
+            }
+            $groups[$carrier][] = $beneficiary;
+        }
+        foreach ($groups as &$items) {
+            self::sortByName($items);
+        }
+        unset($items);
+        return $groups;
+    }
+
+    /**
+     * ملف رسائل بسيط: عمودان فقط (رقم الجوال، نص الرسالة) بدون أي ترويسة.
+     *
+     * @param list<array<string,mixed>> $beneficiaries
+     */
+    private static function savePlainMessagesSpreadsheet(array $campaign, array $beneficiaries, string $nameSuffix): string
+    {
+        $spreadsheet = new Spreadsheet();
+        $spreadsheet->getDefaultStyle()->getFont()->setName('Arial')->setSize(10);
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('رسائل');
+        $sheet->setRightToLeft(true);
+
+        $row = 1;
+        foreach ($beneficiaries as $b) {
+            $mobile = PhoneHelper::messageRecipient((string) ($b['mobile'] ?? ''));
+            if ($mobile === '' || $mobile === '0') {
+                continue;
+            }
+            $sheet->setCellValueExplicit(
+                'A' . $row,
+                ArabicFormat::toWesternDigits($mobile),
+                DataType::TYPE_STRING
+            );
+            $sheet->setCellValueExplicit(
+                'B' . $row,
+                MessageTemplates::appointmentFromBeneficiary($campaign, $b),
+                DataType::TYPE_STRING
+            );
+            $sheet->getStyle('A' . $row . ':B' . $row)->getNumberFormat()->setFormatCode('@');
+            $sheet->getStyle('B' . $row)->getAlignment()->setWrapText(true);
+            $row++;
+        }
+
+        if ($row === 1) {
+            throw new \RuntimeException('لا توجد أرقام صالحة في هذه المجموعة.');
+        }
+
+        $sheet->getColumnDimension('A')->setWidth(16);
+        $sheet->getColumnDimension('B')->setWidth(90);
+
+        return self::saveSpreadsheet($spreadsheet, $campaign, $nameSuffix);
+    }
+
+    /**
+     * @param array<string, string> $files map of zipEntryName => absolutePath
+     */
+    private static function zipFiles(array $campaign, array $files, string $nameSuffix): string
+    {
+        $dir = dirname(__DIR__) . '/storage/exports';
+        if (!is_dir($dir)) {
+            mkdir($dir, 0775, true);
+        }
+        $safeName = preg_replace('/[^\p{L}\p{N}_-]+/u', '_', $campaign['name']) ?: 'campaign';
+        if ($nameSuffix !== '') {
+            $safeName .= '_' . preg_replace('/[^\p{L}\p{N}_-]+/u', '_', $nameSuffix);
+        }
+        $path = $dir . '/' . $safeName . '_' . date('Y-m-d_His') . '.zip';
+
+        $zip = new \ZipArchive();
+        if ($zip->open($path, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) !== true) {
+            throw new \RuntimeException('تعذّر إنشاء ملف ZIP للرسائل.');
+        }
+        foreach ($files as $entry => $filePath) {
+            $zip->addFile($filePath, $entry);
+        }
+        $zip->close();
+
+        return $path;
     }
 
     /** @param Spreadsheet $spreadsheet */
@@ -667,40 +800,6 @@ final class ExcelExportService
         }
     }
 
-    /** @param list<array<string,mixed>> $all */
-    private static function buildMessagesSheets(Spreadsheet $spreadsheet, array $all, array $campaign = []): void
-    {
-        $jawwal = [];
-        $ooredoo = [];
-        $other = [];
-
-        foreach ($all as $beneficiary) {
-            $carrier = PhoneHelper::carrier((string) ($beneficiary['mobile'] ?? ''));
-            if ($carrier === PhoneHelper::CARRIER_JAWWAL) {
-                $jawwal[] = $beneficiary;
-            } elseif ($carrier === PhoneHelper::CARRIER_OOREDOO) {
-                $ooredoo[] = $beneficiary;
-            } else {
-                $other[] = $beneficiary;
-            }
-        }
-
-        self::sortByName($jawwal);
-        self::sortByName($ooredoo);
-        self::sortByName($other);
-
-        // كل شبكة بورقة مستقلة داخل نفس الملف (جوال / أوريدو / غير مصنفة).
-        if ($jawwal !== []) {
-            self::buildCarrierMessagesSheet($spreadsheet, 'رسائل_جوال', $jawwal, $campaign);
-        }
-        if ($ooredoo !== []) {
-            self::buildCarrierMessagesSheet($spreadsheet, 'رسائل_أوريدو', $ooredoo, $campaign);
-        }
-        if ($other !== []) {
-            self::buildCarrierMessagesSheet($spreadsheet, 'رسائل_غير_مصنفة', $other, $campaign);
-        }
-    }
-
     /** @param list<array<string,mixed>> $items */
     private static function sortByName(array &$items): void
     {
@@ -710,79 +809,6 @@ final class ExcelExportService
                 (string) ($b['name'] ?? '')
             );
         });
-    }
-
-    /** @param list<array<string,mixed>> $beneficiaries */
-    private static function buildCarrierMessagesSheet(
-        Spreadsheet $spreadsheet,
-        string $title,
-        array $beneficiaries,
-        array $campaign = []
-    ): void {
-        $sheet = $spreadsheet->createSheet();
-        $sheet->setTitle($title);
-        $sheet->setRightToLeft(true);
-
-        $warehouse = trim((string) ($campaign['warehouse_name'] ?? ''));
-        $location = trim((string) ($campaign['warehouse_location'] ?? ''));
-        $metaParts = array_filter([
-            $warehouse !== '' ? 'مخزن التسليم: ' . $warehouse : '',
-            $location !== '' ? 'الموقع: ' . $location : '',
-            'عدد الرسائل: ' . count($beneficiaries),
-        ]);
-        $sheet->setCellValueExplicit(
-            'A1',
-            ArabicFormat::protectWesternDigits(implode(' — ', $metaParts)),
-            DataType::TYPE_STRING
-        );
-        $sheet->mergeCells('A1:C1');
-        $sheet->getStyle('A1')->getFont()->setBold(true);
-        $sheet->getStyle('A1')->getFill()
-            ->setFillType(Fill::FILL_SOLID)
-            ->getStartColor()->setRGB(self::SECTION_FILL);
-
-        $headerRow = 2;
-        $headers = ['#', 'رقم الجوال', 'نص الرسالة'];
-        self::writeHeaderRow($sheet, $headerRow, $headers);
-
-        $row = $headerRow + 1;
-        foreach ($beneficiaries as $i => $b) {
-            // أرقام لاتينية كنص صريح حتى لا يحوّلها Excel للهندية في ورقة RTL
-            $sheet->setCellValueExplicit(
-                'A' . $row,
-                ArabicFormat::protectWesternDigits((string) ($i + 1)),
-                DataType::TYPE_STRING
-            );
-            $mobile = PhoneHelper::messageRecipient((string) ($b['mobile'] ?? ''));
-            if ($mobile !== '' && $mobile !== '0') {
-                $sheet->setCellValueExplicit(
-                    'B' . $row,
-                    ArabicFormat::protectWesternDigits($mobile),
-                    DataType::TYPE_STRING
-                );
-            }
-            // نبني النص من القالب الحالي حتى يظهر اسم المخزن دائماً (حتى لو message_text قديم).
-            $sheet->setCellValueExplicit(
-                'C' . $row,
-                MessageTemplates::appointmentFromBeneficiary($campaign, $b),
-                DataType::TYPE_STRING
-            );
-            $sheet->getStyle('A' . $row . ':C' . $row)->getAlignment()->setWrapText(true);
-            $sheet->getStyle('A' . $row . ':C' . $row)->getNumberFormat()->setFormatCode('@');
-            $row++;
-        }
-
-        $lastRow = max($headerRow, $row - 1);
-        self::borderAll($sheet, 'A' . $headerRow . ':C' . $lastRow);
-        if ($beneficiaries !== []) {
-            self::styleDataRows($sheet, 'A' . ($headerRow + 1) . ':C' . $lastRow);
-        }
-
-        $sheet->getColumnDimension('A')->setWidth(6);
-        $sheet->getColumnDimension('B')->setWidth(14);
-        $sheet->getColumnDimension('C')->setWidth(90);
-
-        self::applyPortraitPrint($sheet, $headerRow, $lastRow, 'C');
     }
 
     private static function ar(mixed $value): string

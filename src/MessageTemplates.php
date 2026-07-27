@@ -44,8 +44,8 @@ final class MessageTemplates
             )
         );
 
-        // فرض أرقام لاتينية في Excel/الهاتف حتى مع واجهة عربية RTL
-        return ArabicFormat::protectWesternDigits($message);
+        // أرقام لاتينية نظيفة (بدون علامات اتجاه خفية تكسر الإرسال)
+        return ArabicFormat::toWesternDigits($message);
     }
 
     /** إعادة بناء رسالة الموعد من صف مستفيد (للتصدير حتى لو النص القديم قديم). */
@@ -86,7 +86,7 @@ final class MessageTemplates
             );
         }
 
-        return ArabicFormat::protectWesternDigits($message);
+        return ArabicFormat::toWesternDigits($message);
     }
 
     /** اسم المخزن يظهر في كل رسالة؛ لا يُترك فارغاً. */

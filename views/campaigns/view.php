@@ -248,8 +248,8 @@ page_header(
         <div>
             <div class="panel-title">تنزيل يوم بيوم — رسائل وكشوف تسليم</div>
             <div class="panel-subtitle">
-                صدّر رسائل وكشف اليوم المعتمد للطباعة/الإرسال.
-                المتأخر عن موعده يبقى قابلاً للتسليم حتى إنهاء العملية (لا يُلغى بمرور اليوم).
+                ملف جوال وملف أوريدو منفصلان — عمودان فقط (الرقم + الرسالة) بدون ترويسة.
+                المتأخر عن موعده يبقى قابلاً للتسليم حتى إنهاء العملية.
             </div>
         </div>
     </div>
@@ -272,7 +272,10 @@ page_header(
                 <td><?= e((string) ($day['delivery_date'] ?? '')) ?></td>
                 <td><?= ar_digits((int) ($day['cnt'] ?? 0)) ?></td>
                 <td>
-                    <a class="btn btn-sm btn-outline" href="<?= e(url('/campaigns/export-messages?id=' . (int) $campaign['id'] . '&day=' . $di)) ?>">رسائل يوم <?= ar_digits($di) ?></a>
+                    <div class="actions-row" style="flex-wrap:wrap;gap:0.35rem">
+                        <a class="btn btn-sm btn-outline" href="<?= e(url('/campaigns/export-messages?id=' . (int) $campaign['id'] . '&day=' . $di . '&network=jawwal')) ?>">رسائل جوال</a>
+                        <a class="btn btn-sm btn-outline" href="<?= e(url('/campaigns/export-messages?id=' . (int) $campaign['id'] . '&day=' . $di . '&network=ooredoo')) ?>">رسائل أوريدو</a>
+                    </div>
                 </td>
                 <td>
                     <a class="btn btn-sm btn-outline" href="<?= e(url('/campaigns/export-day?id=' . (int) $campaign['id'] . '&day=' . $di)) ?>">تسليم يوم <?= ar_digits($di) ?></a>

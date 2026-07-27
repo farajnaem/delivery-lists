@@ -861,13 +861,30 @@ if ($uri === '/campaigns/export-messages' && $method === 'GET') {
     Auth::requireRole(fn ($r) => RoleHelper::canExport($r));
     $id = (int) ($_GET['id'] ?? 0);
     $day = (int) ($_GET['day'] ?? 0);
+    $network = strtolower(trim((string) ($_GET['network'] ?? '')));
+    if (!in_array($network, ['jawwal', 'ooredoo', 'other'], true)) {
+        $network = '';
+    }
     try {
-        $path = ExcelExportService::exportMessagesForDay($id, $day);
+        $path = ExcelExportService::exportMessagesForDay(
+            $id,
+            $day,
+            $network !== '' ? $network : null
+        );
         $campaign = CampaignService::find($id);
-        $filename = ($campaign['name'] ?? 'messages') . '_رسائل_يوم' . $day . '.xlsx';
-        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        $isZip = str_ends_with(strtolower($path), '.zip');
+        $label = match ($network) {
+            'jawwal' => 'جوال',
+            'ooredoo' => 'أوريدو',
+            'other' => 'غير_مصنفة',
+            default => 'شبكات',
+        };
+        $filename = ($campaign['name'] ?? 'messages') . '_رسائل_' . $label . '_يوم' . $day . ($isZip ? '.zip' : '.xlsx');
+        header('Content-Type: ' . ($isZip
+            ? 'application/zip'
+            : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'));
         header('Content-Disposition: attachment; filename="' . rawurlencode($filename) . '"');
-        header('Content-Length: ' . filesize($path));
+        header('Content-Length: ' . (string) filesize($path));
         readfile($path);
         exit;
     } catch (Throwable $e) {
