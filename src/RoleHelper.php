@@ -21,6 +21,7 @@ final class RoleHelper
             'إنشاء وتعديل العمليات وتوليد الكشوف',
             'تصدير Excel والتقارير',
             'متابعة المخزن وإنهاء/إعادة فتح التسليم',
+            'بدء وجدولة فتح التسليم',
             'تسليم من المخزن (ويب + تطبيق)',
             'تسليم جماعي يدوي وتصحيح الحالات والتراجع عن الدفعات',
             'إلغاء التسليمات',
@@ -29,7 +30,7 @@ final class RoleHelper
         'coordinator' => [
             'إنشاء وتعديل العمليات وتوليد الكشوف',
             'تصدير Excel',
-            'متابعة المخزن (عرض فقط — بدون إنهاء التسليم)',
+            'متابعة المخزن وبدء/جدولة التسليم (بدون إنهاء نهائي)',
         ],
         'reviewer' => [
             'معاينة العمليات والمخزن',
@@ -88,6 +89,12 @@ final class RoleHelper
     public static function canManageDatabase(string $role): bool
     {
         return $role === 'admin';
+    }
+
+    /** بدء / جدولة / قفل مؤقت للتسليم — مدير أو منسّق */
+    public static function canStartDelivery(string $role): bool
+    {
+        return in_array($role, ['admin', 'coordinator'], true);
     }
 
     /** إنهاء وإعادة فتح عملية التسليم — مدير النظام فقط */

@@ -301,16 +301,19 @@ if ($uri === '/campaigns/stock' && $method === 'GET') {
     }
     $deliveredTotal = DeliveryService::deliveredCount($id);
     $canCloseDelivery = RoleHelper::canCloseDelivery(Auth::role() ?? '');
+    $canStartDelivery = RoleHelper::canStartDelivery(Auth::role() ?? '');
     view('warehouse/dashboard', [
         'title' => 'متابعة المخزن',
         'campaign' => $campaign,
         'stock' => DeliveryService::stockStats($id),
+        'deliveryGate' => CampaignService::deliveryGateStatus($campaign),
         'deliveredList' => DeliveryService::deliveredBeneficiaries($id, 100),
         'deliveredTotal' => $deliveredTotal,
         'lateList' => DeliveryService::pendingLate($id, 50),
         'keeperStats' => $canCloseDelivery ? DeliveryService::deliveriesByKeeper($id) : null,
         'canEdit' => RoleHelper::canEditCampaign(Auth::role() ?? ''),
         'canCloseDelivery' => $canCloseDelivery,
+        'canStartDelivery' => $canStartDelivery,
         'canDeliver' => RoleHelper::canDeliver(Auth::role() ?? ''),
         'canExport' => RoleHelper::canViewStock(Auth::role() ?? ''),
         'canCancelDeliveries' => RoleHelper::canCancelDeliveries(Auth::role() ?? ''),
@@ -354,6 +357,44 @@ if ($uri === '/campaigns/reopen-delivery' && $method === 'POST') {
     }
     CampaignService::reopenDelivery($id);
     flash('success', 'تم إعادة فتح عملية التسليم.');
+    redirect('/campaigns/stock?id=' . $id);
+}
+
+if ($uri === '/campaigns/start-delivery' && $method === 'POST') {
+    Auth::requireRole(fn ($r) => RoleHelper::canStartDelivery($r));
+    $id = (int) ($_POST['campaign_id'] ?? 0);
+    if (!Csrf::verify($_POST['_csrf'] ?? null)) {
+        flash('error', Csrf::failureMessage());
+        redirect('/campaigns/stock?id=' . $id);
+    }
+    try {
+        $opensAt = trim((string) ($_POST['opens_at'] ?? ''));
+        CampaignService::startDelivery($id, $opensAt !== '' ? $opensAt : null);
+        flash(
+            'success',
+            $opensAt !== '' && strtotime(str_replace('T', ' ', $opensAt)) > time()
+                ? 'تم جدولة بدء التسليم.'
+                : 'تم بدء التسليم — يمكن لأمناء المخزن التسجيل الآن.'
+        );
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+    }
+    redirect('/campaigns/stock?id=' . $id);
+}
+
+if ($uri === '/campaigns/lock-delivery' && $method === 'POST') {
+    Auth::requireRole(fn ($r) => RoleHelper::canStartDelivery($r));
+    $id = (int) ($_POST['campaign_id'] ?? 0);
+    if (!Csrf::verify($_POST['_csrf'] ?? null)) {
+        flash('error', Csrf::failureMessage());
+        redirect('/campaigns/stock?id=' . $id);
+    }
+    try {
+        CampaignService::lockDelivery($id);
+        flash('success', 'تم قفل التسليم مؤقتاً — لن يُقبل تسجيل جديد حتى إعادة البدء.');
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+    }
     redirect('/campaigns/stock?id=' . $id);
 }
 

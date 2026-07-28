@@ -204,8 +204,42 @@ final class DeliveryService
 
     public static function isCampaignActive(array $campaign): bool
     {
-        $closedAt = trim((string) ($campaign['delivery_closed_at'] ?? ''));
-        return $closedAt === '';
+        if (trim((string) ($campaign['delivery_closed_at'] ?? '')) !== '') {
+            return false;
+        }
+
+        // عمليات قديمة بلا العمود تُعد مفعّلة
+        if (array_key_exists('delivery_enabled', $campaign) && (int) $campaign['delivery_enabled'] !== 1) {
+            return false;
+        }
+
+        $opensAt = trim((string) ($campaign['delivery_opens_at'] ?? ''));
+        if ($opensAt !== '') {
+            $ts = strtotime($opensAt);
+            if ($ts !== false && $ts > time()) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    public static function inactiveDeliveryMessage(array $campaign): string
+    {
+        $gate = CampaignService::deliveryGateStatus($campaign);
+        return match ($gate['state']) {
+            'closed' => 'تم إنهاء عملية التسليم — أعد فتحها من متابعة المخزن.',
+            'locked' => 'التسليم لم يبدأ بعد — بانتظار بدء العملية من المدير أو منسّق التوزيع.',
+            'scheduled' => 'التسليم مجدول ولم يحن وقته بعد (' . ($gate['detail'] ?? '') . ').',
+            default => 'التسليم مغلق حالياً.',
+        };
+    }
+
+    /** مستفيد معتمد للتوزيع (له يوم وكود صرف). */
+    public static function isAssignedForDelivery(array $beneficiary): bool
+    {
+        return (int) ($beneficiary['day_index'] ?? 0) > 0
+            && trim((string) ($beneficiary['disbursement_code'] ?? '')) !== '';
     }
 
     public static function search(int $campaignId, string $query): ?array
@@ -233,6 +267,8 @@ final class DeliveryService
             FROM beneficiaries b
             JOIN campaigns c ON c.id = b.campaign_id
             WHERE b.campaign_id = ?
+              AND b.day_index IS NOT NULL AND b.day_index > 0
+              AND b.disbursement_code IS NOT NULL AND b.disbursement_code != \'\'
               AND (
                 b.national_id = ?
                 OR REPLACE(b.national_id, \' \', \'\') = ?
@@ -274,7 +310,7 @@ final class DeliveryService
         }
 
         if (!self::isCampaignActive($campaign)) {
-            return ['ok' => false, 'error' => 'تم إنهاء عملية التسليم — أعد فتحها من متابعة المخزن.'];
+            return ['ok' => false, 'error' => self::inactiveDeliveryMessage($campaign)];
         }
 
         $stmt = $pdo->prepare('SELECT * FROM beneficiaries WHERE id = ? AND campaign_id = ? LIMIT 1');
@@ -282,6 +318,13 @@ final class DeliveryService
         $beneficiary = $stmt->fetch();
         if (!$beneficiary) {
             return ['ok' => false, 'error' => 'المستفيد غير موجود.'];
+        }
+
+        if (!self::isAssignedForDelivery($beneficiary)) {
+            return [
+                'ok' => false,
+                'error' => 'هذا المستفيد غير مدرج في أيام التوزيع المعتمدة بعد (بدون كود صرف) — لا يمكن تسليمه حتى يُعتمد يومه.',
+            ];
         }
 
         if (($beneficiary['receipt_status'] ?? '') === self::STATUS_DELIVERED) {
@@ -569,6 +612,8 @@ final class DeliveryService
                    window_num, day_index, time_from, time_to, receipt_status
             FROM beneficiaries
             WHERE campaign_id = ? AND receipt_status != ?
+              AND day_index IS NOT NULL AND day_index > 0
+              AND disbursement_code IS NOT NULL AND disbursement_code != \'\'
             ORDER BY day_index ASC, window_num ASC, sort_order ASC, id ASC
         ');
         $stmt->execute([$campaignId, self::STATUS_DELIVERED]);
@@ -646,7 +691,7 @@ final class DeliveryService
             return ['ok' => false, 'error' => 'العملية غير جاهزة للتسليم.'];
         }
         if (!self::isCampaignActive($campaign)) {
-            return ['ok' => false, 'error' => 'تم إنهاء عملية التسليم — أعد فتحها أولاً.'];
+            return ['ok' => false, 'error' => self::inactiveDeliveryMessage($campaign)];
         }
 
         $pdo = Database::getConnection();
@@ -654,7 +699,7 @@ final class DeliveryService
         $params = $ids;
         array_unshift($params, $campaignId);
         $stmt = $pdo->prepare("
-            SELECT id, delivery_date, receipt_status
+            SELECT id, delivery_date, receipt_status, day_index, disbursement_code
             FROM beneficiaries
             WHERE campaign_id = ? AND id IN ({$placeholders})
         ");
@@ -665,10 +710,13 @@ final class DeliveryService
             if (self::isDeliveredStatus($row['receipt_status'] ?? '')) {
                 continue;
             }
+            if (!self::isAssignedForDelivery($row)) {
+                continue;
+            }
             $pending[] = $row;
         }
         if ($pending === []) {
-            return ['ok' => false, 'error' => 'كل المحددين مُسلَّمون مسبقاً أو غير موجودين.'];
+            return ['ok' => false, 'error' => 'لا يوجد مستفيدون مؤهلون (يجب إدراجهم في يوم معتمد بكود صرف، وغير مُسلَّمين).'];
         }
 
         $stats = self::stockStats($campaignId);

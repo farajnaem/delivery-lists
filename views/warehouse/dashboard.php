@@ -59,35 +59,89 @@ $delPct = $opening > 0 ? (int) round(($delivered / $opening) * 100) : 0;
     <div class="stat-card">
         <div class="stat-label">الحالة</div>
         <div class="stat-value" style="font-size:1.1rem">
-            <?php if (!empty($stock['campaign_active'])): ?>
-            <span class="badge badge-ok">مفتوح</span>
+            <?php
+            $gateBadge = is_array($deliveryGate ?? null) ? $deliveryGate : \App\CampaignService::deliveryGateStatus($campaign);
+            $st = (string) ($gateBadge['state'] ?? '');
+            ?>
+            <?php if ($st === 'open'): ?>
+            <span class="badge badge-ok"><?= e((string) ($gateBadge['label'] ?? 'مفتوح')) ?></span>
             <?php else: ?>
-            <span class="badge badge-pending">مُنهى</span>
+            <span class="badge badge-pending"><?= e((string) ($gateBadge['label'] ?? 'مغلق')) ?></span>
             <?php endif; ?>
         </div>
     </div>
 </div>
 
-<?php if (!empty($canCloseDelivery)): ?>
+<?php
+$gate = is_array($deliveryGate ?? null) ? $deliveryGate : \App\CampaignService::deliveryGateStatus($campaign);
+$gateState = (string) ($gate['state'] ?? '');
+$canManageGate = !empty($canStartDelivery) || !empty($canCloseDelivery);
+$scheduleDefault = date('Y-m-d') . 'T09:00';
+$opensRaw = trim((string) ($campaign['delivery_opens_at'] ?? ''));
+if ($opensRaw !== '') {
+    $ots = strtotime($opensRaw);
+    if ($ots !== false) {
+        $scheduleDefault = date('Y-m-d\TH:i', $ots);
+    }
+}
+?>
+
+<?php if ($canManageGate): ?>
 <div class="card">
-    <h2 class="panel-title" style="margin-bottom:0.75rem">حالة التسليم</h2>
-    <?php if (!empty($stock['campaign_active'])): ?>
-    <p class="text-muted">عملية التسليم <strong>مفتوحة</strong> — تستمر حتى تُنهيها يدوياً.</p>
-    <form method="post" action="<?= e(url('/campaigns/close-delivery')) ?>" data-confirm="إنهاء عملية التسليم؟ لن يستطيع أمين المخزن تسجيل تسليمات جديدة.">
+    <h2 class="panel-title" style="margin-bottom:0.5rem">حالة التسليم</h2>
+    <p class="text-muted" style="margin-bottom:1rem">
+        الحالة: <strong><?= e((string) ($gate['label'] ?? '')) ?></strong>
+        — <?= e((string) ($gate['detail'] ?? '')) ?>
+    </p>
+
+    <?php if (!empty($canStartDelivery) && $gateState !== 'closed'): ?>
+    <div class="grid-2" style="margin-bottom:1rem;align-items:end">
+        <form method="post" action="<?= e(url('/campaigns/start-delivery')) ?>" data-confirm="بدء التسليم الآن؟ سيتمكن أمناء المخزن من التسجيل فوراً.">
+            <?= \App\Csrf::field() ?>
+            <input type="hidden" name="campaign_id" value="<?= (int) $campaign['id'] ?>">
+            <input type="hidden" name="opens_at" value="">
+            <button type="submit" class="btn">بدء التسليم الآن</button>
+        </form>
+        <?php if (in_array($gateState, ['open', 'scheduled'], true)): ?>
+        <form method="post" action="<?= e(url('/campaigns/lock-delivery')) ?>" data-confirm="قفل التسليم مؤقتاً؟">
+            <?= \App\Csrf::field() ?>
+            <input type="hidden" name="campaign_id" value="<?= (int) $campaign['id'] ?>">
+            <button type="submit" class="btn btn-outline">قفل مؤقت</button>
+        </form>
+        <?php endif; ?>
+    </div>
+    <form method="post" action="<?= e(url('/campaigns/start-delivery')) ?>" class="actions-row" data-confirm="جدولة بدء التسليم لهذا الوقت؟">
+        <?= \App\Csrf::field() ?>
+        <input type="hidden" name="campaign_id" value="<?= (int) $campaign['id'] ?>">
+        <label class="field-label" style="margin:0">جدولة ساعة البدء</label>
+        <input type="datetime-local" name="opens_at" class="form-control" style="max-width:240px" required value="<?= e($scheduleDefault) ?>">
+        <button type="submit" class="btn btn-outline">حفظ الجدولة</button>
+    </form>
+    <p class="text-muted" style="margin-top:0.75rem;font-size:0.9rem">
+        بعد اعتماد يوم توزيع تبقى العملية مقفلة حتى تبدأها أو تجدولها — حتى لا يُسلَّم أحد قبل الموعد.
+    </p>
+    <?php endif; ?>
+
+    <?php if (!empty($canCloseDelivery)): ?>
+    <hr style="border:0;border-top:1px solid #e5e8e8;margin:1.1rem 0">
+    <?php if ($gateState !== 'closed'): ?>
+    <form method="post" action="<?= e(url('/campaigns/close-delivery')) ?>" data-confirm="إنهاء عملية التسليم نهائياً؟ لن يستطيع أمين المخزن تسجيل تسليمات جديدة.">
         <?= \App\Csrf::field() ?>
         <input type="hidden" name="campaign_id" value="<?= (int) $campaign['id'] ?>">
         <button type="submit" class="btn btn-outline">إنهاء عملية التسليم</button>
     </form>
     <?php else: ?>
-    <p class="text-muted">عملية التسليم <strong>مُنهية</strong> منذ <?= e($campaign['delivery_closed_at'] ?? '') ?>.</p>
     <form method="post" action="<?= e(url('/campaigns/reopen-delivery')) ?>">
         <?= \App\Csrf::field() ?>
         <input type="hidden" name="campaign_id" value="<?= (int) $campaign['id'] ?>">
-        <button type="submit" class="btn btn-outline">إعادة فتح التسليم</button>
+        <button type="submit" class="btn btn-outline">إعادة فتح التسليم (مدير)</button>
     </form>
     <?php endif; ?>
+    <?php endif; ?>
 </div>
+<?php endif; ?>
 
+<?php if (!empty($canCloseDelivery)): ?>
 <?php
 $keepers = $keeperStats['keepers'] ?? [];
 $bulkStats = $keeperStats['bulk'] ?? ['today' => 0, 'total' => 0];

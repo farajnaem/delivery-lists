@@ -108,14 +108,38 @@ final class CampaignService
     public static function markGenerated(int $id): void
     {
         $pdo = Database::getConnection();
-        $stmt = $pdo->prepare("UPDATE campaigns SET status = 'generated', generated_at = ? WHERE id = ?");
-        $stmt->execute([db_now(), $id]);
+        $camp = self::find($id);
+        $now = db_now();
+        // أول انتقال من مسودة → مولَّد: اقفل التسليم حتى يضغط المدير/المنسّق «بدء»
+        if (($camp['status'] ?? '') !== 'generated') {
+            $stmt = $pdo->prepare("
+                UPDATE campaigns SET
+                    status = 'generated',
+                    generated_at = ?,
+                    delivery_enabled = 0,
+                    delivery_opens_at = NULL,
+                    delivery_closed_at = NULL
+                WHERE id = ?
+            ");
+            $stmt->execute([$now, $id]);
+            return;
+        }
+        $stmt = $pdo->prepare("UPDATE campaigns SET status = 'generated', generated_at = COALESCE(generated_at, ?) WHERE id = ?");
+        $stmt->execute([$now, $id]);
     }
 
     public static function resetToDraft(int $id): void
     {
         $pdo = Database::getConnection();
-        $stmt = $pdo->prepare("UPDATE campaigns SET status = 'draft', generated_at = NULL WHERE id = ?");
+        $stmt = $pdo->prepare("
+            UPDATE campaigns SET
+                status = 'draft',
+                generated_at = NULL,
+                delivery_enabled = 0,
+                delivery_opens_at = NULL,
+                delivery_closed_at = NULL
+            WHERE id = ?
+        ");
         $stmt->execute([$id]);
     }
 
@@ -286,13 +310,132 @@ final class CampaignService
     public static function reopenDelivery(int $id): void
     {
         $pdo = Database::getConnection();
-        $stmt = $pdo->prepare('UPDATE campaigns SET delivery_closed_at = NULL WHERE id = ?');
+        // إعادة الفتح بعد الإنهاء الإداري = مفتوح فوراً
+        $stmt = $pdo->prepare('
+            UPDATE campaigns SET
+                delivery_closed_at = NULL,
+                delivery_enabled = 1,
+                delivery_opens_at = NULL
+            WHERE id = ?
+        ');
+        $stmt->execute([$id]);
+    }
+
+    /**
+     * بدء التسليم الآن أو جدولته لتاريخ/وقت لاحق.
+     * @param string|null $opensAt صيغة Y-m-d\TH:i أو Y-m-d H:i:s — فارغ = الآن
+     */
+    public static function startDelivery(int $id, ?string $opensAt = null): void
+    {
+        $pdo = Database::getConnection();
+        $camp = self::find($id);
+        if (!$camp || ($camp['status'] ?? '') !== 'generated') {
+            throw new \RuntimeException('العملية غير جاهزة للتسليم.');
+        }
+        if (trim((string) ($camp['delivery_closed_at'] ?? '')) !== '') {
+            throw new \RuntimeException('التسليم مُنهى إدارياً — أعد فتحه من حساب المدير أولاً.');
+        }
+
+        $opensAt = trim((string) $opensAt);
+        if ($opensAt === '') {
+            $stmt = $pdo->prepare('
+                UPDATE campaigns SET delivery_enabled = 1, delivery_opens_at = NULL, delivery_closed_at = NULL
+                WHERE id = ?
+            ');
+            $stmt->execute([$id]);
+            return;
+        }
+
+        $opensAt = str_replace('T', ' ', $opensAt);
+        if (preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/', $opensAt)) {
+            $opensAt .= ':00';
+        }
+        $ts = strtotime($opensAt);
+        if ($ts === false) {
+            throw new \RuntimeException('وقت بدء التسليم غير صالح.');
+        }
+
+        if ($ts <= time()) {
+            $stmt = $pdo->prepare('
+                UPDATE campaigns SET delivery_enabled = 1, delivery_opens_at = NULL, delivery_closed_at = NULL
+                WHERE id = ?
+            ');
+            $stmt->execute([$id]);
+            return;
+        }
+
+        $stmt = $pdo->prepare('
+            UPDATE campaigns SET delivery_enabled = 1, delivery_opens_at = ?, delivery_closed_at = NULL
+            WHERE id = ?
+        ');
+        $stmt->execute([date('Y-m-d H:i:s', $ts), $id]);
+    }
+
+    /** إيقاف مؤقت قبل/أثناء التشغيل (ليس إنهاءً إدارياً نهائياً). */
+    public static function lockDelivery(int $id): void
+    {
+        $pdo = Database::getConnection();
+        $camp = self::find($id);
+        if (!$camp || ($camp['status'] ?? '') !== 'generated') {
+            throw new \RuntimeException('العملية غير جاهزة.');
+        }
+        if (trim((string) ($camp['delivery_closed_at'] ?? '')) !== '') {
+            throw new \RuntimeException('التسليم مُنهى إدارياً — استخدم إعادة الفتح من المدير.');
+        }
+        $stmt = $pdo->prepare('
+            UPDATE campaigns SET delivery_enabled = 0, delivery_opens_at = NULL
+            WHERE id = ?
+        ');
         $stmt->execute([$id]);
     }
 
     public static function isDeliveryOpen(array $campaign): bool
     {
-        return trim((string) ($campaign['delivery_closed_at'] ?? '')) === '';
+        return DeliveryService::isCampaignActive($campaign);
+    }
+
+    /**
+     * @return array{state:string,label:string,detail:string}
+     */
+    public static function deliveryGateStatus(array $campaign): array
+    {
+        if (trim((string) ($campaign['delivery_closed_at'] ?? '')) !== '') {
+            return [
+                'state' => 'closed',
+                'label' => 'مُنهى',
+                'detail' => 'أُنهي يدوياً منذ ' . (string) $campaign['delivery_closed_at'],
+            ];
+        }
+
+        $enabled = array_key_exists('delivery_enabled', $campaign)
+            ? (int) $campaign['delivery_enabled'] === 1
+            : true;
+
+        if (!$enabled) {
+            return [
+                'state' => 'locked',
+                'label' => 'لم يبدأ',
+                'detail' => 'التسليم مقفل — اضغط بدء التسليم أو حدّد ساعة الفتح.',
+            ];
+        }
+
+        $opensAt = trim((string) ($campaign['delivery_opens_at'] ?? ''));
+        if ($opensAt !== '') {
+            $ts = strtotime($opensAt);
+            if ($ts !== false && $ts > time()) {
+                return [
+                    'state' => 'scheduled',
+                    'label' => 'مجدول',
+                    'detail' => 'يفتح تلقائياً عند: ' . $opensAt,
+                ];
+            }
+        }
+
+        return [
+            'state' => 'open',
+            'label' => 'مفتوح',
+            'detail' => 'يمكن لأمناء المخزن تسجيل التسليم الآن.',
+        ];
     }
 
     /** كود الطرد الكامل للعرض. */
