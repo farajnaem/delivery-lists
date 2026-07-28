@@ -208,7 +208,7 @@ final class ExcelExportService
     }
 
     /**
-     * ملف رسائل بسيط: عمودان فقط (رقم الجوال، نص الرسالة) بدون أي ترويسة.
+     * ملف رسائل بسيط: ترويسة (الجوال | الرسالة) ثم صفوف البيانات فقط.
      *
      * @param list<array<string,mixed>> $beneficiaries
      */
@@ -220,7 +220,14 @@ final class ExcelExportService
         $sheet->setTitle('رسائل');
         $sheet->setRightToLeft(true);
 
-        $row = 1;
+        $sheet->setCellValueExplicit('A1', 'الجوال', DataType::TYPE_STRING);
+        $sheet->setCellValueExplicit('B1', 'الرسالة', DataType::TYPE_STRING);
+        $sheet->getStyle('A1:B1')->getFont()->setBold(true);
+        $sheet->getStyle('A1:B1')->getFill()
+            ->setFillType(Fill::FILL_SOLID)
+            ->getStartColor()->setRGB(self::HEADER_FILL);
+
+        $row = 2;
         foreach ($beneficiaries as $b) {
             $mobile = PhoneHelper::messageRecipient((string) ($b['mobile'] ?? ''));
             if ($mobile === '' || $mobile === '0') {
@@ -241,7 +248,7 @@ final class ExcelExportService
             $row++;
         }
 
-        if ($row === 1) {
+        if ($row === 2) {
             throw new \RuntimeException('لا توجد أرقام صالحة في هذه المجموعة.');
         }
 
