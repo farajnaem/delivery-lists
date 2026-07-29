@@ -437,6 +437,137 @@ final class DistributionService
         ];
     }
 
+    /**
+     * إلغاء آخر يوم معتمد فقط (الأعلى day_index).
+     * يعيد مستفيديه إلى غير المعيّنين دون لمس الأيام السابقة.
+     * محظور إن وُجد أي مستلم في ذلك اليوم.
+     *
+     * @return array{
+     *   day_index:int,
+     *   date:string,
+     *   beneficiaries:int,
+     *   unassigned_remaining:int,
+     *   remaining_days:int
+     * }
+     */
+    public static function cancelLastDay(int $campaignId): array
+    {
+        $campaign = CampaignService::find($campaignId);
+        if (!$campaign) {
+            throw new \RuntimeException('العملية غير موجودة.');
+        }
+
+        $dayIndex = CampaignService::maxDayIndex($campaignId);
+        if ($dayIndex < 1) {
+            throw new \RuntimeException('لا يوجد يوم معتمد لإلغائه.');
+        }
+
+        $pdo = Database::getConnection();
+
+        $metaStmt = $pdo->prepare('
+            SELECT delivery_date, COUNT(*) AS cnt
+            FROM beneficiaries
+            WHERE campaign_id = ? AND day_index = ?
+            GROUP BY delivery_date
+            ORDER BY cnt DESC
+            LIMIT 1
+        ');
+        $metaStmt->execute([$campaignId, $dayIndex]);
+        $meta = $metaStmt->fetch() ?: null;
+        if (!$meta || (int) ($meta['cnt'] ?? 0) < 1) {
+            throw new \RuntimeException('لا يوجد يوم معتمد لإلغائه.');
+        }
+        $dayDate = (string) ($meta['delivery_date'] ?? '');
+        $count = (int) $meta['cnt'];
+
+        $deliveredStmt = $pdo->prepare('
+            SELECT COUNT(*) FROM beneficiaries
+            WHERE campaign_id = ? AND day_index = ? AND receipt_status = ?
+        ');
+        $deliveredStmt->execute([$campaignId, $dayIndex, DeliveryService::STATUS_DELIVERED]);
+        $delivered = (int) $deliveredStmt->fetchColumn();
+        if ($delivered > 0) {
+            throw new \RuntimeException(
+                "لا يمكن إلغاء اليوم {$dayIndex}: يوجد {$delivered} مستفيد مستلم. ألغِ التسليمات أولاً ثم أعد المحاولة."
+            );
+        }
+
+        $idStmt = $pdo->prepare('SELECT id FROM beneficiaries WHERE campaign_id = ? AND day_index = ?');
+        $idStmt->execute([$campaignId, $dayIndex]);
+        $beneficiaryIds = array_map('intval', $idStmt->fetchAll(\PDO::FETCH_COLUMN));
+
+        $pdo->beginTransaction();
+        try {
+            $upd = $pdo->prepare('
+                UPDATE beneficiaries SET
+                    disbursement_code = NULL,
+                    delivery_date = NULL,
+                    window_num = NULL,
+                    time_from = NULL,
+                    time_to = NULL,
+                    message_text = NULL,
+                    day_index = NULL,
+                    sort_order = NULL,
+                    delivery_batch_id = NULL,
+                    updated_at = ?
+                WHERE campaign_id = ? AND day_index = ?
+                  AND (receipt_status IS NULL OR receipt_status != ?)
+            ');
+            $upd->execute([db_now(), $campaignId, $dayIndex, DeliveryService::STATUS_DELIVERED]);
+
+            $leftStmt = $pdo->prepare('SELECT COUNT(*) FROM beneficiaries WHERE campaign_id = ? AND day_index = ?');
+            $leftStmt->execute([$campaignId, $dayIndex]);
+            if ((int) $leftStmt->fetchColumn() > 0) {
+                throw new \RuntimeException('تعذّر إلغاء اليوم بالكامل (ربما تغيّرت حالة التسليم). أعد المحاولة.');
+            }
+
+            if ($beneficiaryIds !== []) {
+                $placeholders = implode(',', array_fill(0, count($beneficiaryIds), '?'));
+                $pdo->prepare("
+                    DELETE FROM sms_outbox
+                    WHERE campaign_id = ? AND beneficiary_id IN ({$placeholders})
+                ")->execute(array_merge([$campaignId], $beneficiaryIds));
+
+                try {
+                    $pdo->prepare("
+                        DELETE FROM delivery_events
+                        WHERE campaign_id = ? AND beneficiary_id IN ({$placeholders})
+                    ")->execute(array_merge([$campaignId], $beneficiaryIds));
+                } catch (\Throwable) {
+                    // الجدول قد لا يوجد في بيئات قديمة
+                }
+            }
+
+            $pdo->commit();
+        } catch (\Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
+        }
+
+        $maxDay = CampaignService::maxDayIndex($campaignId);
+        if ($maxDay < 1) {
+            CampaignService::resetToDraft($campaignId);
+            $start = (string) ($campaign['delivery_start'] ?? date('Y-m-d'));
+            CampaignService::updateSchedule($campaignId, 1, $start);
+        } else {
+            $lastDate = CampaignService::lastAssignedDate($campaignId)
+                ?? (string) ($campaign['delivery_start'] ?? date('Y-m-d'));
+            CampaignService::updateSchedule($campaignId, $maxDay, $lastDate);
+        }
+
+        $remaining = (int) (CampaignService::stats($campaignId)['unassigned'] ?? 0);
+
+        return [
+            'day_index' => $dayIndex,
+            'date' => $dayDate,
+            'beneficiaries' => $count,
+            'unassigned_remaining' => $remaining,
+            'remaining_days' => $maxDay,
+        ];
+    }
+
     /** تاريخ اليوم التالي المقترح (يتخطى الجمعة). */
     public static function suggestNextDayDate(array $campaign): string
     {

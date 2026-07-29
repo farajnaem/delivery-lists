@@ -87,12 +87,39 @@ page_header(
 <?php endif; ?>
 
 <?php if (!empty($dayStats)): ?>
+<?php
+$lastDayIndex = 0;
+foreach ($dayStats as $dRow) {
+    $lastDayIndex = max($lastDayIndex, (int) ($dRow['day_index'] ?? 0));
+}
+$lastDayMeta = null;
+foreach ($dayStats as $dRow) {
+    if ((int) ($dRow['day_index'] ?? 0) === $lastDayIndex) {
+        $lastDayMeta = $dRow;
+        break;
+    }
+}
+$lastDayConfirm = 'إلغاء اليوم ' . ar_digits($lastDayIndex);
+if ($lastDayMeta && trim((string) ($lastDayMeta['delivery_date'] ?? '')) !== '') {
+    $lastDayConfirm .= ' (' . (string) $lastDayMeta['delivery_date'] . ')';
+}
+$lastDayConfirm .= '؟ سيعود ' . ar_digits((int) ($lastDayMeta['cnt'] ?? 0))
+    . ' مستفيد لغير المعيّنين. الأيام السابقة لا تُمس.';
+?>
 <div class="card table-panel">
     <div class="table-toolbar">
         <div>
             <div class="panel-title">الأيام المعتمدة</div>
-            <div class="panel-subtitle">كل يوم ثابت: أكواده ورسائله وكشوفه لا تتأثر باعتماد يوم لاحق</div>
+            <div class="panel-subtitle">كل يوم ثابت: أكواده ورسائله وكشوفه لا تتأثر باعتماد يوم لاحق. يمكن إلغاء آخر يوم فقط ثم الذي قبله.</div>
         </div>
+        <?php if (!empty($canEdit) && $lastDayIndex > 0): ?>
+        <form method="post" action="<?= e(url('/campaigns/cancel-last-day')) ?>"
+              data-confirm="<?= e($lastDayConfirm) ?>">
+            <?= \App\Csrf::field() ?>
+            <input type="hidden" name="campaign_id" value="<?= (int) $campaign['id'] ?>">
+            <button type="submit" class="btn btn-danger btn-sm">إلغاء آخر يوم (<?= ar_digits($lastDayIndex) ?>)</button>
+        </form>
+        <?php endif; ?>
     </div>
     <div class="table-wrap">
     <table class="data-table">
@@ -101,8 +128,14 @@ page_header(
         </thead>
         <tbody>
         <?php foreach ($dayStats as $day): ?>
+        <?php $di = (int) ($day['day_index'] ?? 0); ?>
         <tr>
-            <td><?= ar_digits((int) ($day['day_index'] ?? 0)) ?></td>
+            <td>
+                <?= ar_digits($di) ?>
+                <?php if ($di === $lastDayIndex): ?>
+                <span class="badge badge-pending">آخر يوم</span>
+                <?php endif; ?>
+            </td>
             <td><?= e((string) ($day['delivery_date'] ?? '')) ?></td>
             <td><?= ar_digits((int) ($day['cnt'] ?? 0)) ?></td>
             <td><?= ar_digits((int) ($day['windows'] ?? 0)) ?></td>

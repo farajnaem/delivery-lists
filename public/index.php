@@ -880,6 +880,29 @@ if ($uri === '/campaigns/generate-day' && $method === 'POST') {
     redirect('/campaigns/view?id=' . $id);
 }
 
+if ($uri === '/campaigns/cancel-last-day' && $method === 'POST') {
+    Auth::requireRole(fn ($r) => RoleHelper::canEditCampaign($r));
+    $id = (int) ($_POST['campaign_id'] ?? 0);
+    if (!Csrf::verify($_POST['_csrf'] ?? null)) {
+        flash('error', Csrf::failureMessage());
+        redirect('/campaigns/view?id=' . $id);
+    }
+    try {
+        $summary = DistributionService::cancelLastDay($id);
+        flash(
+            'success',
+            "تم إلغاء اليوم {$summary['day_index']}"
+            . ($summary['date'] !== '' ? " ({$summary['date']})" : '')
+            . ": عاد {$summary['beneficiaries']} مستفيد لغير المعيّنين."
+            . " المتبقي غير معيّن: {$summary['unassigned_remaining']}."
+            . " الأيام المتبقية: {$summary['remaining_days']}."
+        );
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+    }
+    redirect('/campaigns/view?id=' . $id);
+}
+
 if ($uri === '/campaigns/export' && $method === 'GET') {
     Auth::requireRole(fn ($r) => RoleHelper::canExport($r));
     $id = (int) ($_GET['id'] ?? 0);
