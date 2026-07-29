@@ -260,6 +260,7 @@ final class DistributionService
     /**
      * اعتماد يوم توزيع واحد من المستفيدين غير المعيّنين فقط.
      * لا يمس الأيام السابقة (أكواد / رسائل / مواعيد).
+     * يمكن تمرير ساعات عمل خاصة بهذا اليوم؛ وإلا تُستخدم ساعات العملية.
      *
      * @return array{
      *   day_index:int,
@@ -267,6 +268,8 @@ final class DistributionService
      *   beneficiaries:int,
      *   windows:int,
      *   per_window:list<int>,
+     *   work_start:string,
+     *   work_end:string,
      *   unassigned_remaining:int
      * }
      */
@@ -275,6 +278,8 @@ final class DistributionService
         int $beneficiaryCount,
         int $numWindows,
         ?string $deliveryDate = null,
+        ?string $workStart = null,
+        ?string $workEnd = null,
     ): array {
         extend_runtime(600);
         @ignore_user_abort(true);
@@ -289,6 +294,7 @@ final class DistributionService
 
         $beneficiaryCount = max(1, $beneficiaryCount);
         $numWindows = max(1, $numWindows);
+        [$dayWorkStart, $dayWorkEnd] = self::resolveDayWorkHours($campaign, $workStart, $workEnd);
 
         $unassigned = CampaignService::unassignedBeneficiaries($campaignId);
         $available = count($unassigned);
@@ -348,8 +354,8 @@ final class DistributionService
                 }
 
                 $slots = self::buildTimeSlots(
-                    (string) $campaign['work_start'],
-                    (string) $campaign['work_end'],
+                    $dayWorkStart,
+                    $dayWorkEnd,
                     count($prepared)
                 );
                 foreach ($prepared as $i => &$item) {
@@ -433,6 +439,8 @@ final class DistributionService
             'beneficiaries' => $beneficiaryCount,
             'windows' => $numWindows,
             'per_window' => $windowBuckets,
+            'work_start' => $dayWorkStart,
+            'work_end' => $dayWorkEnd,
             'unassigned_remaining' => $remaining,
         ];
     }
@@ -749,6 +757,42 @@ final class DistributionService
     }
 
     /**
+     * ساعات عمل اليوم: من الطلب أو افتراضياً من إعدادات العملية.
+     *
+     * @return array{0:string,1:string} [work_start, work_end] بصيغة HH:MM
+     */
+    private static function resolveDayWorkHours(array $campaign, ?string $workStart, ?string $workEnd): array
+    {
+        $start = trim((string) ($workStart ?? ''));
+        $end = trim((string) ($workEnd ?? ''));
+        if ($start === '') {
+            $start = substr((string) ($campaign['work_start'] ?? '09:00'), 0, 5);
+        } else {
+            $start = substr($start, 0, 5);
+        }
+        if ($end === '') {
+            $end = substr((string) ($campaign['work_end'] ?? '15:00'), 0, 5);
+        } else {
+            $end = substr($end, 0, 5);
+        }
+
+        if (!preg_match('/^\d{1,2}:\d{2}$/', $start) || !preg_match('/^\d{1,2}:\d{2}$/', $end)) {
+            throw new \RuntimeException('توقيت العمل غير صالح.');
+        }
+
+        $startMin = self::toMinutes($start);
+        $endMin = self::toMinutes($end);
+        if ($endMin <= $startMin) {
+            throw new \RuntimeException('وقت نهاية العمل يجب أن يكون بعد وقت البداية.');
+        }
+        if (($endMin - $startMin) < 60) {
+            throw new \RuntimeException('فترة العمل يجب ألا تقل عن ساعة واحدة.');
+        }
+
+        return [self::fromMinutes($startMin), self::fromMinutes($endMin)];
+    }
+
+    /**
      * @return list<array{from:string,to:string}>
      */
     private static function buildTimeSlots(string $workStart, string $workEnd, int $count): array
@@ -775,7 +819,7 @@ final class DistributionService
 
     private static function toMinutes(string $time): int
     {
-        [$h, $m] = array_map('intval', explode(':', substr($time, 0, 5)));
+        [$h, $m] = array_map('intval', explode(':', substr($time, 0, 5) . ':00'));
         return $h * 60 + $m;
     }
 

@@ -863,16 +863,22 @@ if ($uri === '/campaigns/generate-day' && $method === 'POST') {
         $count = (int) ($_POST['day_beneficiaries'] ?? 0);
         $windows = (int) ($_POST['day_windows'] ?? 0);
         $date = trim((string) ($_POST['day_date'] ?? ''));
+        $workStart = trim((string) ($_POST['day_work_start'] ?? ''));
+        $workEnd = trim((string) ($_POST['day_work_end'] ?? ''));
         $summary = DistributionService::generateDay(
             $id,
             $count,
             $windows,
-            $date !== '' ? $date : null
+            $date !== '' ? $date : null,
+            $workStart !== '' ? $workStart : null,
+            $workEnd !== '' ? $workEnd : null
         );
         $perWin = implode('، ', array_map('strval', $summary['per_window'] ?? []));
         flash(
             'success',
-            "تم اعتماد اليوم {$summary['day_index']} ({$summary['date']}): {$summary['beneficiaries']} مستفيد على {$summary['windows']} شباك ({$perWin}). المتبقي غير معيّن: {$summary['unassigned_remaining']}."
+            "تم اعتماد اليوم {$summary['day_index']} ({$summary['date']}): {$summary['beneficiaries']} مستفيد على {$summary['windows']} شباك ({$perWin})"
+            . " — دوام {$summary['work_start']}–{$summary['work_end']}."
+            . " المتبقي غير معيّن: {$summary['unassigned_remaining']}."
         );
     } catch (Throwable $e) {
         flash('error', $e->getMessage());

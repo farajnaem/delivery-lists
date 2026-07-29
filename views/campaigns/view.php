@@ -124,7 +124,7 @@ $lastDayConfirm .= '؟ سيعود ' . ar_digits((int) ($lastDayMeta['cnt'] ?? 0)
     <div class="table-wrap">
     <table class="data-table">
         <thead>
-            <tr><th>اليوم</th><th>التاريخ</th><th>المستفيدون</th><th>الشبابيك</th></tr>
+            <tr><th>اليوم</th><th>التاريخ</th><th>المستفيدون</th><th>الشبابيك</th><th>الدوام</th></tr>
         </thead>
         <tbody>
         <?php foreach ($dayStats as $day): ?>
@@ -139,6 +139,13 @@ $lastDayConfirm .= '؟ سيعود ' . ar_digits((int) ($lastDayMeta['cnt'] ?? 0)
             <td><?= e((string) ($day['delivery_date'] ?? '')) ?></td>
             <td><?= ar_digits((int) ($day['cnt'] ?? 0)) ?></td>
             <td><?= ar_digits((int) ($day['windows'] ?? 0)) ?></td>
+            <td>
+                <?php
+                $ws = substr((string) ($day['work_start'] ?? ''), 0, 5);
+                $we = substr((string) ($day['work_end'] ?? ''), 0, 5);
+                echo ($ws !== '' && $we !== '') ? e($ws . ' – ' . $we) : '—';
+                ?>
+            </td>
         </tr>
         <?php endforeach; ?>
         </tbody>
@@ -207,10 +214,14 @@ $lastDayConfirm .= '؟ سيعود ' . ar_digits((int) ($lastDayMeta['cnt'] ?? 0)
 </div>
 
 <?php if (!empty($canEdit) && (int) ($stats['total'] ?? 0) > 0 && $unassigned > 0): ?>
+<?php
+$defaultDayWorkStart = substr((string) ($campaign['work_start'] ?? '09:00'), 0, 5);
+$defaultDayWorkEnd = substr((string) ($campaign['work_end'] ?? '15:00'), 0, 5);
+?>
 <div class="card">
     <h2 class="panel-title" style="margin-bottom:0.35rem">اعتماد يوم توزيع</h2>
     <p class="text-muted" style="margin-bottom:1rem">
-        حدّد مستفيدي هذا اليوم وعدد الشبابيك فقط. الأيام السابقة تبقى كما هي بدون تغيير أكواد أو رسائل.
+        حدّد مستفيدي هذا اليوم والشبابيك وساعات الدوام. الأيام السابقة تبقى كما هي بدون تغيير أكواد أو رسائل أو مواعيد.
         المتبقي غير المعيّن: <strong><?= ar_digits($unassigned) ?></strong>
     </p>
     <form method="post" action="<?= e(url('/campaigns/generate-day')) ?>" class="grid-2" data-confirm="اعتماد هذا اليوم؟ لن يُمسّ أي يوم سابق.">
@@ -228,6 +239,15 @@ $lastDayConfirm .= '؟ سيعود ' . ar_digits((int) ($lastDayMeta['cnt'] ?? 0)
             <label class="field-label">عدد الشبابيك *</label>
             <input type="number" name="day_windows" class="form-control" min="1" required value="<?= (int) $numWindows ?>">
             <span class="field-hint">يُوزَّع العدد على الشبابيك بالتساوي قدر الإمكان.</span>
+        </div>
+        <div>
+            <label class="field-label">بداية الدوام لهذا اليوم *</label>
+            <input type="time" name="day_work_start" class="form-control" required value="<?= e($defaultDayWorkStart) ?>">
+        </div>
+        <div>
+            <label class="field-label">نهاية الدوام لهذا اليوم *</label>
+            <input type="time" name="day_work_end" class="form-control" required value="<?= e($defaultDayWorkEnd) ?>">
+            <span class="field-hint">افتراضي من إعدادات العملية — يمكن تغييره لهذا اليوم فقط.</span>
         </div>
         <div style="display:flex;align-items:flex-end">
             <button type="submit" class="btn">اعتماد اليوم وتوليد كشوفه</button>

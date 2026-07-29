@@ -220,7 +220,9 @@ final class CampaignService
         ")->fetchColumn();
         $days = $pdo->prepare('
             SELECT day_index, delivery_date, COUNT(*) AS cnt,
-                   COUNT(DISTINCT window_num) AS windows
+                   COUNT(DISTINCT window_num) AS windows,
+                   MIN(time_from) AS work_start,
+                   MAX(time_to) AS work_end
             FROM beneficiaries
             WHERE campaign_id = ?
               AND day_index IS NOT NULL AND day_index > 0
