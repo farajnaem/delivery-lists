@@ -333,6 +333,9 @@ if ($uri === '/campaigns/stock' && $method === 'GET') {
         'canBulkDeliver' => RoleHelper::canBulkDeliver(Auth::role() ?? ''),
         'smsPending' => SmsService::pendingCount($id),
         'smsEnabled' => SmsService::isEnabled(),
+        'reviewCounts' => RoleHelper::canBulkDeliver(Auth::role() ?? '')
+            ? CampaignService::reviewCounts($id)
+            : null,
     ]);
     exit;
 }
@@ -779,6 +782,13 @@ if ($uri === '/campaigns/beneficiaries' && $method === 'GET') {
         $result['rows']
     );
     $canManual = RoleHelper::canBulkDeliver(Auth::role() ?? '');
+    $review = $canManual ? CampaignService::reviewCounts($id) : [
+        'today' => 0,
+        'anomaly' => 0,
+        'arabic_id' => 0,
+        'delivered_no_mobile' => 0,
+        'no_mobile' => 0,
+    ];
     view('campaigns/beneficiaries', [
         'campaign' => $campaign,
         'rows' => $rows,
@@ -788,13 +798,7 @@ if ($uri === '/campaigns/beneficiaries' && $method === 'GET') {
         'q' => $q,
         'filter' => $result['filter'] ?? $filter,
         'canManualDeliver' => $canManual,
-        'anomalyCount' => $canManual ? CampaignService::countDeliveryAnomalies($id) : 0,
-        'unassignedCount' => $canManual
-            ? CampaignService::searchAllBeneficiaries($id, '', 1, 20, 'unassigned')['total']
-            : 0,
-        'noMobileCount' => $canManual
-            ? CampaignService::searchAllBeneficiaries($id, '', 1, 20, 'no_mobile')['total']
-            : 0,
+        'reviewCounts' => $review,
     ]);
     exit;
 }

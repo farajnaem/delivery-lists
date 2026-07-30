@@ -95,7 +95,7 @@ page_header(
         <div style="flex:1;min-width:240px">
             <label class="field-label" for="campaign-beneficiary-search">بحث</label>
             <input type="search" id="campaign-beneficiary-search" name="q" class="form-control"
-                   placeholder="مثال: رامز سكر أو 802469809 أو 1084423" required autofocus>
+                   placeholder="الاسم أو رقم الهوية أو الكود" required autofocus>
         </div>
         <button type="submit" class="btn">بحث</button>
     </form>

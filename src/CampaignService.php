@@ -209,9 +209,12 @@ final class CampaignService
      *
      * $filter:
      * - '' : الكل
-     * - anomaly : مثل رامز — غير معيّن لكن عليه أثر تسليم في السيرفر
+     * - anomaly : غير معيّن لكن عليه أثر تسليم في السيرفر
      * - unassigned : غير معيّن وغير مستلم
      * - no_mobile : معيّن قيد التسليم بدون جوال (غالباً غائب عن كشف الرسائل)
+     * - today : مُسلَّمون اليوم (للمطابقة الميدانية)
+     * - delivered_no_mobile : مستلم وجواله فاضي (ما يدخل كشف الرسائل)
+     * - arabic_id : هوية مخزّنة بأرقام عربية/هندية (بحث الهوية يفشل والكود ينجح)
      *
      * @return array{rows:list<array>,total:int,page:int,per_page:int,filter:string}
      */
@@ -227,7 +230,8 @@ final class CampaignService
         $perPage = max(20, min(500, $perPage));
         $offset = ($page - 1) * $perPage;
         $filter = strtolower(trim($filter));
-        if (!in_array($filter, ['', 'all', 'anomaly', 'unassigned', 'no_mobile'], true)) {
+        $allowed = ['', 'all', 'anomaly', 'unassigned', 'no_mobile', 'today', 'delivered_no_mobile', 'arabic_id'];
+        if (!in_array($filter, $allowed, true)) {
             $filter = '';
         }
         if ($filter === 'all') {
@@ -237,6 +241,8 @@ final class CampaignService
         $delivered = DeliveryService::STATUS_DELIVERED;
         $unassignedExpr = '(b.day_index IS NULL OR b.day_index = 0 OR b.disbursement_code IS NULL OR b.disbursement_code = \'\')';
         $assignedExpr = '(b.day_index IS NOT NULL AND b.day_index > 0 AND b.disbursement_code IS NOT NULL AND b.disbursement_code != \'\')';
+        $arabicIdExpr = self::sqlNationalIdHasIndicDigits('b.national_id');
+        $today = date('Y-m-d');
 
         $where = 'b.campaign_id = ?';
         $params = [$campaignId];
@@ -276,20 +282,35 @@ final class CampaignService
               AND (b.receipt_status IS NULL OR b.receipt_status != ?)
               AND (b.mobile IS NULL OR TRIM(b.mobile) = '' OR TRIM(b.mobile) = '0')";
             $params[] = $delivered;
+        } elseif ($filter === 'today') {
+            $where .= ' AND b.receipt_status = ? AND (
+                b.actual_delivery_date = ?
+                OR CAST(b.delivered_at AS CHAR) LIKE ?
+            )';
+            array_push($params, $delivered, $today, $today . '%');
+        } elseif ($filter === 'delivered_no_mobile') {
+            $where .= " AND b.receipt_status = ?
+              AND (b.mobile IS NULL OR TRIM(b.mobile) = '' OR TRIM(b.mobile) = '0')";
+            $params[] = $delivered;
+        } elseif ($filter === 'arabic_id') {
+            $where .= " AND {$arabicIdExpr}";
         }
 
         $countStmt = $pdo->prepare("SELECT COUNT(*) FROM beneficiaries b WHERE {$where}");
         $countStmt->execute($params);
         $total = (int) $countStmt->fetchColumn();
 
+        $orderBy = $filter === 'today'
+            ? 'b.delivered_at DESC, b.id DESC'
+            : 'CASE WHEN b.day_index IS NULL OR b.day_index = 0 THEN 1 ELSE 0 END,
+              b.day_index ASC, b.sort_order ASC, b.id ASC';
+
         $sql = "
             SELECT b.*, u.name AS delivered_by_name
             FROM beneficiaries b
             LEFT JOIN users u ON u.id = b.delivered_by
             WHERE {$where}
-            ORDER BY
-              CASE WHEN b.day_index IS NULL OR b.day_index = 0 THEN 1 ELSE 0 END,
-              b.day_index ASC, b.sort_order ASC, b.id ASC
+            ORDER BY {$orderBy}
             LIMIT {$perPage} OFFSET {$offset}
         ";
         $stmt = $pdo->prepare($sql);
@@ -305,10 +326,36 @@ final class CampaignService
         ];
     }
 
-    /** عدد الحالات الشبيهة بـ «غير معيّن + أثر تسليم». */
+    /** تعبير SQL: رقم الهوية يحتوي أرقاماً عربية/فارسية. */
+    private static function sqlNationalIdHasIndicDigits(string $column): string
+    {
+        $digits = [
+            '٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩',
+            '۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹',
+        ];
+        $parts = [];
+        foreach ($digits as $d) {
+            $parts[] = "{$column} LIKE '%{$d}%'";
+        }
+        return '(' . implode(' OR ', $parts) . ')';
+    }
+
+    /** عدد غير المعيّنين الذين عليهم أثر تسليم. */
     public static function countDeliveryAnomalies(int $campaignId): int
     {
         return (int) self::searchAllBeneficiaries($campaignId, '', 1, 20, 'anomaly')['total'];
+    }
+
+    /** @return array{today:int,anomaly:int,arabic_id:int,delivered_no_mobile:int,no_mobile:int} */
+    public static function reviewCounts(int $campaignId): array
+    {
+        return [
+            'today' => (int) self::searchAllBeneficiaries($campaignId, '', 1, 20, 'today')['total'],
+            'anomaly' => (int) self::searchAllBeneficiaries($campaignId, '', 1, 20, 'anomaly')['total'],
+            'arabic_id' => (int) self::searchAllBeneficiaries($campaignId, '', 1, 20, 'arabic_id')['total'],
+            'delivered_no_mobile' => (int) self::searchAllBeneficiaries($campaignId, '', 1, 20, 'delivered_no_mobile')['total'],
+            'no_mobile' => (int) self::searchAllBeneficiaries($campaignId, '', 1, 20, 'no_mobile')['total'],
+        ];
     }
 
     public static function stats(int $campaignId): array

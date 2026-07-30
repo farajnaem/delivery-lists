@@ -141,6 +141,51 @@ if ($opensRaw !== '') {
 </div>
 <?php endif; ?>
 
+<?php
+$cidStock = (int) $campaign['id'];
+$todayDelivered = (int) ($stock['today_delivered'] ?? 0);
+$plannedToday = (int) ($stock['planned_today'] ?? 0);
+$review = is_array($reviewCounts ?? null) ? $reviewCounts : null;
+?>
+<div class="card">
+    <h2 class="panel-title" style="margin-top:0">مطابقة يومية — النظام ↔ الميدان</h2>
+    <p class="text-muted" style="margin:0 0 0.85rem">
+        قارن <strong>عدد النظام</strong> مع العدّ الفعلي في المخزن. الورقة والتوقيع وحدها لا تكفي عند اختلاف البحث بالهوية/الكود.
+    </p>
+    <div class="grid-stats" style="margin-bottom:0.75rem">
+        <div class="stat-card">
+            <div class="stat-label">مُسلَّم اليوم (النظام)</div>
+            <div class="stat-value"><?= ar_digits($todayDelivered) ?></div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">مخطط لهذا التاريخ</div>
+            <div class="stat-value"><?= ar_digits($plannedToday) ?></div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">الفرق (مُسلَّم − مخطط)</div>
+            <div class="stat-value"><?= ar_digits($todayDelivered - $plannedToday) ?></div>
+        </div>
+    </div>
+    <div class="actions-row" style="flex-wrap:wrap;gap:0.5rem">
+        <a class="btn" href="<?= e(url('/campaigns/beneficiaries?id=' . $cidStock . '&filter=today')) ?>">قائمة مستلمي اليوم</a>
+        <a class="btn btn-outline" href="<?= e(url('/campaigns/export-deliveries?id=' . $cidStock)) ?>">تقرير التسليمات Excel</a>
+        <?php if ($review !== null): ?>
+        <a class="btn btn-outline" href="<?= e(url('/campaigns/beneficiaries?id=' . $cidStock . '&filter=anomaly')) ?>">
+            تسليم بلا تعيين (<?= ar_digits((int) ($review['anomaly'] ?? 0)) ?>)
+        </a>
+        <a class="btn btn-outline" href="<?= e(url('/campaigns/beneficiaries?id=' . $cidStock . '&filter=arabic_id')) ?>">
+            هوية بأرقام عربية (<?= ar_digits((int) ($review['arabic_id'] ?? 0)) ?>)
+        </a>
+        <a class="btn btn-outline" href="<?= e(url('/campaigns/beneficiaries?id=' . $cidStock . '&filter=delivered_no_mobile')) ?>">
+            مستلم بلا جوال (<?= ar_digits((int) ($review['delivered_no_mobile'] ?? 0)) ?>)
+        </a>
+        <?php endif; ?>
+    </div>
+    <p class="text-muted" style="margin:0.75rem 0 0;font-size:0.9rem">
+        طريقة عملية: اطبع/افتح «مستلمو اليوم» وعدّ الأسماء مع المخزن. أي زيادة عن المخطط أو أسماء ليست في كشف اليوم تحتاج مراجعة فورية.
+    </p>
+</div>
+
 <?php if (!empty($canCloseDelivery)): ?>
 <?php
 $keepers = $keeperStats['keepers'] ?? [];

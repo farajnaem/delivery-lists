@@ -1,5 +1,4 @@
 <?php
-use App\CampaignService;
 use App\DeliveryService;
 
 $codePrefix = (string) ($campaign['parcel_code'] ?? '');
@@ -12,9 +11,7 @@ $perPage = max(1, (int) ($perPage ?? 100));
 $totalPages = max(1, (int) ceil($total / $perPage));
 $rows = $rows ?? [];
 $canManualDeliver = !empty($canManualDeliver);
-$anomalyCount = (int) ($anomalyCount ?? 0);
-$unassignedCount = (int) ($unassignedCount ?? 0);
-$noMobileCount = (int) ($noMobileCount ?? 0);
+$review = is_array($reviewCounts ?? null) ? $reviewCounts : [];
 $cid = (int) $campaign['id'];
 
 $filterUrl = static function (string $f = '', string $query = '') use ($cid): string {
@@ -62,21 +59,38 @@ page_header(
     <?php if ($canManualDeliver): ?>
     <div class="actions-row" style="margin-top:0.85rem;gap:0.5rem;flex-wrap:wrap">
         <a class="btn btn-sm <?= $filter === '' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('', $q)) ?>">الكل</a>
-        <a class="btn btn-sm <?= $filter === 'anomaly' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('anomaly', $q)) ?>">
-            حالات مثل رامز (<?= ar_digits($anomalyCount) ?>)
+        <a class="btn btn-sm <?= $filter === 'today' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('today', $q)) ?>">
+            مستلمو اليوم (<?= ar_digits((int) ($review['today'] ?? 0)) ?>)
         </a>
-        <a class="btn btn-sm <?= $filter === 'unassigned' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('unassigned', $q)) ?>">
-            غير معيّنين (<?= ar_digits($unassignedCount) ?>)
+        <a class="btn btn-sm <?= $filter === 'anomaly' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('anomaly', $q)) ?>">
+            تسليم بلا تعيين (<?= ar_digits((int) ($review['anomaly'] ?? 0)) ?>)
+        </a>
+        <a class="btn btn-sm <?= $filter === 'arabic_id' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('arabic_id', $q)) ?>">
+            هوية بأرقام عربية (<?= ar_digits((int) ($review['arabic_id'] ?? 0)) ?>)
+        </a>
+        <a class="btn btn-sm <?= $filter === 'delivered_no_mobile' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('delivered_no_mobile', $q)) ?>">
+            مستلم بلا جوال (<?= ar_digits((int) ($review['delivered_no_mobile'] ?? 0)) ?>)
         </a>
         <a class="btn btn-sm <?= $filter === 'no_mobile' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('no_mobile', $q)) ?>">
-            معيّن بلا جوال (<?= ar_digits($noMobileCount) ?>)
+            معيّن بلا جوال (<?= ar_digits((int) ($review['no_mobile'] ?? 0)) ?>)
         </a>
+        <a class="btn btn-sm <?= $filter === 'unassigned' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('unassigned', $q)) ?>">غير معيّنين</a>
     </div>
     <?php if ($filter === 'anomaly'): ?>
     <p class="text-muted" style="margin:0.75rem 0 0">
-        هؤلاء <strong>غير معيّنين</strong> لكن عليهم أثر تسليم في السيرفر (مستلم / تاريخ / حدث).
-        حدّدهم وسجّل استلاماً يدوياً إن لزم، أو راجع إن كانت الحالة صحيحة.
-        إذا القائمة فارغة: التسليمات الميدانية ربما لم تُسجَّل على السيرفر (أوفلاين فقط) — ابحث بالاسم يدوياً من كشف الموظفين.
+        غير معيّنين وعليهم أثر تسليم في السيرفر. راجعهم وسجّل استلاماً يدوياً إن لزم حتى لا يُعاد تعيينهم.
+    </p>
+    <?php elseif ($filter === 'today'): ?>
+    <p class="text-muted" style="margin:0.75rem 0 0">
+        كل من سُجّل مستلماً اليوم في النظام — قارن العدد والقائمة مع العدد الفعلي في المخزن.
+    </p>
+    <?php elseif ($filter === 'arabic_id'): ?>
+    <p class="text-muted" style="margin:0.75rem 0 0">
+        هويات مخزّنة بأرقام عربية/هندية — غالباً يفشل البحث بالهوية وينجح بالكود. بعد migrate تُوحَّد للهوية الإنجليزية.
+    </p>
+    <?php elseif ($filter === 'delivered_no_mobile'): ?>
+    <p class="text-muted" style="margin:0.75rem 0 0">
+        مستلمون بلا جوال صالح — لا يظهرون في كشف الرسائل حتى لو كانوا معيّنين.
     </p>
     <?php endif; ?>
     <?php endif; ?>
@@ -91,7 +105,7 @@ page_header(
 <div class="card">
     <h2 class="panel-title" style="margin-top:0">استلام يدوي (مدير النظام)</h2>
     <p class="text-muted" style="margin:0 0 0.75rem">
-        لمن استلم فعلياً ولم يظهر في الكشوف، أو حالته غير معيّن. بعد التسجيل لن يُعاد تعيينه في أيام لاحقة.
+        لمن استلم فعلياً ولم يُسجَّل، أو لمن تريد تثبيت حالته كمستلم حتى لا يُعاد تعيينه.
     </p>
 </div>
 <?php endif; ?>
@@ -108,7 +122,7 @@ page_header(
     <div style="flex:1;min-width:240px">
         <label class="field-label">سبب الاستلام اليدوي *</label>
         <input type="text" name="reason" class="form-control" required
-               placeholder="مثال: استلم من جهاز ميداني ولم يكن بالكشوف المطبوعة">
+               placeholder="مثال: استلم ميدانياً ويحتاج تثبيت حتى لا يستلم مرة ثانية">
     </div>
     <button type="submit" class="btn" data-confirm="تأكيد تسجيل الاستلام اليدوي للمحددين؟">تسجيل استلام المحددين</button>
 </div>

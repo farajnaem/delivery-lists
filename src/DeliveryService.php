@@ -304,7 +304,7 @@ final class DeliveryService
         $delivered = self::STATUS_DELIVERED;
 
         // نبحث في كامل الطرد (بما فيهم غير المعيّنين والمستلمين) حتى لا يظهر «غير موجود»
-        // لمن استلم يدوياً وهو غير معيّن — مثل حالة رامز.
+        // لمن استلم يدوياً وهو غير معيّن — حتى لا يظهر «لم يُعثر».
         $sql = "
             SELECT b.*, c.delivery_end, c.delivery_start, c.delivery_closed_at, c.name AS campaign_name,
                    c.parcel_code_suffix
