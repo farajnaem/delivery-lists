@@ -86,6 +86,22 @@ page_header(
 </div>
 <?php endif; ?>
 
+<?php if ((int) ($stats['total'] ?? 0) > 0): ?>
+<div class="card">
+    <h2 class="panel-title" style="margin-top:0">بحث في كامل الطرد</h2>
+    <p class="text-muted" style="margin:0 0 0.75rem">بالاسم أو رقم الهوية أو الكود — المعيّنين وغير المعيّنين والمستلمين.</p>
+    <form method="get" action="<?= e(url('/campaigns/beneficiaries')) ?>" class="actions-row" style="align-items:flex-end;gap:0.75rem;flex-wrap:wrap">
+        <input type="hidden" name="id" value="<?= (int) $campaign['id'] ?>">
+        <div style="flex:1;min-width:240px">
+            <label class="field-label" for="campaign-beneficiary-search">بحث</label>
+            <input type="search" id="campaign-beneficiary-search" name="q" class="form-control"
+                   placeholder="مثال: رامز سكر أو 802469809 أو 1084423" required autofocus>
+        </div>
+        <button type="submit" class="btn">بحث</button>
+    </form>
+</div>
+<?php endif; ?>
+
 <?php if (!empty($dayStats)): ?>
 <?php
 $lastDayIndex = 0;
@@ -282,10 +298,6 @@ $defaultDayWorkEnd = substr((string) ($campaign['work_end'] ?? '15:00'), 0, 5);
         <?php endif; ?>
 
         <?php if ($isGenerated && !empty($canExport)): ?>
-        <a href="<?= e(url('/campaigns/beneficiaries?id=' . (int) $campaign['id'])) ?>" class="btn">كشف المستفيدين (بحث كامل)</a>
-        <?php if (!empty($canBulkDeliver)): ?>
-        <a href="<?= e(url('/campaigns/beneficiaries?id=' . (int) $campaign['id'] . '&filter=anomaly')) ?>" class="btn btn-outline">حالات مثل رامز (مراجعة)</a>
-        <?php endif; ?>
         <a href="<?= e(url('/campaigns/export?id=' . (int) $campaign['id'])) ?>" class="btn">تنزيل Excel الكامل</a>
         <?php endif; ?>
 
@@ -296,6 +308,7 @@ $defaultDayWorkEnd = substr((string) ($campaign['work_end'] ?? '15:00'), 0, 5);
     <p class="text-muted" style="margin-top:0.75rem">
         Excel الكامل: <strong>الكشف الإجمالي</strong> + كشوف التسليم للأيام المعتمدة.
         الرسائل وكشوف يوم معيّن تُنزَّل من الجدول أدناه (يوم بيوم).
+        للبحث عن مستفيد: استخدم مربع البحث أعلى الصفحة.
     </p>
 </div>
 
@@ -346,15 +359,11 @@ $defaultDayWorkEnd = substr((string) ($campaign['work_end'] ?? '15:00'), 0, 5);
 <?php endif; ?>
 
 <?php if (!empty($preview)): ?>
-<div class="card table-panel" data-table-filterable>
+<div class="card table-panel">
     <div class="table-toolbar">
         <div>
             <div class="panel-title">معاينة (أول 20 مستفيد<?= $isGenerated ? ' — بعد التعيين' : '' ?>)</div>
-            <div class="panel-subtitle">للقائمة الكاملة والبحث: <a href="<?= e(url('/campaigns/beneficiaries?id=' . (int) $campaign['id'])) ?>">كشف المستفيدين</a></div>
-        </div>
-        <div class="table-toolbar-search">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-            <input type="search" placeholder="بحث…" data-table-search aria-label="بحث في المعاينة">
+            <div class="panel-subtitle">للبحث في الكل: مربع «بحث في كامل الطرد» أعلى الصفحة.</div>
         </div>
     </div>
     <div class="table-wrap">
