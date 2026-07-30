@@ -301,15 +301,16 @@ final class DeliveryService
         $suffix = (string) ($campaign['parcel_code_suffix'] ?? '');
         $codeCandidates = ParcelCodeHelper::matchSearchCandidates($query, $prefix, $suffix);
         $nidExpr = ArabicFormat::sqlNormalizeNationalIdExpr('b.national_id');
+        $delivered = self::STATUS_DELIVERED;
 
+        // نبحث في كامل الطرد (بما فيهم غير المعيّنين والمستلمين) حتى لا يظهر «غير موجود»
+        // لمن استلم يدوياً وهو غير معيّن — مثل حالة رامز.
         $sql = "
             SELECT b.*, c.delivery_end, c.delivery_start, c.delivery_closed_at, c.name AS campaign_name,
                    c.parcel_code_suffix
             FROM beneficiaries b
             JOIN campaigns c ON c.id = b.campaign_id
             WHERE b.campaign_id = ?
-              AND b.day_index IS NOT NULL AND b.day_index > 0
-              AND b.disbursement_code IS NOT NULL AND b.disbursement_code != ''
               AND (
                 {$nidExpr} = ?
                 OR b.name LIKE ?
@@ -322,7 +323,6 @@ final class DeliveryService
             array_push($params, ...$codeCandidates);
         }
 
-        // رقم العرض (PIN) إن كان البحث أرقاماً فقط
         if ($normalized !== '' && ctype_digit($normalized)) {
             $sql .= ' OR CAST(b.sort_order AS CHAR) = ?';
             $params[] = $normalized;
@@ -333,15 +333,27 @@ final class DeliveryService
         $sql .= ')
             ORDER BY
               CASE WHEN ' . $nidExpr . ' = ? THEN 0 ELSE 1 END,
+              CASE WHEN b.receipt_status = ? THEN 0 ELSE 1 END,
+              CASE WHEN b.day_index IS NOT NULL AND b.day_index > 0
+                    AND b.disbursement_code IS NOT NULL AND b.disbursement_code != \'\' THEN 0 ELSE 1 END,
               b.sort_order ASC, b.id ASC
             LIMIT 1
         ';
         $params[] = $normalized;
+        $params[] = $delivered;
 
         $stmt = $pdo->prepare($sql);
         $stmt->execute($params);
         $row = $stmt->fetch();
-        return $row ? self::enrichForDisplay($row) : null;
+        if (!$row) {
+            return null;
+        }
+
+        $enriched = self::enrichForDisplay($row);
+        $enriched['assigned_for_delivery'] = self::isAssignedForDelivery($enriched);
+        $enriched['can_deliver'] = $enriched['assigned_for_delivery']
+            && !self::isDeliveredStatus($enriched['receipt_status'] ?? '');
+        return $enriched;
     }
 
     /**

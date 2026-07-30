@@ -294,18 +294,34 @@
     function renderBeneficiary(b) {
         b = localizeBeneficiary(b);
         var delivered = b.receipt_status === 'مستلم';
+        var assigned = b.assigned_for_delivery === true
+            || (Number(b.day_index || 0) > 0 && String(b.disbursement_code || '').trim() !== '');
         var html = '<dl>';
         html += '<dt>الاسم</dt><dd>' + esc(b.name) + '</dd>';
         html += '<dt>الكود</dt><dd>' + esc(b.display_code || b.sort_order || b.disbursement_code || '—') + '</dd>';
         html += '<dt>الهوية</dt><dd>' + esc(b.national_id) + '</dd>';
         html += '<dt>موعد التسليم</dt><dd>' + esc(b.delivery_date || '—') + ' — شباك ' + esc(String(b.window_num || '—')) + '</dd>';
         html += '<dt>الحالة</dt><dd>';
-        html += delivered
-            ? '<span class="badge-delivered">مستلم</span>'
-            : '<span class="badge-pending">قيد التسليم</span>';
+        if (delivered) {
+            html += '<span class="badge-delivered">مستلم</span>';
+        } else if (assigned) {
+            html += '<span class="badge-pending">قيد التسليم</span>';
+        } else {
+            html += '<span class="badge-pending">غير معيّن</span>';
+        }
         html += '</dd></dl>';
 
-        if (!delivered && cfg.campaignActive) {
+        if (delivered) {
+            var recv = '';
+            if (b.received_by_label) recv = b.received_by_label;
+            else if (b.received_by_mode === 'proxy') recv = 'غيره' + (b.received_by_name ? ': ' + b.received_by_name : '');
+            else if (b.received_by_mode === 'self') recv = 'بنفسه';
+            html += '<p class="text-muted" style="margin:0.5rem 0 0">تم التسليم ' + esc(b.delivered_at || '');
+            if (recv) html += ' — ' + esc(recv);
+            html += '</p>';
+        } else if (!assigned) {
+            html += '<p class="wh-alert wh-alert-error" style="margin:0.75rem 0 0">هذا المستفيد غير مدرج في أيام التوزيع المعتمدة — لا يمكن تسليمه من المخزن حتى يُعتمد يومه أو يُسجَّل استلام يدوي من المدير.</p>';
+        } else if (cfg.campaignActive) {
             html += '<div class="wh-receive-box">';
             html += '<div class="wh-receive-title">من استلم الطرد؟</div>';
             html += '<label class="wh-radio"><input type="radio" name="recv_mode" value="self" checked> المستفيد بنفسه</label>';
@@ -317,14 +333,6 @@
             html += '<div class="wh-result-actions">';
             html += '<button type="button" id="btnConfirm" class="wh-btn wh-btn-success wh-btn-block">تأكيد الاستلام</button>';
             html += '</div>';
-        } else if (delivered) {
-            var recv = '';
-            if (b.received_by_label) recv = b.received_by_label;
-            else if (b.received_by_mode === 'proxy') recv = 'غيره' + (b.received_by_name ? ': ' + b.received_by_name : '');
-            else if (b.received_by_mode === 'self') recv = 'بنفسه';
-            html += '<p class="text-muted" style="margin:0.5rem 0 0">تم التسليم ' + esc(b.delivered_at || '');
-            if (recv) html += ' — ' + esc(recv);
-            html += '</p>';
         }
 
         elResult.innerHTML = html;
