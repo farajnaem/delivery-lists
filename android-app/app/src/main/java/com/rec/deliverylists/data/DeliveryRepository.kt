@@ -180,8 +180,9 @@ class DeliveryRepository(
             val localCount = beneficiaryDao.countForCampaign(campaignId)
             if (serverAssigned > localCount) {
                 report(0.7f, "اكتشاف بيانات ناقصة — إعادة تحميل كامل…")
+                val progressCb = onProgress
                 downloadSnapshot(campaignId) { fraction, message ->
-                    report(0.7f + fraction * 0.25f, message)
+                    progressCb?.invoke(0.7f + fraction * 0.25f, message)
                 }.getOrThrow()
             }
 
