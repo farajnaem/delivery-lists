@@ -204,6 +204,65 @@ final class CampaignService
         return $stmt->fetchAll();
     }
 
+    /**
+     * قائمة مستفيدين قابلة للبحث (كل الحالات: معيّن / غير معيّن / مستلم).
+     *
+     * @return array{rows:list<array>,total:int,page:int,per_page:int}
+     */
+    public static function searchAllBeneficiaries(
+        int $campaignId,
+        string $query = '',
+        int $page = 1,
+        int $perPage = 100,
+    ): array {
+        $pdo = Database::getConnection();
+        $page = max(1, $page);
+        $perPage = max(20, min(500, $perPage));
+        $offset = ($page - 1) * $perPage;
+
+        $where = 'b.campaign_id = ?';
+        $params = [$campaignId];
+        $query = ArabicFormat::toWesternDigits(trim($query));
+        if ($query !== '') {
+            $nid = ArabicFormat::normalizeNationalId($query);
+            $nidExpr = ArabicFormat::sqlNormalizeNationalIdExpr('b.national_id');
+            $where .= " AND (
+                {$nidExpr} = ?
+                OR b.name LIKE ?
+                OR b.mobile LIKE ?
+                OR b.disbursement_code LIKE ?
+                OR CAST(b.sort_order AS CHAR) = ?
+            )";
+            $like = '%' . $query . '%';
+            array_push($params, $nid, $like, $like, $like, $nid);
+        }
+
+        $countStmt = $pdo->prepare("SELECT COUNT(*) FROM beneficiaries b WHERE {$where}");
+        $countStmt->execute($params);
+        $total = (int) $countStmt->fetchColumn();
+
+        $sql = "
+            SELECT b.*, u.name AS delivered_by_name
+            FROM beneficiaries b
+            LEFT JOIN users u ON u.id = b.delivered_by
+            WHERE {$where}
+            ORDER BY
+              CASE WHEN b.day_index IS NULL OR b.day_index = 0 THEN 1 ELSE 0 END,
+              b.day_index ASC, b.sort_order ASC, b.id ASC
+            LIMIT {$perPage} OFFSET {$offset}
+        ";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll();
+
+        return [
+            'rows' => $rows,
+            'total' => $total,
+            'page' => $page,
+            'per_page' => $perPage,
+        ];
+    }
+
     public static function stats(int $campaignId): array
     {
         $pdo = Database::getConnection();

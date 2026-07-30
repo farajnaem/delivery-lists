@@ -180,11 +180,13 @@
                     }
                     var b = cursor.value;
                     if (b.campaignId === campaignId) {
-                        var nid = String(b.national_id || '').replace(/\s+/g, '');
+                        var nid = toWesternDigits(String(b.national_id || '')).replace(/\s+/g, '');
+                        var name = String(b.name || '');
                         if (
                             (nid && nid === norm) ||
                             (b.display_code && normalizeCode(b.display_code) === normUpper) ||
-                            (b.disbursement_code && normalizeCode(b.disbursement_code) === normUpper)
+                            (b.disbursement_code && normalizeCode(b.disbursement_code) === normUpper) ||
+                            (name && name.indexOf(q) !== -1)
                         ) {
                             found = b;
                         }

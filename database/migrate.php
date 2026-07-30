@@ -53,6 +53,24 @@ foreach ($migrations as $name => $sql) {
     }
 }
 
+// تطبيع أرقام الهوية المخزّنة بأرقام عربية من Excel — يمنع فشل بحث المخزن
+try {
+    $rows = $pdo->query('SELECT id, national_id FROM beneficiaries')->fetchAll();
+    $upd = $pdo->prepare('UPDATE beneficiaries SET national_id = ? WHERE id = ?');
+    $fixed = 0;
+    foreach ($rows as $row) {
+        $raw = (string) ($row['national_id'] ?? '');
+        $norm = \App\ArabicFormat::normalizeNationalId($raw);
+        if ($norm !== '' && $norm !== $raw) {
+            $upd->execute([$norm, (int) $row['id']]);
+            $fixed++;
+        }
+    }
+    echo $fixed > 0 ? "OK: national_id westernize ({$fixed})\n" : "SKIP: national_id westernize (none)\n";
+} catch (Throwable $e) {
+    echo 'WARN: national_id westernize — ' . $e->getMessage() . "\n";
+}
+
 // ترحيل كود الطرد القديم → SOCI + ملحق منفصل
 try {
     $rows = $pdo->query('SELECT id, parcel_code, parcel_code_suffix FROM campaigns')->fetchAll();

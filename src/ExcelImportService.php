@@ -47,7 +47,7 @@ final class ExcelImportService
         for ($i = 1, $n = count($rows); $i < $n; $i++) {
             $row = $rows[$i];
             $name = trim((string) ($row[$map['name']] ?? ''));
-            $nationalId = trim((string) ($row[$map['national_id']] ?? ''));
+            $nationalId = ArabicFormat::normalizeNationalId($row[$map['national_id']] ?? '');
             $mobile = trim((string) ($row[$map['mobile']] ?? ''));
 
             if ($name === '' && $nationalId === '' && $mobile === '') {

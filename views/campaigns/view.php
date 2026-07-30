@@ -282,6 +282,7 @@ $defaultDayWorkEnd = substr((string) ($campaign['work_end'] ?? '15:00'), 0, 5);
         <?php endif; ?>
 
         <?php if ($isGenerated && !empty($canExport)): ?>
+        <a href="<?= e(url('/campaigns/beneficiaries?id=' . (int) $campaign['id'])) ?>" class="btn">كشف المستفيدين (بحث كامل)</a>
         <a href="<?= e(url('/campaigns/export?id=' . (int) $campaign['id'])) ?>" class="btn">تنزيل Excel الكامل</a>
         <?php endif; ?>
 
@@ -346,6 +347,7 @@ $defaultDayWorkEnd = substr((string) ($campaign['work_end'] ?? '15:00'), 0, 5);
     <div class="table-toolbar">
         <div>
             <div class="panel-title">معاينة (أول 20 مستفيد<?= $isGenerated ? ' — بعد التعيين' : '' ?>)</div>
+            <div class="panel-subtitle">للقائمة الكاملة والبحث: <a href="<?= e(url('/campaigns/beneficiaries?id=' . (int) $campaign['id'])) ?>">كشف المستفيدين</a></div>
         </div>
         <div class="table-toolbar-search">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>

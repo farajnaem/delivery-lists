@@ -296,34 +296,47 @@ final class DeliveryService
         }
 
         $pdo = Database::getConnection();
-        $normalized = preg_replace('/\s+/', '', $query) ?? $query;
+        $normalized = ArabicFormat::normalizeNationalId($query);
         $prefix = (string) ($campaign['parcel_code'] ?? ParcelCodeHelper::DEFAULT_PREFIX);
         $suffix = (string) ($campaign['parcel_code_suffix'] ?? '');
         $codeCandidates = ParcelCodeHelper::matchSearchCandidates($query, $prefix, $suffix);
-        $placeholders = implode(', ', array_fill(0, count($codeCandidates), '?'));
+        $nidExpr = ArabicFormat::sqlNormalizeNationalIdExpr('b.national_id');
 
-        $sql = '
+        $sql = "
             SELECT b.*, c.delivery_end, c.delivery_start, c.delivery_closed_at, c.name AS campaign_name,
                    c.parcel_code_suffix
             FROM beneficiaries b
             JOIN campaigns c ON c.id = b.campaign_id
             WHERE b.campaign_id = ?
               AND b.day_index IS NOT NULL AND b.day_index > 0
-              AND b.disbursement_code IS NOT NULL AND b.disbursement_code != \'\'
+              AND b.disbursement_code IS NOT NULL AND b.disbursement_code != ''
               AND (
-                b.national_id = ?
-                OR REPLACE(b.national_id, \' \', \'\') = ?
-        ';
-        $params = [$campaignId, $normalized, $normalized];
+                {$nidExpr} = ?
+                OR b.name LIKE ?
+        ";
+        $params = [$campaignId, $normalized, '%' . $query . '%'];
 
         if ($codeCandidates !== []) {
-            $sql .= ' OR b.disbursement_code IN (' . $placeholders . ')';
+            $placeholders = implode(', ', array_fill(0, count($codeCandidates), '?'));
+            $sql .= " OR b.disbursement_code IN ({$placeholders})";
             array_push($params, ...$codeCandidates);
         }
 
+        // رقم العرض (PIN) إن كان البحث أرقاماً فقط
+        if ($normalized !== '' && ctype_digit($normalized)) {
+            $sql .= ' OR CAST(b.sort_order AS CHAR) = ?';
+            $params[] = $normalized;
+            $sql .= ' OR b.disbursement_code LIKE ?';
+            $params[] = '%' . $normalized;
+        }
+
         $sql .= ')
+            ORDER BY
+              CASE WHEN ' . $nidExpr . ' = ? THEN 0 ELSE 1 END,
+              b.sort_order ASC, b.id ASC
             LIMIT 1
         ';
+        $params[] = $normalized;
 
         $stmt = $pdo->prepare($sql);
         $stmt->execute($params);

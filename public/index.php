@@ -761,6 +761,32 @@ if ($uri === '/admin/database/delete' && $method === 'POST') {
     redirect('/admin/database');
 }
 
+if ($uri === '/campaigns/beneficiaries' && $method === 'GET') {
+    $id = (int) ($_GET['id'] ?? 0);
+    $campaign = CampaignService::find($id);
+    if (!$campaign) {
+        flash('error', 'العملية غير موجودة.');
+        redirect('/');
+    }
+    $q = trim((string) ($_GET['q'] ?? ''));
+    $page = max(1, (int) ($_GET['page'] ?? 1));
+    $result = CampaignService::searchAllBeneficiaries($id, $q, $page, 100);
+    $codePrefix = (string) ($campaign['parcel_code'] ?? '');
+    $codeSuffix = (string) ($campaign['parcel_code_suffix'] ?? '');
+    $rows = array_map(
+        static fn (array $b): array => ArabicFormat::localizeBeneficiary($b, $codePrefix, $codeSuffix),
+        $result['rows']
+    );
+    view('campaigns/beneficiaries', [
+        'campaign' => $campaign,
+        'rows' => $rows,
+        'total' => $result['total'],
+        'page' => $result['page'],
+        'perPage' => $result['per_page'],
+        'q' => $q,
+    ]);
+}
+
 if ($uri === '/campaigns/view' && $method === 'GET') {
     $id = (int) ($_GET['id'] ?? 0);
     $campaign = CampaignService::find($id);
