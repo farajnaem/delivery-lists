@@ -54,6 +54,8 @@ CREATE TABLE IF NOT EXISTS beneficiaries (
     delivered_by INTEGER,
     delivery_type TEXT,
     actual_delivery_date TEXT,
+    received_by_mode TEXT,
+    received_by_name TEXT,
     updated_at TEXT,
     delivery_batch_id INTEGER,
     FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE,

@@ -14,9 +14,50 @@ final class DeliveryService
     public const STATUS_PENDING_ALT = 'بانتظار الاستلام';
     public const STATUS_DELIVERED = 'مستلم';
 
+    public const RECEIVED_BY_SELF = 'self';
+    public const RECEIVED_BY_PROXY = 'proxy';
+
     public static function isDeliveredStatus(?string $status): bool
     {
         return trim((string) $status) === self::STATUS_DELIVERED;
+    }
+
+    /**
+     * @return array{0:string,1:?string} [mode, name]
+     */
+    public static function normalizeReceivedBy(?string $mode, ?string $name, bool $required = true): array
+    {
+        $mode = strtolower(trim((string) $mode));
+        $name = trim((string) $name);
+
+        if ($mode === '' || $mode === self::RECEIVED_BY_SELF || $mode === 'himself' || $mode === 'beneficiary') {
+            return [self::RECEIVED_BY_SELF, null];
+        }
+
+        if ($mode === self::RECEIVED_BY_PROXY || $mode === 'other' || $mode === 'proxy_other') {
+            if ($required && $name === '') {
+                throw new \InvalidArgumentException('عند اختيار «استلم غيره» يجب كتابة اسم من استلم.');
+            }
+            return [self::RECEIVED_BY_PROXY, $name !== '' ? $name : null];
+        }
+
+        if ($required) {
+            throw new \InvalidArgumentException('اختر طريقة الاستلام: بنفسه أو غيره.');
+        }
+
+        return [self::RECEIVED_BY_SELF, null];
+    }
+
+    public static function receivedByLabel(?string $mode, ?string $name = null): string
+    {
+        if (($mode ?? '') === self::RECEIVED_BY_PROXY) {
+            $who = trim((string) $name);
+            return $who !== '' ? ('غيره: ' . $who) : 'غيره';
+        }
+        if (($mode ?? '') === self::RECEIVED_BY_SELF) {
+            return 'بنفسه';
+        }
+        return '';
     }
 
     /** أي حالة غير «مستلم» تُعد بانتظار التسليم (بما فيها «بانتظار الاستلام»). */
@@ -293,9 +334,21 @@ final class DeliveryService
     /**
      * @return array{ok: bool, beneficiary?: array, error?: string, already?: bool}
      */
-    public static function markDelivered(int $campaignId, int $beneficiaryId, int $userId, ?string $clientId = null): array
-    {
+    public static function markDelivered(
+        int $campaignId,
+        int $beneficiaryId,
+        int $userId,
+        ?string $clientId = null,
+        ?string $receivedByMode = null,
+        ?string $receivedByName = null,
+    ): array {
         $pdo = Database::getConnection();
+
+        try {
+            [$recvMode, $recvName] = self::normalizeReceivedBy($receivedByMode, $receivedByName, true);
+        } catch (\InvalidArgumentException $e) {
+            return ['ok' => false, 'error' => $e->getMessage()];
+        }
 
         if ($clientId !== null && $clientId !== '') {
             $existing = self::findByClientId($clientId);
@@ -350,6 +403,8 @@ final class DeliveryService
                     delivered_by = ?,
                     delivery_type = ?,
                     actual_delivery_date = ?,
+                    received_by_mode = ?,
+                    received_by_name = ?,
                     updated_at = ?
                 WHERE id = ? AND receipt_status != ?
             ');
@@ -359,6 +414,8 @@ final class DeliveryService
                 $userId,
                 $deliveryType,
                 $today,
+                $recvMode,
+                $recvName,
                 $now,
                 $beneficiaryId,
                 self::STATUS_DELIVERED,
@@ -391,6 +448,8 @@ final class DeliveryService
         $beneficiary['delivered_at'] = $now;
         $beneficiary['delivery_type'] = $deliveryType;
         $beneficiary['actual_delivery_date'] = $today;
+        $beneficiary['received_by_mode'] = $recvMode;
+        $beneficiary['received_by_name'] = $recvName;
 
         try {
             SmsService::queueDeliveryConfirmation($campaignId, $beneficiary, $campaign);
@@ -408,7 +467,12 @@ final class DeliveryService
     /** @param array<string, mixed> $beneficiary */
     public static function enrichForDisplay(array $beneficiary, ?string $codeSuffix = null, ?string $codePrefix = null): array
     {
-        return ArabicFormat::localizeBeneficiary($beneficiary, $codePrefix, $codeSuffix);
+        $beneficiary = ArabicFormat::localizeBeneficiary($beneficiary, $codePrefix, $codeSuffix);
+        $beneficiary['received_by_label'] = self::receivedByLabel(
+            $beneficiary['received_by_mode'] ?? null,
+            $beneficiary['received_by_name'] ?? null
+        );
+        return $beneficiary;
     }
 
     /** @return list<array<string, mixed>> */
@@ -439,7 +503,14 @@ final class DeliveryService
                 continue;
             }
 
-            $result = self::markDelivered($campaignId, $beneficiaryId, $userId, $clientId);
+            $result = self::markDelivered(
+                $campaignId,
+                $beneficiaryId,
+                $userId,
+                $clientId,
+                isset($item['received_by_mode']) ? (string) $item['received_by_mode'] : self::RECEIVED_BY_SELF,
+                isset($item['received_by_name']) ? (string) $item['received_by_name'] : null
+            );
             if ($result['ok']) {
                 $synced++;
             } else {
@@ -467,6 +538,7 @@ final class DeliveryService
         $stmt = $pdo->prepare('
             SELECT b.id, b.name, b.disbursement_code, b.sort_order, b.national_id, b.delivery_type,
                    b.delivered_at, b.actual_delivery_date, b.delivery_date, b.window_num,
+                   b.received_by_mode, b.received_by_name,
                    u.name AS delivered_by_name
             FROM beneficiaries b
             LEFT JOIN users u ON u.id = b.delivered_by
@@ -521,6 +593,8 @@ final class DeliveryService
                     delivery_type = NULL,
                     actual_delivery_date = NULL,
                     delivery_batch_id = NULL,
+                    received_by_mode = NULL,
+                    received_by_name = NULL,
                     updated_at = ?
                 WHERE campaign_id = ? AND receipt_status = ?
             ')->execute([self::STATUS_PENDING, db_now(), $campaignId, self::STATUS_DELIVERED]);
@@ -634,6 +708,7 @@ final class DeliveryService
         $stmt = $pdo->prepare('
             SELECT b.id, b.name, b.national_id, b.disbursement_code, b.sort_order, b.delivery_date,
                    b.window_num, b.day_index, b.receipt_status, b.delivered_at, b.delivery_batch_id,
+                   b.received_by_mode, b.received_by_name,
                    u.name AS delivered_by_name
             FROM beneficiaries b
             LEFT JOIN users u ON u.id = b.delivered_by
@@ -747,6 +822,8 @@ final class DeliveryService
                     delivered_by = ?,
                     delivery_type = ?,
                     actual_delivery_date = ?,
+                    received_by_mode = ?,
+                    received_by_name = ?,
                     delivery_batch_id = ?,
                     updated_at = ?
                 WHERE id = ? AND campaign_id = ? AND receipt_status != ?
@@ -767,6 +844,8 @@ final class DeliveryService
                     $userId,
                     $deliveryType,
                     $today,
+                    self::RECEIVED_BY_SELF,
+                    null,
                     $batchId,
                     $now,
                     $bid,
@@ -857,6 +936,8 @@ final class DeliveryService
                     delivery_type = NULL,
                     actual_delivery_date = NULL,
                     delivery_batch_id = NULL,
+                    received_by_mode = NULL,
+                    received_by_name = NULL,
                     updated_at = ?
                 WHERE campaign_id = ? AND delivery_batch_id = ? AND receipt_status = ?
             ')->execute([self::STATUS_PENDING, $now, $campaignId, $batchId, self::STATUS_DELIVERED]);
@@ -964,6 +1045,8 @@ final class DeliveryService
                             delivery_type = NULL,
                             actual_delivery_date = NULL,
                             delivery_batch_id = NULL,
+                            received_by_mode = NULL,
+                            received_by_name = NULL,
                             updated_at = ?
                         WHERE campaign_id = ? AND id IN ({$ph})
                     ")->execute(array_merge([self::STATUS_PENDING, $now, $campaignId], $ids));

@@ -54,6 +54,8 @@ CREATE TABLE IF NOT EXISTS beneficiaries (
     delivered_by INT NULL,
     delivery_type VARCHAR(20) NULL,
     actual_delivery_date VARCHAR(20) NULL,
+    received_by_mode VARCHAR(20) NULL,
+    received_by_name VARCHAR(255) NULL,
     updated_at DATETIME NULL,
     delivery_batch_id INT NULL,
     INDEX idx_beneficiaries_campaign (campaign_id),

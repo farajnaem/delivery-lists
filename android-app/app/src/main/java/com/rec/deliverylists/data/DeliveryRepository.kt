@@ -156,7 +156,12 @@ class DeliveryRepository(
                 ?: throw IllegalStateException("العملية غير محمّلة")
             val pendingEntities = pendingDao.pendingForCampaign(campaignId)
             val pending = pendingEntities.map {
-                PendingDeliveryItem(it.beneficiaryId, it.clientId)
+                PendingDeliveryItem(
+                    it.beneficiaryId,
+                    it.clientId,
+                    it.receivedByMode,
+                    it.receivedByName,
+                )
             }
 
             val res = api.sync(
@@ -170,9 +175,29 @@ class DeliveryRepository(
 
             report(0.6f, "تطبيق التحديثات…")
             applySyncPayload(campaignId, res, pendingEntities)
+
+            val serverAssigned = resolveAssignedCount(res)
+            val localCount = beneficiaryDao.countForCampaign(campaignId)
+            if (serverAssigned > localCount) {
+                report(0.7f, "اكتشاف بيانات ناقصة — إعادة تحميل كامل…")
+                downloadSnapshot(campaignId) { fraction, message ->
+                    report(0.7f + fraction * 0.25f, message)
+                }.getOrThrow()
+            }
+
             report(1f, "اكتملت المزامنة")
             res.sync_token
         }
+    }
+
+    /**
+     * إعادة تنزيل كامل للمستفيدين المعتمدين (بعد اعتماد يوم جديد أو عند نقص البيانات).
+     */
+    suspend fun forceFullReload(campaignId: Int): Result<Unit> = apiCall {
+        requireToken()
+        downloadSnapshot(campaignId).getOrThrow()
+        syncCampaign(campaignId).getOrThrow()
+        Unit
     }
 
     suspend fun syncAllPending(): Result<Int> = apiCall {
@@ -205,7 +230,12 @@ class DeliveryRepository(
      * أونلاين أولاً: يسجّل على السيرفر فوراً لمنع التسليم المزدوج بين الجوالات.
      * بدون إنترنت: يسجّل محلياً ويُضاف لطابور المزامنة.
      */
-    suspend fun confirmDelivery(campaignId: Int, beneficiary: BeneficiaryEntity): Result<ConfirmDeliveryResult> =
+    suspend fun confirmDelivery(
+        campaignId: Int,
+        beneficiary: BeneficiaryEntity,
+        receivedByMode: String = "self",
+        receivedByName: String? = null,
+    ): Result<ConfirmDeliveryResult> =
         runCatching {
             val campaign = campaignDao.get(campaignId) ?: throw IllegalStateException("العملية غير موجودة")
             if (!campaign.campaignActive) throw IllegalStateException("تم إنهاء عملية التسليم — لا يمكن التسجيل")
@@ -214,12 +244,18 @@ class DeliveryRepository(
             }
             if (campaign.balance <= 0) throw IllegalStateException("لا يوجد رصيد متاح في المخزن")
 
+            val mode = receivedByMode.trim().lowercase().ifBlank { "self" }
+            val name = receivedByName?.trim().orEmpty()
+            if (mode == "proxy" && name.isEmpty()) {
+                throw IllegalStateException("اكتب اسم من استلم الطرد")
+            }
+
             val clientId = UUID.randomUUID().toString()
-            val online = tryConfirmOnline(campaignId, beneficiary, clientId)
+            val online = tryConfirmOnline(campaignId, beneficiary, clientId, mode, name.ifBlank { null })
             if (online) {
                 ConfirmDeliveryResult(online = true)
             } else {
-                applyOfflineDelivery(campaignId, campaign, beneficiary, clientId)
+                applyOfflineDelivery(campaignId, campaign, beneficiary, clientId, mode, name.ifBlank { null })
                 ConfirmDeliveryResult(online = false)
             }
         }
@@ -233,11 +269,19 @@ class DeliveryRepository(
         campaignId: Int,
         beneficiary: BeneficiaryEntity,
         clientId: String,
+        receivedByMode: String,
+        receivedByName: String?,
     ): Boolean {
         return try {
             requireToken()
             // فضّل endpoint التسليم الفوري؛ إن لم يكن على السيرفر بعد نستخدم sync
-            val deliveredViaApi = tryDeliverEndpoint(campaignId, beneficiary.id, clientId)
+            val deliveredViaApi = tryDeliverEndpoint(
+                campaignId,
+                beneficiary.id,
+                clientId,
+                receivedByMode,
+                receivedByName,
+            )
             if (deliveredViaApi != null) {
                 return when {
                     deliveredViaApi.ok -> true
@@ -268,8 +312,18 @@ class DeliveryRepository(
                 ?: throw IllegalStateException("العملية غير محمّلة")
             val pendingEntities = pendingDao.pendingForCampaign(campaignId)
             val pending = pendingEntities.map {
-                PendingDeliveryItem(it.beneficiaryId, it.clientId)
-            } + PendingDeliveryItem(beneficiary.id, clientId)
+                PendingDeliveryItem(
+                    it.beneficiaryId,
+                    it.clientId,
+                    it.receivedByMode,
+                    it.receivedByName,
+                )
+            } + PendingDeliveryItem(
+                beneficiary.id,
+                clientId,
+                receivedByMode,
+                receivedByName,
+            )
 
             val res = api.sync(
                 SyncRequest(
@@ -326,6 +380,8 @@ class DeliveryRepository(
         campaignId: Int,
         beneficiaryId: Int,
         clientId: String,
+        receivedByMode: String,
+        receivedByName: String?,
     ): com.rec.deliverylists.data.remote.DeliverResponse? {
         return try {
             val res = api.deliver(
@@ -333,6 +389,8 @@ class DeliveryRepository(
                     campaign_id = campaignId,
                     beneficiary_id = beneficiaryId,
                     client_id = clientId,
+                    received_by_mode = receivedByMode,
+                    received_by_name = receivedByName,
                 ),
             )
             if (res.ok) {
@@ -371,6 +429,8 @@ class DeliveryRepository(
         campaign: CampaignEntity,
         beneficiary: BeneficiaryEntity,
         clientId: String,
+        receivedByMode: String,
+        receivedByName: String?,
     ) {
         val now = nowString()
         beneficiaryDao.markLocalDelivered(campaignId, beneficiary.id, STATUS_DELIVERED, now, "on_time")
@@ -382,6 +442,8 @@ class DeliveryRepository(
                 beneficiaryName = beneficiary.name,
                 displayCode = beneficiary.displayCode,
                 queuedAt = System.currentTimeMillis(),
+                receivedByMode = receivedByMode,
+                receivedByName = receivedByName,
             ),
         )
         cacheDao.insertRecent(
@@ -393,6 +455,11 @@ class DeliveryRepository(
                     deliveredAt = now,
                     deliveryType = "on_time",
                     sortOrder = beneficiary.sortOrder,
+                    receivedByLabel = if (receivedByMode == "proxy") {
+                        "غيره: ${receivedByName.orEmpty()}"
+                    } else {
+                        "بنفسه"
+                    },
                 ),
             ),
         )
@@ -583,6 +650,12 @@ class DeliveryRepository(
                     deliveredAt = it.delivered_at,
                     deliveryType = it.delivery_type,
                     sortOrder = it.sort_order ?: 0,
+                    receivedByLabel = it.received_by_label
+                        ?: when (it.received_by_mode) {
+                            "proxy" -> "غيره" + (it.received_by_name?.let { n -> ": $n" } ?: "")
+                            "self" -> "بنفسه"
+                            else -> null
+                        },
                 )
             },
         )
@@ -601,6 +674,16 @@ class DeliveryRepository(
         )
     }
 
+    private fun resolveAssignedCount(res: SyncResponse): Int {
+        if (res.assigned_count > 0) return res.assigned_count
+        val fromStock = res.stock?.assigned_count ?: 0
+        if (fromStock > 0) return fromStock
+        val fromCampaign = res.campaign?.assigned_count?.takeIf { it > 0 }
+            ?: res.campaign?.beneficiary_count?.takeIf { it > 0 }
+            ?: 0
+        return fromCampaign
+    }
+
     private fun CampaignDto.toEntity(prev: CampaignEntity?): CampaignEntity = CampaignEntity(
         id = id,
         name = name,
@@ -614,8 +697,14 @@ class DeliveryRepository(
         delivered = stock?.delivered ?: prev?.delivered ?: delivered_count,
         balance = stock?.balance ?: prev?.balance ?: 0,
         pending = stock?.pending ?: prev?.pending ?: 0,
-        beneficiaryCount = beneficiary_count,
-        lastSyncToken = sync_token ?: prev?.lastSyncToken,
+        // لا تقدّم lastSyncToken من قائمة الطرود — وإلا تُتخطّى تحديثات اعتماد يوم جديد.
+        beneficiaryCount = maxOf(
+            assigned_count,
+            beneficiary_count,
+            stock?.assigned_count ?: 0,
+            prev?.beneficiaryCount ?: 0,
+        ),
+        lastSyncToken = prev?.lastSyncToken,
         snapshotComplete = prev?.snapshotComplete ?: false,
         lastSyncAt = prev?.lastSyncAt,
     )
@@ -636,6 +725,8 @@ class DeliveryRepository(
         timeTo = time_to,
         deliveredAt = delivered_at,
         deliveryType = delivery_type,
+        receivedByMode = received_by_mode,
+        receivedByName = received_by_name,
         updatedAt = updated_at,
     )
 

@@ -40,6 +40,8 @@ data class BeneficiaryEntity(
     val timeTo: String?,
     val deliveredAt: String?,
     val deliveryType: String?,
+    val receivedByMode: String? = null,
+    val receivedByName: String? = null,
     val updatedAt: String?,
 )
 
@@ -52,6 +54,8 @@ data class PendingDeliveryEntity(
     val displayCode: String,
     val queuedAt: Long,
     val syncStatus: String = "pending",
+    val receivedByMode: String = "self",
+    val receivedByName: String? = null,
 )
 
 @Entity(tableName = "recent_delivered_cache")
@@ -63,6 +67,7 @@ data class RecentDeliveredEntity(
     val deliveredAt: String?,
     val deliveryType: String?,
     val sortOrder: Int = 0,
+    val receivedByLabel: String? = null,
 )
 
 @Entity(tableName = "late_cache")

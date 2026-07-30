@@ -58,6 +58,9 @@ interface BeneficiaryDao {
 
     @Query("DELETE FROM beneficiaries WHERE campaignId = :campaignId")
     suspend fun deleteForCampaign(campaignId: Int)
+
+    @Query("SELECT COUNT(*) FROM beneficiaries WHERE campaignId = :campaignId")
+    suspend fun countForCampaign(campaignId: Int): Int
 }
 
 @Dao

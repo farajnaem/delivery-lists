@@ -26,8 +26,8 @@ android {
         applicationId = "com.rec.deliverylists"
         minSdk = 26
         targetSdk = 35
-        versionCode = 13
-        versionName = "1.1.1"
+        versionCode = 14
+        versionName = "1.1.2"
         buildConfigField("String", "SERVER_URL", "\"https://delivery.rec-soc.org\"")
         // أجهزة ميدانية: ARM فقط (TECNO/MediaTek وغيرها)
         ndk {

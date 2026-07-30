@@ -490,14 +490,15 @@ final class ExcelExportService
         $sheet->setRightToLeft(true);
 
         $sheet->setCellValue('A1', $title . ' — ' . $campaign['name']);
-        $sheet->mergeCells('A1:N1');
-        self::styleSectionTitle($sheet, 'A1:N1');
+        $sheet->mergeCells('A1:P1');
+        self::styleSectionTitle($sheet, 'A1:P1');
 
         $headerRow = 3;
         $headers = [
             '#', 'الاسم', 'رقم الهوية', 'رقم الجوال', 'كود الصرف', 'حالة الاستلام',
             'موعد التسليم', 'شباك', 'من', 'إلى',
             'تاريخ التسليم', 'نوع التسليم', 'وقت التسجيل', 'أمين المخزن',
+            'طريقة الاستلام', 'اسم المستلم',
         ];
         self::writeHeaderRow($sheet, $headerRow, $headers);
 
@@ -508,6 +509,12 @@ final class ExcelExportService
             $typeLabel = match ($b['delivery_type'] ?? '') {
                 'on_time' => 'في الموعد',
                 'late' => 'متأخر',
+                default => '',
+            };
+            $recvMode = (string) ($b['received_by_mode'] ?? '');
+            $recvModeLabel = match ($recvMode) {
+                DeliveryService::RECEIVED_BY_SELF => 'بنفسه',
+                DeliveryService::RECEIVED_BY_PROXY => 'غيره',
                 default => '',
             };
             $sheet->fromArray([
@@ -525,6 +532,8 @@ final class ExcelExportService
                 $typeLabel,
                 self::arDateTime((string) ($b['delivered_at'] ?? '')),
                 $b['delivered_by_name'] ?? '',
+                $recvModeLabel,
+                $recvMode === DeliveryService::RECEIVED_BY_PROXY ? (string) ($b['received_by_name'] ?? '') : '',
             ], null, 'A' . $row);
             self::setFullCodeCell($sheet, 'E' . $row, (string) ($b['disbursement_code'] ?? ''), $codePrefix, $codeSuffix);
             self::setMobileCell($sheet, 'D' . $row, (string) $b['mobile']);
@@ -533,15 +542,15 @@ final class ExcelExportService
 
         $lastRow = max($headerRow, $row - 1);
         if ($row > $headerRow + 1) {
-            self::borderAll($sheet, 'A' . $headerRow . ':N' . $lastRow);
-            self::styleDataRows($sheet, 'A' . ($headerRow + 1) . ':N' . $lastRow);
+            self::borderAll($sheet, 'A' . $headerRow . ':P' . $lastRow);
+            self::styleDataRows($sheet, 'A' . ($headerRow + 1) . ':P' . $lastRow);
         }
 
-        $widths = ['A' => 5, 'B' => 22, 'C' => 14, 'D' => 12, 'E' => 13, 'F' => 12, 'G' => 12, 'H' => 6, 'I' => 7, 'J' => 7, 'K' => 12, 'L' => 10, 'M' => 18, 'N' => 16];
+        $widths = ['A' => 5, 'B' => 22, 'C' => 14, 'D' => 12, 'E' => 13, 'F' => 12, 'G' => 12, 'H' => 6, 'I' => 7, 'J' => 7, 'K' => 12, 'L' => 10, 'M' => 18, 'N' => 16, 'O' => 12, 'P' => 18];
         foreach ($widths as $col => $w) {
             $sheet->getColumnDimension($col)->setWidth($w);
         }
-        self::applyPortraitPrint($sheet, $headerRow, $lastRow, 'N');
+        self::applyPortraitPrint($sheet, $headerRow, $lastRow, 'P');
     }
 
     /** @param list<array<string,mixed>> $messages */

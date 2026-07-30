@@ -24,6 +24,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -74,6 +75,8 @@ fun CampaignDashboardScreen(
     var query by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf<BeneficiaryEntity?>(null) }
     var confirmTarget by remember { mutableStateOf<BeneficiaryEntity?>(null) }
+    var recvMode by remember { mutableStateOf("self") }
+    var recvName by remember { mutableStateOf("") }
     val snackbar = remember { SnackbarHostState() }
     val recent by repo.observeRecent(campaignId).collectAsState(initial = emptyList())
     val late by repo.observeLate(campaignId).collectAsState(initial = emptyList())
@@ -230,26 +233,44 @@ fun CampaignDashboardScreen(
         ) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 OutlinedButton(onClick = onBack) { Text("رجوع") }
-                OutlinedButton(
-                    onClick = {
-                        scope.launch {
-                            syncing = true
-                            repo.syncCampaign(campaignId)
-                                .onSuccess {
-                                    campaign = repo.getCampaign(campaignId) ?: campaign
-                                    refreshSelectedFromDb()
-                                    toast("تمت المزامنة بنجاح")
-                                }
-                                .onFailure { toast(it.message ?: "فشلت المزامنة") }
-                            syncing = false
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = {
+                            scope.launch {
+                                syncing = true
+                                repo.forceFullReload(campaignId)
+                                    .onSuccess {
+                                        campaign = repo.getCampaign(campaignId) ?: campaign
+                                        refreshSelectedFromDb()
+                                        toast("تم إعادة تحميل بيانات الطرد بالكامل")
+                                    }
+                                    .onFailure { toast(it.message ?: "فشل إعادة التحميل") }
+                                syncing = false
+                            }
+                        },
+                        enabled = !syncing && !delivering,
+                    ) { Text("تحميل كامل") }
+                    OutlinedButton(
+                        onClick = {
+                            scope.launch {
+                                syncing = true
+                                repo.syncCampaign(campaignId)
+                                    .onSuccess {
+                                        campaign = repo.getCampaign(campaignId) ?: campaign
+                                        refreshSelectedFromDb()
+                                        toast("تمت المزامنة بنجاح")
+                                    }
+                                    .onFailure { toast(it.message ?: "فشلت المزامنة") }
+                                syncing = false
+                            }
+                        },
+                        enabled = !syncing,
+                    ) {
+                        if (syncing) {
+                            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                        } else {
+                            Text("مزامنة")
                         }
-                    },
-                    enabled = !syncing,
-                ) {
-                    if (syncing) {
-                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                    } else {
-                        Text("مزامنة")
                     }
                 }
             }
@@ -337,8 +358,9 @@ fun CampaignDashboardScreen(
                 )
             } else {
                 recent.take(15).forEach { row ->
+                    val recv = row.receivedByLabel?.takeIf { it.isNotBlank() }?.let { " — $it" }.orEmpty()
                     Text(
-                        "${row.displayCode} — ${row.name} — ${ArabicFormat.formatDateTime(row.deliveredAt)}",
+                        "${row.displayCode} — ${row.name} — ${ArabicFormat.formatDateTime(row.deliveredAt)}$recv",
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
@@ -354,19 +376,58 @@ fun CampaignDashboardScreen(
 
     confirmTarget?.let { target ->
         AlertDialog(
-            onDismissRequest = { confirmTarget = null },
+            onDismissRequest = {
+                confirmTarget = null
+                recvMode = "self"
+                recvName = ""
+            },
             title = { Text("تأكيد الاستلام") },
             text = {
-                Text("تأكيد تسليم الطرد لـ «${target.name}»\nالكود: ${target.displayCode}")
+                Column {
+                    Text("تأكيد تسليم الطرد لـ «${target.name}»\nالكود: ${target.displayCode}")
+                    Spacer(Modifier.height(12.dp))
+                    Text("من استلم الطرد؟", style = MaterialTheme.typography.titleSmall)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(
+                            selected = recvMode == "self",
+                            onClick = { recvMode = "self" },
+                        )
+                        Text("المستفيد بنفسه")
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(
+                            selected = recvMode == "proxy",
+                            onClick = { recvMode = "proxy" },
+                        )
+                        Text("غيره")
+                    }
+                    if (recvMode == "proxy") {
+                        OutlinedTextField(
+                            value = recvName,
+                            onValueChange = { recvName = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            label = { Text("اسم من استلم") },
+                        )
+                    }
+                }
             },
             confirmButton = {
                 Button(
                     onClick = {
+                        if (recvMode == "proxy" && recvName.trim().isEmpty()) {
+                            scope.launch { toast("اكتب اسم من استلم الطرد") }
+                            return@Button
+                        }
                         val b = target
+                        val mode = recvMode
+                        val name = recvName.trim().ifBlank { null }
                         confirmTarget = null
+                        recvMode = "self"
+                        recvName = ""
                         scope.launch {
                             delivering = true
-                            repo.confirmDelivery(campaignId, b)
+                            repo.confirmDelivery(campaignId, b, mode, name)
                                 .onSuccess { result ->
                                     toast(
                                         if (result.online) {
@@ -378,7 +439,6 @@ fun CampaignDashboardScreen(
                                     campaign = repo.getCampaign(campaignId) ?: campaign
                                     selected = null
                                     query = ""
-                                    // اسحب تحديثات الأجهزة الأخرى بعد التسليم
                                     if (result.online) {
                                         runCatching { repo.syncCampaign(campaignId) }
                                         campaign = repo.getCampaign(campaignId) ?: campaign
@@ -386,7 +446,6 @@ fun CampaignDashboardScreen(
                                 }
                                 .onFailure {
                                     toast(it.message ?: "تعذّر تسجيل الاستلام")
-                                    // تحديث الحالة إن كان مُسلَّماً من جهاز آخر
                                     runCatching { repo.syncCampaign(campaignId) }
                                     campaign = repo.getCampaign(campaignId) ?: campaign
                                     selected = repo.getBeneficiary(campaignId, b.id)
@@ -398,7 +457,11 @@ fun CampaignDashboardScreen(
                 ) { Text("تأكيد") }
             },
             dismissButton = {
-                TextButton(onClick = { confirmTarget = null }) { Text("إلغاء") }
+                TextButton(onClick = {
+                    confirmTarget = null
+                    recvMode = "self"
+                    recvName = ""
+                }) { Text("إلغاء") }
             },
         )
     }
@@ -524,6 +587,14 @@ private fun BeneficiaryCard(
                 Text(
                     "الوقت: ${ArabicFormat.formatTime12(b.timeFrom)} — ${ArabicFormat.formatTime12(b.timeTo)}",
                 )
+            }
+            val recvLabel = when (b.receivedByMode) {
+                "proxy" -> "غيره" + (b.receivedByName?.takeIf { it.isNotBlank() }?.let { ": $it" } ?: "")
+                "self" -> "بنفسه"
+                else -> null
+            }
+            if (b.receiptStatus == DeliveryRepository.STATUS_DELIVERED && recvLabel != null) {
+                Text("الاستلام: $recvLabel")
             }
             Text("الحالة: ${b.receiptStatus}")
             if (canDeliver) {

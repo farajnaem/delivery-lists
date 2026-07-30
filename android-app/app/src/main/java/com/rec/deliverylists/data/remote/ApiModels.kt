@@ -26,6 +26,7 @@ data class CampaignDto(
     val delivery_closed_at: String? = null,
     val campaign_active: Boolean = true,
     val beneficiary_count: Int = 0,
+    val assigned_count: Int = 0,
     val delivered_count: Int = 0,
     val sync_token: String? = null,
     val stock: StockDto? = null,
@@ -42,6 +43,7 @@ data class StockDto(
     val planned_today: Int = 0,
     val campaign_active: Boolean = true,
     val total_beneficiaries: Int = 0,
+    val assigned_count: Int = 0,
 )
 
 data class BeneficiaryDto(
@@ -61,6 +63,9 @@ data class BeneficiaryDto(
     val delivered_at: String? = null,
     val delivery_type: String? = null,
     val actual_delivery_date: String? = null,
+    val received_by_mode: String? = null,
+    val received_by_name: String? = null,
+    val received_by_label: String? = null,
     val delivered_by_name: String? = null,
     val updated_at: String? = null,
 )
@@ -76,6 +81,9 @@ data class RecentDeliveredDto(
     val delivered_at: String? = null,
     val delivery_date: String? = null,
     val window_num: Int? = null,
+    val received_by_mode: String? = null,
+    val received_by_name: String? = null,
+    val received_by_label: String? = null,
     val delivered_by_name: String? = null,
 )
 
@@ -95,6 +103,8 @@ data class SnapshotResponse(
 data class PendingDeliveryItem(
     val beneficiary_id: Int,
     val client_id: String,
+    val received_by_mode: String? = "self",
+    val received_by_name: String? = null,
 )
 
 data class SyncRequest(
@@ -115,6 +125,7 @@ data class SyncResponse(
     val upload: SyncUploadResult? = null,
     val sync_token: String? = null,
     val updated_beneficiaries: List<BeneficiaryDto> = emptyList(),
+    val assigned_count: Int = 0,
     val campaign: CampaignDto? = null,
     val stock: StockDto? = null,
     val recent_delivered: List<RecentDeliveredDto> = emptyList(),
@@ -126,6 +137,8 @@ data class DeliverRequest(
     val campaign_id: Int,
     val beneficiary_id: Int,
     val client_id: String,
+    val received_by_mode: String? = "self",
+    val received_by_name: String? = null,
 )
 
 data class DeliverResponse(

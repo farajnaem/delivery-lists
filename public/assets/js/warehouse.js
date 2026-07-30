@@ -304,15 +304,41 @@
         html += '</dd></dl>';
 
         if (!delivered && cfg.campaignActive) {
+            html += '<div class="wh-receive-box">';
+            html += '<div class="wh-receive-title">من استلم الطرد؟</div>';
+            html += '<label class="wh-radio"><input type="radio" name="recv_mode" value="self" checked> المستفيد بنفسه</label>';
+            html += '<label class="wh-radio"><input type="radio" name="recv_mode" value="proxy"> غيره</label>';
+            html += '<div id="recvNameWrap" class="wh-recv-name hidden">';
+            html += '<label class="wh-label">اسم من استلم *</label>';
+            html += '<input type="text" id="recvName" class="wh-input" placeholder="الاسم الكامل" autocomplete="name">';
+            html += '</div></div>';
             html += '<div class="wh-result-actions">';
             html += '<button type="button" id="btnConfirm" class="wh-btn wh-btn-success wh-btn-block">تأكيد الاستلام</button>';
             html += '</div>';
         } else if (delivered) {
-            html += '<p class="text-muted" style="margin:0.5rem 0 0">تم التسليم ' + esc(b.delivered_at || '') + '</p>';
+            var recv = '';
+            if (b.received_by_label) recv = b.received_by_label;
+            else if (b.received_by_mode === 'proxy') recv = 'غيره' + (b.received_by_name ? ': ' + b.received_by_name : '');
+            else if (b.received_by_mode === 'self') recv = 'بنفسه';
+            html += '<p class="text-muted" style="margin:0.5rem 0 0">تم التسليم ' + esc(b.delivered_at || '');
+            if (recv) html += ' — ' + esc(recv);
+            html += '</p>';
         }
 
         elResult.innerHTML = html;
         elResult.classList.remove('hidden');
+
+        var modeRadios = elResult.querySelectorAll('input[name="recv_mode"]');
+        var nameWrap = document.getElementById('recvNameWrap');
+        function syncRecvUi() {
+            var mode = 'self';
+            modeRadios.forEach(function (r) { if (r.checked) mode = r.value; });
+            if (nameWrap) nameWrap.classList.toggle('hidden', mode !== 'proxy');
+        }
+        modeRadios.forEach(function (r) {
+            r.addEventListener('change', syncRecvUi);
+        });
+        syncRecvUi();
 
         var btn = document.getElementById('btnConfirm');
         if (btn) {
@@ -436,12 +462,23 @@
     }
 
     function confirmDelivery(b) {
+        var mode = 'self';
+        var modeEl = document.querySelector('input[name="recv_mode"]:checked');
+        if (modeEl) mode = modeEl.value;
+        var recvName = ((document.getElementById('recvName') || {}).value || '').trim();
+        if (mode === 'proxy' && !recvName) {
+            showError('اكتب اسم من استلم الطرد');
+            return;
+        }
+
         var clientId = uuid();
         var item = {
             beneficiary_id: b.id,
             client_id: clientId,
             code: b.display_code || b.sort_order || b.disbursement_code,
             name: b.name,
+            received_by_mode: mode,
+            received_by_name: mode === 'proxy' ? recvName : null,
             queued_at: new Date().toISOString()
         };
 
@@ -453,7 +490,13 @@
         api('/deliver', {
             method: 'POST',
             json: true,
-            body: { campaign_id: campaignId, beneficiary_id: b.id, client_id: clientId }
+            body: {
+                campaign_id: campaignId,
+                beneficiary_id: b.id,
+                client_id: clientId,
+                received_by_mode: mode,
+                received_by_name: mode === 'proxy' ? recvName : null
+            }
         }).then(function (data) {
             if (data.stock) updateStock(data.stock);
             renderBeneficiary(data.beneficiary || b);

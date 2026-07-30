@@ -15,6 +15,10 @@ final class MobileSyncService
         $result = [];
         foreach ($campaigns as $c) {
             $stats = DeliveryService::stockStats((int) $c['id']);
+            // لا نُرجع sync_token هنا: التطبيق القديم كان يستبدل lastSyncToken
+            // بقيمة السيرفر عند تحديث القائمة دون تنزيل المستفيدين الجدد،
+            // فيتخطّى اعتماد يوم جديد ولا يظهر في البحث.
+            $assigned = (int) ($c['beneficiary_count'] ?? 0);
             $result[] = [
                 'id' => (int) $c['id'],
                 'name' => $c['name'],
@@ -24,14 +28,17 @@ final class MobileSyncService
                 'delivery_end' => $c['delivery_end'],
                 'delivery_closed_at' => $c['delivery_closed_at'] ?? null,
                 'campaign_active' => DeliveryService::isCampaignActive($c),
-                'beneficiary_count' => (int) ($c['beneficiary_count'] ?? 0),
+                'beneficiary_count' => $assigned,
+                'assigned_count' => $assigned,
                 'delivered_count' => (int) ($c['delivered_count'] ?? 0),
-                'sync_token' => self::campaignSyncToken((int) $c['id']),
                 'stock' => [
                     'opening_quantity' => (int) ($stats['opening_quantity'] ?? 0),
                     'delivered' => (int) ($stats['delivered'] ?? 0),
                     'balance' => (int) ($stats['balance'] ?? 0),
                     'pending' => (int) ($stats['pending'] ?? 0),
+                    'assigned_count' => $assigned,
+                    'total_beneficiaries' => (int) ($stats['total_beneficiaries'] ?? 0),
+                    'campaign_active' => (bool) ($stats['campaign_active'] ?? false),
                 ],
             ];
         }
@@ -78,12 +85,14 @@ final class MobileSyncService
             $rows
         );
         $stats = DeliveryService::stockStats($campaignId);
+        $assignedCount = count($beneficiaries);
 
         return [
-            'campaign' => self::formatCampaign($campaign),
+            'campaign' => self::formatCampaign($campaign, $assignedCount),
             'sync_token' => self::campaignSyncToken($campaignId),
             'beneficiaries' => $beneficiaries,
-            'stock' => self::formatStock($stats),
+            'assigned_count' => $assignedCount,
+            'stock' => self::formatStock($stats, $assignedCount),
             'recent_delivered' => DeliveryService::deliveredBeneficiaries($campaignId, 50),
             'late' => DeliveryService::pendingLate($campaignId, 100),
         ];
@@ -103,14 +112,16 @@ final class MobileSyncService
         $upload = DeliveryService::syncBatch($campaignId, $userId, $pending);
         $updated = self::changesSince($campaignId, $lastSyncToken);
         $stats = DeliveryService::stockStats($campaignId);
+        $assignedCount = self::assignedCount($campaignId);
 
         return [
             'ok' => true,
             'upload' => $upload,
             'sync_token' => self::campaignSyncToken($campaignId),
             'updated_beneficiaries' => $updated,
-            'campaign' => self::formatCampaign($campaign),
-            'stock' => self::formatStock($stats),
+            'assigned_count' => $assignedCount,
+            'campaign' => self::formatCampaign($campaign, $assignedCount),
+            'stock' => self::formatStock($stats, $assignedCount),
             'recent_delivered' => DeliveryService::deliveredBeneficiaries($campaignId, 50),
             'late' => DeliveryService::pendingLate($campaignId, 100),
         ];
@@ -121,14 +132,27 @@ final class MobileSyncService
      *
      * @return array<string, mixed>
      */
-    public static function deliver(int $campaignId, int $beneficiaryId, int $userId, ?string $clientId): array
-    {
+    public static function deliver(
+        int $campaignId,
+        int $beneficiaryId,
+        int $userId,
+        ?string $clientId,
+        ?string $receivedByMode = null,
+        ?string $receivedByName = null,
+    ): array {
         $campaign = CampaignService::find($campaignId);
         if (!$campaign || ($campaign['status'] ?? '') !== 'generated') {
             throw new \RuntimeException('العملية غير جاهزة.');
         }
 
-        $result = DeliveryService::markDelivered($campaignId, $beneficiaryId, $userId, $clientId);
+        $result = DeliveryService::markDelivered(
+            $campaignId,
+            $beneficiaryId,
+            $userId,
+            $clientId,
+            $receivedByMode,
+            $receivedByName
+        );
         $codeSuffix = (string) ($campaign['parcel_code_suffix'] ?? '');
         $codePrefix = (string) ($campaign['parcel_code'] ?? '');
         $beneficiary = null;
@@ -145,14 +169,16 @@ final class MobileSyncService
         }
 
         $stats = DeliveryService::stockStats($campaignId);
+        $assignedCount = self::assignedCount($campaignId);
 
         return [
             'ok' => !empty($result['ok']),
             'already' => !empty($result['already']),
             'error' => $result['error'] ?? null,
             'beneficiary' => $beneficiary,
-            'stock' => self::formatStock($stats),
-            'campaign' => self::formatCampaign($campaign),
+            'stock' => self::formatStock($stats, $assignedCount),
+            'campaign' => self::formatCampaign($campaign, $assignedCount),
+            'assigned_count' => $assignedCount,
             'sync_token' => self::campaignSyncToken($campaignId),
             'recent_delivered' => DeliveryService::deliveredBeneficiaries($campaignId, 50),
             'late' => DeliveryService::pendingLate($campaignId, 100),
@@ -171,6 +197,19 @@ final class MobileSyncService
 
         $max = max($b, $c, '1970-01-01 00:00:00');
         return $max;
+    }
+
+    public static function assignedCount(int $campaignId): int
+    {
+        $pdo = Database::getConnection();
+        $stmt = $pdo->prepare("
+            SELECT COUNT(*) FROM beneficiaries
+            WHERE campaign_id = ?
+              AND day_index IS NOT NULL AND day_index > 0
+              AND disbursement_code IS NOT NULL AND disbursement_code != ''
+        ");
+        $stmt->execute([$campaignId]);
+        return (int) $stmt->fetchColumn();
     }
 
     /** @return list<array<string, mixed>> */
@@ -227,14 +266,21 @@ final class MobileSyncService
             'delivered_at' => $enriched['delivered_at'] ?? null,
             'delivery_type' => $enriched['delivery_type'] ?? null,
             'actual_delivery_date' => $enriched['actual_delivery_date'] ?? null,
+            'received_by_mode' => $enriched['received_by_mode'] ?? null,
+            'received_by_name' => $enriched['received_by_name'] ?? null,
+            'received_by_label' => DeliveryService::receivedByLabel(
+                $enriched['received_by_mode'] ?? null,
+                $enriched['received_by_name'] ?? null
+            ),
             'delivered_by_name' => $enriched['delivered_by_name'] ?? null,
             'updated_at' => $enriched['updated_at'] ?? null,
         ];
     }
 
     /** @param array<string, mixed> $campaign */
-    public static function formatCampaign(array $campaign): array
+    public static function formatCampaign(array $campaign, ?int $assignedCount = null): array
     {
+        $assigned = $assignedCount ?? self::assignedCount((int) ($campaign['id'] ?? 0));
         return [
             'id' => (int) $campaign['id'],
             'name' => $campaign['name'],
@@ -245,12 +291,20 @@ final class MobileSyncService
             'delivery_closed_at' => $campaign['delivery_closed_at'] ?? null,
             'campaign_active' => DeliveryService::isCampaignActive($campaign),
             'opening_quantity' => (int) ($campaign['opening_quantity'] ?? 0),
+            'beneficiary_count' => $assigned,
+            'assigned_count' => $assigned,
         ];
     }
 
     /** @param array<string, mixed> $stats */
-    public static function formatStock(array $stats): array
+    public static function formatStock(array $stats, ?int $assignedCount = null): array
     {
+        $assigned = $assignedCount;
+        if ($assigned === null) {
+            $pending = (int) ($stats['pending'] ?? 0);
+            $delivered = (int) ($stats['delivered'] ?? 0);
+            $assigned = $pending + $delivered;
+        }
         return [
             'opening_quantity' => (int) ($stats['opening_quantity'] ?? 0),
             'delivered' => (int) ($stats['delivered'] ?? 0),
@@ -262,6 +316,7 @@ final class MobileSyncService
             'planned_today' => (int) ($stats['planned_today'] ?? 0),
             'campaign_active' => (bool) ($stats['campaign_active'] ?? false),
             'total_beneficiaries' => (int) ($stats['total_beneficiaries'] ?? 0),
+            'assigned_count' => $assigned,
         ];
     }
 }

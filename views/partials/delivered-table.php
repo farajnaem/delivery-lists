@@ -28,7 +28,7 @@ $codeSuffix = $codeSuffix ?? '';
     <table class="data-table">
         <thead>
             <tr>
-                <th>الكود</th><th>الاسم</th><th>الهوية</th><th>موعده</th><th>النوع</th><th>وقت التسليم</th><th>بواسطة</th>
+                <th>الكود</th><th>الاسم</th><th>الهوية</th><th>موعده</th><th>النوع</th><th>الاستلام</th><th>وقت التسليم</th><th>بواسطة</th>
             </tr>
         </thead>
         <tbody>
@@ -45,6 +45,7 @@ $codeSuffix = $codeSuffix ?? '';
                 <span class="badge badge-ok">في الموعد</span>
                 <?php endif; ?>
             </td>
+            <td><?= e(\App\DeliveryService::receivedByLabel($r['received_by_mode'] ?? null, $r['received_by_name'] ?? null) ?: '—') ?></td>
             <td><?= e($r['delivered_at'] ?? '') ?></td>
             <td><?= e($r['delivered_by_name'] ?? '') ?></td>
         </tr>

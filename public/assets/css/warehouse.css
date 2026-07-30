@@ -145,6 +145,32 @@ body.warehouse-app {
 .wh-result dd { margin: 0; font-weight: 600; }
 .wh-result-actions { margin-top: 1rem; display: flex; gap: 0.5rem; }
 
+.wh-receive-box {
+    margin-top: 0.85rem;
+    padding: 0.75rem;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.55);
+}
+.wh-receive-title {
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+}
+.wh-radio {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    margin: 0.35rem 0;
+    font-size: 0.95rem;
+}
+.wh-recv-name { margin-top: 0.55rem; }
+.wh-recv-name .wh-label {
+    display: block;
+    margin-bottom: 0.25rem;
+    font-size: 0.85rem;
+}
+.wh-recv-name .wh-input { width: 100%; }
+
 .wh-alert {
     padding: 0.75rem 1rem;
     border-radius: 10px;
