@@ -5,23 +5,39 @@ use App\DeliveryService;
 $codePrefix = (string) ($campaign['parcel_code'] ?? '');
 $codeSuffix = (string) ($campaign['parcel_code_suffix'] ?? '');
 $q = (string) ($q ?? '');
+$filter = (string) ($filter ?? '');
 $page = max(1, (int) ($page ?? 1));
 $total = (int) ($total ?? 0);
 $perPage = max(1, (int) ($perPage ?? 100));
 $totalPages = max(1, (int) ceil($total / $perPage));
 $rows = $rows ?? [];
 $canManualDeliver = !empty($canManualDeliver);
+$anomalyCount = (int) ($anomalyCount ?? 0);
+$unassignedCount = (int) ($unassignedCount ?? 0);
+$noMobileCount = (int) ($noMobileCount ?? 0);
+$cid = (int) $campaign['id'];
+
+$filterUrl = static function (string $f = '', string $query = '') use ($cid): string {
+    $url = '/campaigns/beneficiaries?id=' . $cid;
+    if ($f !== '') {
+        $url .= '&filter=' . rawurlencode($f);
+    }
+    if ($query !== '') {
+        $url .= '&q=' . rawurlencode($query);
+    }
+    return url($url);
+};
 
 page_header(
     'كشف المستفيدين — ' . (string) $campaign['name'],
     [
         ['label' => 'العمليات', 'url' => '/'],
-        ['label' => (string) $campaign['name'], 'url' => '/campaigns/view?id=' . (int) $campaign['id']],
+        ['label' => (string) $campaign['name'], 'url' => '/campaigns/view?id=' . $cid],
         ['label' => 'كشف المستفيدين'],
     ],
     [
-        ['label' => 'عودة للعملية', 'url' => '/campaigns/view?id=' . (int) $campaign['id']],
-        ['label' => 'Excel الكامل', 'url' => '/campaigns/export?id=' . (int) $campaign['id']],
+        ['label' => 'عودة للعملية', 'url' => '/campaigns/view?id=' . $cid],
+        ['label' => 'Excel الكامل', 'url' => '/campaigns/export?id=' . $cid],
     ],
     'بحث بالهوية أو الاسم أو الكود — يشمل المعيّنين وغير المعيّنين والمستلمين'
 );
@@ -29,16 +45,42 @@ page_header(
 
 <div class="card">
     <form method="get" action="<?= e(url('/campaigns/beneficiaries')) ?>" class="actions-row" style="align-items:flex-end;gap:0.75rem;flex-wrap:wrap">
-        <input type="hidden" name="id" value="<?= (int) $campaign['id'] ?>">
+        <input type="hidden" name="id" value="<?= $cid ?>">
+        <?php if ($filter !== ''): ?>
+        <input type="hidden" name="filter" value="<?= e($filter) ?>">
+        <?php endif; ?>
         <div style="flex:1;min-width:220px">
             <label class="field-label">بحث</label>
             <input type="search" name="q" class="form-control" value="<?= e($q) ?>" placeholder="رقم الهوية أو الاسم أو الكود" autofocus>
         </div>
         <button type="submit" class="btn">بحث</button>
         <?php if ($q !== ''): ?>
-        <a class="btn btn-ghost" href="<?= e(url('/campaigns/beneficiaries?id=' . (int) $campaign['id'])) ?>">مسح</a>
+        <a class="btn btn-ghost" href="<?= e($filterUrl($filter)) ?>">مسح البحث</a>
         <?php endif; ?>
     </form>
+
+    <?php if ($canManualDeliver): ?>
+    <div class="actions-row" style="margin-top:0.85rem;gap:0.5rem;flex-wrap:wrap">
+        <a class="btn btn-sm <?= $filter === '' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('', $q)) ?>">الكل</a>
+        <a class="btn btn-sm <?= $filter === 'anomaly' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('anomaly', $q)) ?>">
+            حالات مثل رامز (<?= ar_digits($anomalyCount) ?>)
+        </a>
+        <a class="btn btn-sm <?= $filter === 'unassigned' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('unassigned', $q)) ?>">
+            غير معيّنين (<?= ar_digits($unassignedCount) ?>)
+        </a>
+        <a class="btn btn-sm <?= $filter === 'no_mobile' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('no_mobile', $q)) ?>">
+            معيّن بلا جوال (<?= ar_digits($noMobileCount) ?>)
+        </a>
+    </div>
+    <?php if ($filter === 'anomaly'): ?>
+    <p class="text-muted" style="margin:0.75rem 0 0">
+        هؤلاء <strong>غير معيّنين</strong> لكن عليهم أثر تسليم في السيرفر (مستلم / تاريخ / حدث).
+        حدّدهم وسجّل استلاماً يدوياً إن لزم، أو راجع إن كانت الحالة صحيحة.
+        إذا القائمة فارغة: التسليمات الميدانية ربما لم تُسجَّل على السيرفر (أوفلاين فقط) — ابحث بالاسم يدوياً من كشف الموظفين.
+    </p>
+    <?php endif; ?>
+    <?php endif; ?>
+
     <p class="text-muted" style="margin:0.75rem 0 0">
         النتيجة: <strong><?= ar_digits($total) ?></strong>
         — صفحة <?= ar_digits($page) ?> من <?= ar_digits($totalPages) ?>
@@ -49,17 +91,17 @@ page_header(
 <div class="card">
     <h2 class="panel-title" style="margin-top:0">استلام يدوي (مدير النظام)</h2>
     <p class="text-muted" style="margin:0 0 0.75rem">
-        لمن استلم فعلياً ولم يظهر في كشوف الرسائل/التسليم، أو حالته «غير معيّن».
-        بعد التسجيل لن يُعاد تعيينه في أيام لاحقة ولن يظهر كغير مستلم.
+        لمن استلم فعلياً ولم يظهر في الكشوف، أو حالته غير معيّن. بعد التسجيل لن يُعاد تعيينه في أيام لاحقة.
     </p>
 </div>
 <?php endif; ?>
 
 <form method="post" action="<?= e(url('/campaigns/beneficiaries/mark-delivered')) ?>" id="manual-deliver-form">
     <?= \App\Csrf::field() ?>
-    <input type="hidden" name="campaign_id" value="<?= (int) $campaign['id'] ?>">
+    <input type="hidden" name="campaign_id" value="<?= $cid ?>">
     <input type="hidden" name="q" value="<?= e($q) ?>">
     <input type="hidden" name="page" value="<?= (int) $page ?>">
+    <input type="hidden" name="filter" value="<?= e($filter) ?>">
 
 <?php if ($canManualDeliver): ?>
 <div class="card actions-row" style="align-items:flex-end;gap:0.75rem;flex-wrap:wrap">
@@ -109,12 +151,13 @@ page_header(
             if ($display === '' && !empty($b['sort_order'])) {
                 $display = (string) $b['sort_order'];
             }
+            $precheck = $canManualDeliver && !$delivered && $filter === 'anomaly';
         ?>
         <tr>
             <?php if ($canManualDeliver): ?>
             <td>
                 <?php if (!$delivered): ?>
-                <input type="checkbox" name="beneficiary_ids[]" value="<?= (int) $b['id'] ?>" class="manual-check">
+                <input type="checkbox" name="beneficiary_ids[]" value="<?= (int) $b['id'] ?>" class="manual-check" <?= $precheck ? 'checked' : '' ?>>
                 <?php endif; ?>
             </td>
             <?php endif; ?>
@@ -155,10 +198,16 @@ page_header(
 <?php if ($totalPages > 1): ?>
 <div class="actions-row" style="justify-content:center;gap:0.5rem;flex-wrap:wrap">
     <?php for ($p = 1; $p <= $totalPages; $p++): ?>
+        <?php
+            $pageUrl = '/campaigns/beneficiaries?id=' . $cid
+                . ($filter !== '' ? '&filter=' . rawurlencode($filter) : '')
+                . ($q !== '' ? '&q=' . rawurlencode($q) : '')
+                . '&page=' . $p;
+        ?>
         <?php if ($p === $page): ?>
         <span class="btn btn-sm"><?= ar_digits($p) ?></span>
         <?php else: ?>
-        <a class="btn btn-sm btn-outline" href="<?= e(url('/campaigns/beneficiaries?id=' . (int) $campaign['id'] . '&q=' . rawurlencode($q) . '&page=' . $p)) ?>"><?= ar_digits($p) ?></a>
+        <a class="btn btn-sm btn-outline" href="<?= e(url($pageUrl)) ?>"><?= ar_digits($p) ?></a>
         <?php endif; ?>
     <?php endfor; ?>
 </div>

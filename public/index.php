@@ -770,13 +770,15 @@ if ($uri === '/campaigns/beneficiaries' && $method === 'GET') {
     }
     $q = trim((string) ($_GET['q'] ?? ''));
     $page = max(1, (int) ($_GET['page'] ?? 1));
-    $result = CampaignService::searchAllBeneficiaries($id, $q, $page, 100);
+    $filter = trim((string) ($_GET['filter'] ?? ''));
+    $result = CampaignService::searchAllBeneficiaries($id, $q, $page, 100, $filter);
     $codePrefix = (string) ($campaign['parcel_code'] ?? '');
     $codeSuffix = (string) ($campaign['parcel_code_suffix'] ?? '');
     $rows = array_map(
         static fn (array $b): array => ArabicFormat::localizeBeneficiary($b, $codePrefix, $codeSuffix),
         $result['rows']
     );
+    $canManual = RoleHelper::canBulkDeliver(Auth::role() ?? '');
     view('campaigns/beneficiaries', [
         'campaign' => $campaign,
         'rows' => $rows,
@@ -784,7 +786,15 @@ if ($uri === '/campaigns/beneficiaries' && $method === 'GET') {
         'page' => $result['page'],
         'perPage' => $result['per_page'],
         'q' => $q,
-        'canManualDeliver' => RoleHelper::canBulkDeliver(Auth::role() ?? ''),
+        'filter' => $result['filter'] ?? $filter,
+        'canManualDeliver' => $canManual,
+        'anomalyCount' => $canManual ? CampaignService::countDeliveryAnomalies($id) : 0,
+        'unassignedCount' => $canManual
+            ? CampaignService::searchAllBeneficiaries($id, '', 1, 20, 'unassigned')['total']
+            : 0,
+        'noMobileCount' => $canManual
+            ? CampaignService::searchAllBeneficiaries($id, '', 1, 20, 'no_mobile')['total']
+            : 0,
     ]);
     exit;
 }
@@ -806,6 +816,7 @@ if ($uri === '/campaigns/beneficiaries/mark-delivered' && $method === 'POST') {
     }
     $q = trim((string) ($_POST['q'] ?? ''));
     $page = max(1, (int) ($_POST['page'] ?? 1));
+    $filter = trim((string) ($_POST['filter'] ?? ''));
     $result = DeliveryService::adminMarkDeliveredMany(
         $id,
         (int) (Auth::id() ?? 0),
@@ -814,6 +825,7 @@ if ($uri === '/campaigns/beneficiaries/mark-delivered' && $method === 'POST') {
     );
     $back = '/campaigns/beneficiaries?id=' . $id
         . ($q !== '' ? '&q=' . rawurlencode($q) : '')
+        . ($filter !== '' ? '&filter=' . rawurlencode($filter) : '')
         . ($page > 1 ? '&page=' . $page : '');
     if (!$result['ok']) {
         flash('error', $result['error'] ?? 'فشل الاستلام اليدوي.');

@@ -283,6 +283,9 @@ $defaultDayWorkEnd = substr((string) ($campaign['work_end'] ?? '15:00'), 0, 5);
 
         <?php if ($isGenerated && !empty($canExport)): ?>
         <a href="<?= e(url('/campaigns/beneficiaries?id=' . (int) $campaign['id'])) ?>" class="btn">كشف المستفيدين (بحث كامل)</a>
+        <?php if (!empty($canBulkDeliver)): ?>
+        <a href="<?= e(url('/campaigns/beneficiaries?id=' . (int) $campaign['id'] . '&filter=anomaly')) ?>" class="btn btn-outline">حالات مثل رامز (مراجعة)</a>
+        <?php endif; ?>
         <a href="<?= e(url('/campaigns/export?id=' . (int) $campaign['id'])) ?>" class="btn">تنزيل Excel الكامل</a>
         <?php endif; ?>
 

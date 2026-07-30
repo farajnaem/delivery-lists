@@ -207,18 +207,36 @@ final class CampaignService
     /**
      * قائمة مستفيدين قابلة للبحث (كل الحالات: معيّن / غير معيّن / مستلم).
      *
-     * @return array{rows:list<array>,total:int,page:int,per_page:int}
+     * $filter:
+     * - '' : الكل
+     * - anomaly : مثل رامز — غير معيّن لكن عليه أثر تسليم في السيرفر
+     * - unassigned : غير معيّن وغير مستلم
+     * - no_mobile : معيّن قيد التسليم بدون جوال (غالباً غائب عن كشف الرسائل)
+     *
+     * @return array{rows:list<array>,total:int,page:int,per_page:int,filter:string}
      */
     public static function searchAllBeneficiaries(
         int $campaignId,
         string $query = '',
         int $page = 1,
         int $perPage = 100,
+        string $filter = '',
     ): array {
         $pdo = Database::getConnection();
         $page = max(1, $page);
         $perPage = max(20, min(500, $perPage));
         $offset = ($page - 1) * $perPage;
+        $filter = strtolower(trim($filter));
+        if (!in_array($filter, ['', 'all', 'anomaly', 'unassigned', 'no_mobile'], true)) {
+            $filter = '';
+        }
+        if ($filter === 'all') {
+            $filter = '';
+        }
+
+        $delivered = DeliveryService::STATUS_DELIVERED;
+        $unassignedExpr = '(b.day_index IS NULL OR b.day_index = 0 OR b.disbursement_code IS NULL OR b.disbursement_code = \'\')';
+        $assignedExpr = '(b.day_index IS NOT NULL AND b.day_index > 0 AND b.disbursement_code IS NOT NULL AND b.disbursement_code != \'\')';
 
         $where = 'b.campaign_id = ?';
         $params = [$campaignId];
@@ -235,6 +253,29 @@ final class CampaignService
             )";
             $like = '%' . $query . '%';
             array_push($params, $nid, $like, $like, $like, $nid);
+        }
+
+        if ($filter === 'anomaly') {
+            $where .= " AND {$unassignedExpr} AND (
+                b.receipt_status = ?
+                OR (b.delivered_at IS NOT NULL AND CAST(b.delivered_at AS CHAR) != '')
+                OR b.delivered_by IS NOT NULL
+                OR (b.actual_delivery_date IS NOT NULL AND b.actual_delivery_date != '')
+                OR EXISTS (
+                    SELECT 1 FROM delivery_events e
+                    WHERE e.beneficiary_id = b.id AND e.campaign_id = b.campaign_id
+                      AND e.action = 'delivered'
+                )
+            )";
+            $params[] = $delivered;
+        } elseif ($filter === 'unassigned') {
+            $where .= " AND {$unassignedExpr} AND (b.receipt_status IS NULL OR b.receipt_status != ?)";
+            $params[] = $delivered;
+        } elseif ($filter === 'no_mobile') {
+            $where .= " AND {$assignedExpr}
+              AND (b.receipt_status IS NULL OR b.receipt_status != ?)
+              AND (b.mobile IS NULL OR TRIM(b.mobile) = '' OR TRIM(b.mobile) = '0')";
+            $params[] = $delivered;
         }
 
         $countStmt = $pdo->prepare("SELECT COUNT(*) FROM beneficiaries b WHERE {$where}");
@@ -260,7 +301,14 @@ final class CampaignService
             'total' => $total,
             'page' => $page,
             'per_page' => $perPage,
+            'filter' => $filter,
         ];
+    }
+
+    /** عدد الحالات الشبيهة بـ «غير معيّن + أثر تسليم». */
+    public static function countDeliveryAnomalies(int $campaignId): int
+    {
+        return (int) self::searchAllBeneficiaries($campaignId, '', 1, 20, 'anomaly')['total'];
     }
 
     public static function stats(int $campaignId): array
