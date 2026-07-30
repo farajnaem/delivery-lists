@@ -10,6 +10,7 @@ $total = (int) ($total ?? 0);
 $perPage = max(1, (int) ($perPage ?? 100));
 $totalPages = max(1, (int) ceil($total / $perPage));
 $rows = $rows ?? [];
+$canManualDeliver = !empty($canManualDeliver);
 
 page_header(
     'كشف المستفيدين — ' . (string) $campaign['name'],
@@ -44,11 +45,43 @@ page_header(
     </p>
 </div>
 
+<?php if ($canManualDeliver): ?>
+<div class="card">
+    <h2 class="panel-title" style="margin-top:0">استلام يدوي (مدير النظام)</h2>
+    <p class="text-muted" style="margin:0 0 0.75rem">
+        لمن استلم فعلياً ولم يظهر في كشوف الرسائل/التسليم، أو حالته «غير معيّن».
+        بعد التسجيل لن يُعاد تعيينه في أيام لاحقة ولن يظهر كغير مستلم.
+    </p>
+</div>
+<?php endif; ?>
+
+<form method="post" action="<?= e(url('/campaigns/beneficiaries/mark-delivered')) ?>" id="manual-deliver-form">
+    <?= \App\Csrf::field() ?>
+    <input type="hidden" name="campaign_id" value="<?= (int) $campaign['id'] ?>">
+    <input type="hidden" name="q" value="<?= e($q) ?>">
+    <input type="hidden" name="page" value="<?= (int) $page ?>">
+
+<?php if ($canManualDeliver): ?>
+<div class="card actions-row" style="align-items:flex-end;gap:0.75rem;flex-wrap:wrap">
+    <div style="flex:1;min-width:240px">
+        <label class="field-label">سبب الاستلام اليدوي *</label>
+        <input type="text" name="reason" class="form-control" required
+               placeholder="مثال: استلم من جهاز ميداني ولم يكن بالكشوف المطبوعة">
+    </div>
+    <button type="submit" class="btn" data-confirm="تأكيد تسجيل الاستلام اليدوي للمحددين؟">تسجيل استلام المحددين</button>
+</div>
+<?php endif; ?>
+
 <div class="card table-panel">
     <div class="table-wrap">
     <table class="data-table">
         <thead>
             <tr>
+                <?php if ($canManualDeliver): ?>
+                <th style="width:2.5rem">
+                    <input type="checkbox" id="manual-check-all" title="تحديد الكل" aria-label="تحديد الكل">
+                </th>
+                <?php endif; ?>
                 <th>الاسم</th>
                 <th>الهوية</th>
                 <th>الجوال</th>
@@ -62,7 +95,7 @@ page_header(
         </thead>
         <tbody>
         <?php if ($rows === []): ?>
-        <tr><td colspan="9" class="text-muted">لا نتائج.</td></tr>
+        <tr><td colspan="<?= $canManualDeliver ? 10 : 9 ?>" class="text-muted">لا نتائج.</td></tr>
         <?php endif; ?>
         <?php foreach ($rows as $b): ?>
         <?php
@@ -78,6 +111,13 @@ page_header(
             }
         ?>
         <tr>
+            <?php if ($canManualDeliver): ?>
+            <td>
+                <?php if (!$delivered): ?>
+                <input type="checkbox" name="beneficiary_ids[]" value="<?= (int) $b['id'] ?>" class="manual-check">
+                <?php endif; ?>
+            </td>
+            <?php endif; ?>
             <td><?= e((string) ($b['name'] ?? '')) ?></td>
             <td><?= e((string) ($b['national_id'] ?? '')) ?></td>
             <td><?= e((string) ($b['mobile'] ?? '')) ?></td>
@@ -110,6 +150,7 @@ page_header(
     </table>
     </div>
 </div>
+</form>
 
 <?php if ($totalPages > 1): ?>
 <div class="actions-row" style="justify-content:center;gap:0.5rem;flex-wrap:wrap">
@@ -121,4 +162,18 @@ page_header(
         <?php endif; ?>
     <?php endfor; ?>
 </div>
+<?php endif; ?>
+
+<?php if ($canManualDeliver): ?>
+<script>
+(function () {
+    var all = document.getElementById('manual-check-all');
+    if (!all) return;
+    all.addEventListener('change', function () {
+        document.querySelectorAll('.manual-check').forEach(function (el) {
+            el.checked = all.checked;
+        });
+    });
+})();
+</script>
 <?php endif; ?>

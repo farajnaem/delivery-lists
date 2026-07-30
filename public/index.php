@@ -784,7 +784,47 @@ if ($uri === '/campaigns/beneficiaries' && $method === 'GET') {
         'page' => $result['page'],
         'perPage' => $result['per_page'],
         'q' => $q,
+        'canManualDeliver' => RoleHelper::canBulkDeliver(Auth::role() ?? ''),
     ]);
+    exit;
+}
+
+if ($uri === '/campaigns/beneficiaries/mark-delivered' && $method === 'POST') {
+    Auth::requireRole(fn ($r) => RoleHelper::canBulkDeliver($r));
+    $id = (int) ($_POST['campaign_id'] ?? 0);
+    if (!Csrf::verify($_POST['_csrf'] ?? null)) {
+        flash('error', Csrf::failureMessage());
+        redirect('/campaigns/beneficiaries?id=' . $id);
+    }
+    $ids = $_POST['beneficiary_ids'] ?? [];
+    if (!is_array($ids)) {
+        $ids = [];
+    }
+    $single = (int) ($_POST['beneficiary_id'] ?? 0);
+    if ($single > 0) {
+        $ids[] = $single;
+    }
+    $q = trim((string) ($_POST['q'] ?? ''));
+    $page = max(1, (int) ($_POST['page'] ?? 1));
+    $result = DeliveryService::adminMarkDeliveredMany(
+        $id,
+        (int) (Auth::id() ?? 0),
+        $ids,
+        (string) ($_POST['reason'] ?? '')
+    );
+    $back = '/campaigns/beneficiaries?id=' . $id
+        . ($q !== '' ? '&q=' . rawurlencode($q) : '')
+        . ($page > 1 ? '&page=' . $page : '');
+    if (!$result['ok']) {
+        flash('error', $result['error'] ?? 'فشل الاستلام اليدوي.');
+        redirect($back);
+    }
+    $msg = 'تم تسجيل استلام يدوي لـ ' . (int) ($result['delivered'] ?? 0) . ' مستفيد.';
+    if (!empty($result['failed'])) {
+        $msg .= ' (فشل ' . (int) $result['failed'] . ')';
+    }
+    flash('success', $msg);
+    redirect($back);
 }
 
 if ($uri === '/campaigns/view' && $method === 'GET') {

@@ -354,6 +354,7 @@ final class DeliveryService
         ?string $clientId = null,
         ?string $receivedByMode = null,
         ?string $receivedByName = null,
+        bool $requireAssigned = true,
     ): array {
         $pdo = Database::getConnection();
 
@@ -386,7 +387,7 @@ final class DeliveryService
             return ['ok' => false, 'error' => 'المستفيد غير موجود.'];
         }
 
-        if (!self::isAssignedForDelivery($beneficiary)) {
+        if ($requireAssigned && !self::isAssignedForDelivery($beneficiary)) {
             return [
                 'ok' => false,
                 'error' => 'هذا المستفيد غير مدرج في أيام التوزيع المعتمدة بعد (بدون كود صرف) — لا يمكن تسليمه حتى يُعتمد يومه.',
@@ -403,7 +404,10 @@ final class DeliveryService
         }
 
         $today = date('Y-m-d');
-        $plannedDate = $beneficiary['delivery_date'] ?? $today;
+        $plannedDate = trim((string) ($beneficiary['delivery_date'] ?? ''));
+        if ($plannedDate === '') {
+            $plannedDate = $today;
+        }
         $deliveryType = ($today <= $plannedDate) ? 'on_time' : 'late';
         $now = date('Y-m-d H:i:s');
 
@@ -475,6 +479,89 @@ final class DeliveryService
             (string) ($campaign['parcel_code_suffix'] ?? ''),
             (string) ($campaign['parcel_code'] ?? '')
         ), 'delivery_type' => $deliveryType];
+    }
+
+    /**
+     * استلام يدوي من المدير — حتى لو المستفيد غير معيّن ليوم/كود.
+     * يمنع ظهوره لاحقاً في أيام التوزيع كغير مستلم.
+     *
+     * @return array{ok:bool,error?:string,already?:bool,beneficiary?:array}
+     */
+    public static function adminMarkDelivered(
+        int $campaignId,
+        int $beneficiaryId,
+        int $userId,
+        string $reason = '',
+    ): array {
+        $reason = trim($reason);
+        if ($reason === '') {
+            return ['ok' => false, 'error' => 'سبب الاستلام اليدوي مطلوب (مثال: استلم فعلياً من جهاز ولم يظهر بالكشوف).'];
+        }
+
+        $result = self::markDelivered(
+            $campaignId,
+            $beneficiaryId,
+            $userId,
+            null,
+            self::RECEIVED_BY_SELF,
+            null,
+            false
+        );
+        if (!$result['ok']) {
+            return $result;
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param list<int> $beneficiaryIds
+     * @return array{ok:bool,error?:string,delivered?:int,failed?:int,errors?:list<string>}
+     */
+    public static function adminMarkDeliveredMany(
+        int $campaignId,
+        int $userId,
+        array $beneficiaryIds,
+        string $reason,
+    ): array {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $beneficiaryIds), static fn ($id) => $id > 0)));
+        if ($ids === []) {
+            return ['ok' => false, 'error' => 'اختر مستفيداً واحداً على الأقل.'];
+        }
+        $reason = trim($reason);
+        if ($reason === '') {
+            return ['ok' => false, 'error' => 'سبب الاستلام اليدوي مطلوب.'];
+        }
+
+        $delivered = 0;
+        $failed = 0;
+        $errors = [];
+        foreach ($ids as $bid) {
+            $result = self::adminMarkDelivered($campaignId, $bid, $userId, $reason);
+            if (!empty($result['ok'])) {
+                $delivered++;
+            } else {
+                $failed++;
+                $errors[] = '#' . $bid . ': ' . ($result['error'] ?? 'فشل');
+            }
+        }
+
+        if ($delivered < 1) {
+            return [
+                'ok' => false,
+                'error' => $errors[0] ?? 'تعذّر تسجيل الاستلام.',
+                'delivered' => 0,
+                'failed' => $failed,
+                'errors' => $errors,
+            ];
+        }
+
+        return [
+            'ok' => true,
+            'delivered' => $delivered,
+            'failed' => $failed,
+            'errors' => $errors,
+        ];
     }
 
     /** @param array<string, mixed> $beneficiary */

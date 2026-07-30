@@ -302,10 +302,13 @@ final class CampaignService
     public static function unassignedBeneficiaries(int $campaignId, ?int $limit = null): array
     {
         $pdo = Database::getConnection();
+        // المستلمون لا يُعاد تعيينهم أبداً — حتى لو بلا يوم/كود (استلام يدوي سابق).
+        $delivered = DeliveryService::STATUS_DELIVERED;
         $sql = '
             SELECT id, name, mobile
             FROM beneficiaries
             WHERE campaign_id = ?
+              AND (receipt_status IS NULL OR receipt_status != ?)
               AND (
                     day_index IS NULL OR day_index = 0
                     OR disbursement_code IS NULL OR disbursement_code = \'\'
@@ -316,7 +319,7 @@ final class CampaignService
             $sql .= ' LIMIT ' . (int) $limit;
         }
         $stmt = $pdo->prepare($sql);
-        $stmt->execute([$campaignId]);
+        $stmt->execute([$campaignId, $delivered]);
         return $stmt->fetchAll();
     }
 
