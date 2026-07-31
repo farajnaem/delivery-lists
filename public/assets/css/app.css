@@ -877,6 +877,77 @@ select.form-control { cursor: pointer; }
 }
 .actions-row form { display: inline-flex; gap: var(--space-2); align-items: center; margin: 0; }
 
+/* أبواب العملية / المخزن — تجميع بدل صف أزرار طويل */
+.op-hubs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--space-3);
+    margin: 0 0 var(--space-4);
+}
+.op-hub {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.95rem 1rem;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    text-decoration: none;
+    transition: border-color 0.15s ease, background 0.15s ease;
+}
+.op-hub:hover {
+    border-color: var(--primary);
+    background: var(--primary-soft);
+    color: var(--text);
+    text-decoration: none;
+}
+.op-hub strong { font-size: 0.98rem; font-weight: 650; }
+.op-hub span { color: var(--muted); font-size: 0.82rem; line-height: 1.35; }
+.op-hub-primary {
+    border-color: #99D5CF;
+    background: var(--primary-soft);
+}
+.op-section {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    margin-bottom: var(--space-4);
+    overflow: hidden;
+}
+.op-section-summary {
+    list-style: none;
+    cursor: pointer;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem 1rem;
+    padding: 0.95rem 1.1rem;
+    background: var(--surface-2);
+    user-select: none;
+}
+.op-section-summary::-webkit-details-marker { display: none; }
+.op-section-title { font-weight: 650; font-size: 1rem; }
+.op-section-hint { color: var(--muted); font-size: 0.85rem; }
+.op-section[open] > .op-section-summary {
+    border-bottom: 1px solid var(--border);
+}
+.op-section-body {
+    padding: var(--space-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+}
+.op-section-body > .card:last-child,
+.op-section-body > .danger-zone:last-child {
+    margin-bottom: 0;
+}
+
+@media (max-width: 800px) {
+    .op-hubs { grid-template-columns: 1fr; }
+}
+
 .danger-zone {
     border: 1px solid #FECACA;
     background: #FFF7F7;
