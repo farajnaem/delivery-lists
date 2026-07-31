@@ -782,12 +782,15 @@ if ($uri === '/campaigns/beneficiaries' && $method === 'GET') {
         $result['rows']
     );
     $canManual = RoleHelper::canBulkDeliver(Auth::role() ?? '');
-    $review = $canManual ? CampaignService::reviewCounts($id) : [
+    $canDeleteBeneficiary = RoleHelper::canEditCampaign(Auth::role() ?? '');
+    $review = ($canManual || $canDeleteBeneficiary) ? CampaignService::reviewCounts($id) : [
         'today' => 0,
         'anomaly' => 0,
         'arabic_id' => 0,
         'delivered_no_mobile' => 0,
         'no_mobile' => 0,
+        'unassigned' => 0,
+        'duplicates' => 0,
     ];
     view('campaigns/beneficiaries', [
         'campaign' => $campaign,
@@ -798,9 +801,34 @@ if ($uri === '/campaigns/beneficiaries' && $method === 'GET') {
         'q' => $q,
         'filter' => $result['filter'] ?? $filter,
         'canManualDeliver' => $canManual,
+        'canDeleteBeneficiary' => $canDeleteBeneficiary,
         'reviewCounts' => $review,
     ]);
     exit;
+}
+
+if ($uri === '/campaigns/beneficiaries/delete' && $method === 'POST') {
+    Auth::requireRole(fn ($r) => RoleHelper::canEditCampaign($r));
+    $id = (int) ($_POST['campaign_id'] ?? 0);
+    $beneficiaryId = (int) ($_POST['beneficiary_id'] ?? 0);
+    $q = trim((string) ($_POST['q'] ?? ''));
+    $page = max(1, (int) ($_POST['page'] ?? 1));
+    $filter = trim((string) ($_POST['filter'] ?? ''));
+    $back = '/campaigns/beneficiaries?id=' . $id
+        . ($q !== '' ? '&q=' . rawurlencode($q) : '')
+        . ($filter !== '' ? '&filter=' . rawurlencode($filter) : '')
+        . ($page > 1 ? '&page=' . $page : '');
+    if (!Csrf::verify($_POST['_csrf'] ?? null)) {
+        flash('error', Csrf::failureMessage());
+        redirect($back);
+    }
+    $result = CampaignService::deleteBeneficiary($id, $beneficiaryId);
+    if (!$result['ok']) {
+        flash('error', $result['error'] ?? 'تعذّر الحذف.');
+        redirect($back);
+    }
+    flash('success', 'تم حذف المستفيد' . (!empty($result['name']) ? ': ' . $result['name'] : '') . '.');
+    redirect($back);
 }
 
 if ($uri === '/campaigns/beneficiaries/mark-delivered' && $method === 'POST') {

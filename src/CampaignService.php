@@ -163,6 +163,49 @@ final class CampaignService
         $stmt->execute([$id]);
     }
 
+    /**
+     * حذف مستفيد واحد — للمستلم ممنوع؛ لغير المعيّن مسموح (إزالة تكرار).
+     *
+     * @return array{ok:bool,error?:string,name?:string}
+     */
+    public static function deleteBeneficiary(int $campaignId, int $beneficiaryId): array
+    {
+        $pdo = Database::getConnection();
+        $stmt = $pdo->prepare('SELECT * FROM beneficiaries WHERE id = ? AND campaign_id = ? LIMIT 1');
+        $stmt->execute([$beneficiaryId, $campaignId]);
+        $row = $stmt->fetch();
+        if (!$row) {
+            return ['ok' => false, 'error' => 'المستفيد غير موجود في هذه العملية.'];
+        }
+        if (DeliveryService::isDeliveredStatus($row['receipt_status'] ?? '')) {
+            return ['ok' => false, 'error' => 'لا يمكن حذف مستفيد مستلم — ألغِ التسليم أولاً إن لزم.'];
+        }
+        $assigned = (int) ($row['day_index'] ?? 0) > 0
+            && trim((string) ($row['disbursement_code'] ?? '')) !== '';
+        if ($assigned) {
+            return [
+                'ok' => false,
+                'error' => 'لا يمكن حذف مستفيد معيّن ليوم/كود. ألغِ يومه أولاً أو احذف النسخة غير المعيّنة إن وُجدت.',
+            ];
+        }
+
+        $name = (string) ($row['name'] ?? '');
+        try {
+            $pdo->prepare('DELETE FROM delivery_events WHERE beneficiary_id = ? AND campaign_id = ?')
+                ->execute([$beneficiaryId, $campaignId]);
+        } catch (\Throwable) {
+        }
+        try {
+            $pdo->prepare('DELETE FROM sms_outbox WHERE beneficiary_id = ? AND campaign_id = ?')
+                ->execute([$beneficiaryId, $campaignId]);
+        } catch (\Throwable) {
+        }
+        $pdo->prepare('DELETE FROM beneficiaries WHERE id = ? AND campaign_id = ?')
+            ->execute([$beneficiaryId, $campaignId]);
+
+        return ['ok' => true, 'name' => $name];
+    }
+
     public static function deliveredCount(int $id): int
     {
         $pdo = Database::getConnection();
@@ -211,6 +254,7 @@ final class CampaignService
      * - '' : الكل
      * - anomaly : غير معيّن لكن عليه أثر تسليم في السيرفر
      * - unassigned : غير معيّن وغير مستلم
+     * - duplicates : هويات مكررة داخل العملية
      * - no_mobile : معيّن قيد التسليم بدون جوال (غالباً غائب عن كشف الرسائل)
      * - today : مُسلَّمون اليوم (للمطابقة الميدانية)
      * - delivered_no_mobile : مستلم وجواله فاضي (ما يدخل كشف الرسائل)
@@ -230,7 +274,7 @@ final class CampaignService
         $perPage = max(20, min(500, $perPage));
         $offset = ($page - 1) * $perPage;
         $filter = strtolower(trim($filter));
-        $allowed = ['', 'all', 'anomaly', 'unassigned', 'no_mobile', 'today', 'delivered_no_mobile', 'arabic_id'];
+        $allowed = ['', 'all', 'anomaly', 'unassigned', 'no_mobile', 'today', 'delivered_no_mobile', 'arabic_id', 'duplicates'];
         if (!in_array($filter, $allowed, true)) {
             $filter = '';
         }
@@ -242,6 +286,7 @@ final class CampaignService
         $unassignedExpr = '(b.day_index IS NULL OR b.day_index = 0 OR b.disbursement_code IS NULL OR b.disbursement_code = \'\')';
         $assignedExpr = '(b.day_index IS NOT NULL AND b.day_index > 0 AND b.disbursement_code IS NOT NULL AND b.disbursement_code != \'\')';
         $arabicIdExpr = self::sqlNationalIdHasIndicDigits('b.national_id');
+        $nidExpr = ArabicFormat::sqlNormalizeNationalIdExpr('b.national_id');
         $today = date('Y-m-d');
 
         $where = 'b.campaign_id = ?';
@@ -249,7 +294,6 @@ final class CampaignService
         $query = ArabicFormat::toWesternDigits(trim($query));
         if ($query !== '') {
             $nid = ArabicFormat::normalizeNationalId($query);
-            $nidExpr = ArabicFormat::sqlNormalizeNationalIdExpr('b.national_id');
             $where .= " AND (
                 {$nidExpr} = ?
                 OR b.name LIKE ?
@@ -277,6 +321,14 @@ final class CampaignService
         } elseif ($filter === 'unassigned') {
             $where .= " AND {$unassignedExpr} AND (b.receipt_status IS NULL OR b.receipt_status != ?)";
             $params[] = $delivered;
+        } elseif ($filter === 'duplicates') {
+            $nidExpr2 = ArabicFormat::sqlNormalizeNationalIdExpr('b2.national_id');
+            $where .= " AND {$nidExpr} != '' AND EXISTS (
+                SELECT 1 FROM beneficiaries b2
+                WHERE b2.campaign_id = b.campaign_id
+                  AND b2.id != b.id
+                  AND {$nidExpr2} = {$nidExpr}
+            )";
         } elseif ($filter === 'no_mobile') {
             $where .= " AND {$assignedExpr}
               AND (b.receipt_status IS NULL OR b.receipt_status != ?)
@@ -300,10 +352,12 @@ final class CampaignService
         $countStmt->execute($params);
         $total = (int) $countStmt->fetchColumn();
 
-        $orderBy = $filter === 'today'
-            ? 'b.delivered_at DESC, b.id DESC'
-            : 'CASE WHEN b.day_index IS NULL OR b.day_index = 0 THEN 1 ELSE 0 END,
-              b.day_index ASC, b.sort_order ASC, b.id ASC';
+        $orderBy = match ($filter) {
+            'today' => 'b.delivered_at DESC, b.id DESC',
+            'duplicates' => $nidExpr . ' ASC, b.id ASC',
+            default => 'CASE WHEN b.day_index IS NULL OR b.day_index = 0 THEN 1 ELSE 0 END,
+              b.day_index ASC, b.sort_order ASC, b.id ASC',
+        };
 
         $sql = "
             SELECT b.*, u.name AS delivered_by_name
@@ -346,7 +400,7 @@ final class CampaignService
         return (int) self::searchAllBeneficiaries($campaignId, '', 1, 20, 'anomaly')['total'];
     }
 
-    /** @return array{today:int,anomaly:int,arabic_id:int,delivered_no_mobile:int,no_mobile:int} */
+    /** @return array{today:int,anomaly:int,arabic_id:int,delivered_no_mobile:int,no_mobile:int,unassigned:int,duplicates:int} */
     public static function reviewCounts(int $campaignId): array
     {
         return [
@@ -355,6 +409,8 @@ final class CampaignService
             'arabic_id' => (int) self::searchAllBeneficiaries($campaignId, '', 1, 20, 'arabic_id')['total'],
             'delivered_no_mobile' => (int) self::searchAllBeneficiaries($campaignId, '', 1, 20, 'delivered_no_mobile')['total'],
             'no_mobile' => (int) self::searchAllBeneficiaries($campaignId, '', 1, 20, 'no_mobile')['total'],
+            'unassigned' => (int) self::searchAllBeneficiaries($campaignId, '', 1, 20, 'unassigned')['total'],
+            'duplicates' => (int) self::searchAllBeneficiaries($campaignId, '', 1, 20, 'duplicates')['total'],
         ];
     }
 

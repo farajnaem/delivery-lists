@@ -11,8 +11,12 @@ $perPage = max(1, (int) ($perPage ?? 100));
 $totalPages = max(1, (int) ceil($total / $perPage));
 $rows = $rows ?? [];
 $canManualDeliver = !empty($canManualDeliver);
+$canDeleteBeneficiary = !empty($canDeleteBeneficiary);
+$showReviewFilters = $canManualDeliver || $canDeleteBeneficiary;
 $review = is_array($reviewCounts ?? null) ? $reviewCounts : [];
 $cid = (int) $campaign['id'];
+
+$colspan = 9 + ($canManualDeliver ? 1 : 0) + ($canDeleteBeneficiary ? 1 : 0);
 
 $filterUrl = static function (string $f = '', string $query = '') use ($cid): string {
     $url = '/campaigns/beneficiaries?id=' . $cid;
@@ -56,9 +60,16 @@ page_header(
         <?php endif; ?>
     </form>
 
-    <?php if ($canManualDeliver): ?>
+    <?php if ($showReviewFilters): ?>
     <div class="actions-row" style="margin-top:0.85rem;gap:0.5rem;flex-wrap:wrap">
         <a class="btn btn-sm <?= $filter === '' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('', $q)) ?>">الكل</a>
+        <a class="btn btn-sm <?= $filter === 'unassigned' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('unassigned', $q)) ?>">
+            غير معيّنين (<?= ar_digits((int) ($review['unassigned'] ?? 0)) ?>)
+        </a>
+        <a class="btn btn-sm <?= $filter === 'duplicates' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('duplicates', $q)) ?>">
+            مكررون (<?= ar_digits((int) ($review['duplicates'] ?? 0)) ?>)
+        </a>
+        <?php if ($canManualDeliver): ?>
         <a class="btn btn-sm <?= $filter === 'today' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('today', $q)) ?>">
             مستلمو اليوم (<?= ar_digits((int) ($review['today'] ?? 0)) ?>)
         </a>
@@ -74,9 +85,17 @@ page_header(
         <a class="btn btn-sm <?= $filter === 'no_mobile' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('no_mobile', $q)) ?>">
             معيّن بلا جوال (<?= ar_digits((int) ($review['no_mobile'] ?? 0)) ?>)
         </a>
-        <a class="btn btn-sm <?= $filter === 'unassigned' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('unassigned', $q)) ?>">غير معيّنين</a>
+        <?php endif; ?>
     </div>
-    <?php if ($filter === 'anomaly'): ?>
+    <?php if ($filter === 'unassigned'): ?>
+    <p class="text-muted" style="margin:0.75rem 0 0">
+        غير معيّنين ليوم بعد — يمكن حذف المكرر غير المعيّن من عمود الإجراءات.
+    </p>
+    <?php elseif ($filter === 'duplicates'): ?>
+    <p class="text-muted" style="margin:0.75rem 0 0">
+        نفس رقم الهوية يظهر أكثر من مرة. احذف النسخة <strong>غير المعيّنة</strong> واترك المعيّنة/المستلمة.
+    </p>
+    <?php elseif ($filter === 'anomaly'): ?>
     <p class="text-muted" style="margin:0.75rem 0 0">
         غير معيّنين وعليهم أثر تسليم في السيرفر. راجعهم وسجّل استلاماً يدوياً إن لزم حتى لا يُعاد تعيينهم.
     </p>
@@ -127,6 +146,7 @@ page_header(
     <button type="submit" class="btn" data-confirm="تأكيد تسجيل الاستلام اليدوي للمحددين؟">تسجيل استلام المحددين</button>
 </div>
 <?php endif; ?>
+</form>
 
 <div class="card table-panel">
     <div class="table-wrap">
@@ -147,16 +167,20 @@ page_header(
                 <th>الحالة</th>
                 <th>الاستلام</th>
                 <th>أمين المخزن</th>
+                <?php if ($canDeleteBeneficiary): ?>
+                <th>إجراء</th>
+                <?php endif; ?>
             </tr>
         </thead>
         <tbody>
         <?php if ($rows === []): ?>
-        <tr><td colspan="<?= $canManualDeliver ? 10 : 9 ?>" class="text-muted">لا نتائج.</td></tr>
+        <tr><td colspan="<?= (int) $colspan ?>" class="text-muted">لا نتائج.</td></tr>
         <?php endif; ?>
         <?php foreach ($rows as $b): ?>
         <?php
             $assigned = (int) ($b['day_index'] ?? 0) > 0 && trim((string) ($b['disbursement_code'] ?? '')) !== '';
             $delivered = DeliveryService::isDeliveredStatus($b['receipt_status'] ?? '');
+            $canDeleteRow = $canDeleteBeneficiary && !$delivered && !$assigned;
             $display = \App\ParcelCodeHelper::displayForBeneficiary(
                 (string) ($b['disbursement_code'] ?? ''),
                 $codeSuffix !== '' ? $codeSuffix : null,
@@ -171,7 +195,7 @@ page_header(
             <?php if ($canManualDeliver): ?>
             <td>
                 <?php if (!$delivered): ?>
-                <input type="checkbox" name="beneficiary_ids[]" value="<?= (int) $b['id'] ?>" class="manual-check" <?= $precheck ? 'checked' : '' ?>>
+                <input type="checkbox" form="manual-deliver-form" name="beneficiary_ids[]" value="<?= (int) $b['id'] ?>" class="manual-check" <?= $precheck ? 'checked' : '' ?>>
                 <?php endif; ?>
             </td>
             <?php endif; ?>
@@ -201,13 +225,30 @@ page_header(
                 <?php endif; ?>
             </td>
             <td><?= e((string) ($b['delivered_by_name'] ?? '—')) ?></td>
+            <?php if ($canDeleteBeneficiary): ?>
+            <td>
+                <?php if ($canDeleteRow): ?>
+                <form method="post" action="<?= e(url('/campaigns/beneficiaries/delete')) ?>" style="margin:0"
+                      data-confirm="حذف «<?= e((string) ($b['name'] ?? '')) ?>» نهائياً من العملية؟">
+                    <?= \App\Csrf::field() ?>
+                    <input type="hidden" name="campaign_id" value="<?= $cid ?>">
+                    <input type="hidden" name="beneficiary_id" value="<?= (int) $b['id'] ?>">
+                    <input type="hidden" name="q" value="<?= e($q) ?>">
+                    <input type="hidden" name="page" value="<?= (int) $page ?>">
+                    <input type="hidden" name="filter" value="<?= e($filter) ?>">
+                    <button type="submit" class="btn btn-sm btn-danger">حذف</button>
+                </form>
+                <?php else: ?>
+                <span class="text-muted">—</span>
+                <?php endif; ?>
+            </td>
+            <?php endif; ?>
         </tr>
         <?php endforeach; ?>
         </tbody>
     </table>
     </div>
 </div>
-</form>
 
 <?php if ($totalPages > 1): ?>
 <div class="actions-row" style="justify-content:center;gap:0.5rem;flex-wrap:wrap">
