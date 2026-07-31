@@ -202,18 +202,43 @@ try {
         echo "SKIP: disbursement_code dedupe (none)\n";
     }
 
+    // لا تحذف/أعد إنشاء الفهرس في كل Redeploy — على كشوف كبيرة يعلّق الإقلاع ويفشل healthcheck (port 3000)
+    $uniqueExists = false;
     if ($isMysql) {
+        $idx = $pdo->query("
+            SELECT 1
+            FROM information_schema.statistics
+            WHERE table_schema = DATABASE()
+              AND table_name = 'beneficiaries'
+              AND index_name = 'idx_beneficiaries_code'
+              AND non_unique = 0
+            LIMIT 1
+        ")->fetchColumn();
+        $uniqueExists = (bool) $idx;
+    } else {
+        $idx = $pdo->query("
+            SELECT 1 FROM sqlite_master
+            WHERE type = 'index' AND name = 'idx_beneficiaries_code'
+            LIMIT 1
+        ")->fetchColumn();
+        $uniqueExists = (bool) $idx;
+    }
+
+    if ($uniqueExists) {
+        echo "SKIP: unique disbursement_code per campaign (exists)\n";
+    } elseif ($isMysql) {
         try {
             $pdo->exec('ALTER TABLE beneficiaries DROP INDEX idx_beneficiaries_code');
         } catch (Throwable) {
-            // قد يكون الفهرس فريداً مسبقاً أو غير موجود
+            // قد يكون الفهرس غير موجود أو غير فريد
         }
         $pdo->exec('CREATE UNIQUE INDEX idx_beneficiaries_code ON beneficiaries(campaign_id, disbursement_code)');
+        echo "OK: unique disbursement_code per campaign\n";
     } else {
         $pdo->exec('DROP INDEX IF EXISTS idx_beneficiaries_code');
         $pdo->exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_beneficiaries_code ON beneficiaries(campaign_id, disbursement_code)');
+        echo "OK: unique disbursement_code per campaign\n";
     }
-    echo "OK: unique disbursement_code per campaign\n";
 } catch (Throwable $e) {
     echo 'WARN: disbursement_code uniqueness — ' . $e->getMessage() . "\n";
 }

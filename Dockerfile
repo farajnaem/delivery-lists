@@ -35,7 +35,7 @@ ENV APACHE_DOCUMENT_ROOT=/var/www/html/public
 
 EXPOSE 80 3000
 
-HEALTHCHECK --interval=15s --timeout=10s --start-period=90s --retries=6 \
+HEALTHCHECK --interval=15s --timeout=10s --start-period=120s --retries=8 \
     CMD /var/www/html/docker/healthcheck.sh
 
 ENTRYPOINT ["/var/www/html/docker/entrypoint.sh"]

@@ -72,8 +72,12 @@ if uses_mysql; then
     done
 fi
 
-echo "Initializing database schema..."
-php database/install.php || echo "WARNING: DB init failed."
+# شغّل Apache أولاً حتى ينجح healthcheck على المنفذ؛ الـ migrate في الخلفية
+# (سابقاً: migrate يحذف/يعيد فهرس فريد على كل المستفيدين → يعلّق دقائق → Coolify يفشل)
+echo "Initializing database schema in background..."
+(
+    php database/install.php || echo "WARNING: DB init failed."
+) &
 
 echo "Starting Apache on port ${PORT}..."
 exec "$@"
