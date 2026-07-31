@@ -67,6 +67,76 @@ final class ExcelExportService
         return self::saveSpreadsheet($spreadsheet, $campaign, '');
     }
 
+    /**
+     * كشف المرشحين بالكامل كما في قاعدة البيانات (كل الحالات) — ليس كشوف التسليم المعتمدة.
+     */
+    public static function exportCandidates(int $campaignId): string
+    {
+        extend_runtime();
+
+        $campaign = CampaignService::find($campaignId);
+        if (!$campaign) {
+            throw new \RuntimeException('العملية غير موجودة.');
+        }
+
+        $all = CampaignService::beneficiariesDetailed($campaignId);
+        if ($all === []) {
+            throw new \RuntimeException('لا يوجد مرشحون في هذه العملية.');
+        }
+
+        $spreadsheet = new Spreadsheet();
+        $spreadsheet->getDefaultStyle()->getFont()->setName('Arial')->setSize(10);
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('كشف_المرشحين');
+        $sheet->setRightToLeft(true);
+
+        $sheet->setCellValue('A1', 'كشف المرشحين بالكامل — ' . $campaign['name']);
+        $sheet->mergeCells('A1:J1');
+        self::styleSectionTitle($sheet, 'A1:J1');
+
+        $headers = [
+            '#', 'الاسم', 'رقم الهوية', 'رقم الجوال', 'الحالة',
+            'كود الصرف', 'يوم التوزيع', 'تاريخ الموعد', 'شباك', 'تاريخ الاستلام الفعلي',
+        ];
+        self::writeHeaderRow($sheet, 3, $headers);
+
+        $codePrefix = (string) ($campaign['parcel_code'] ?? '');
+        $codeSuffix = (string) ($campaign['parcel_code_suffix'] ?? '');
+        $row = 4;
+        $n = 0;
+        foreach ($all as $b) {
+            $n++;
+            $assigned = self::isAssigned($b);
+            $status = DeliveryService::isDeliveredStatus($b['receipt_status'] ?? '')
+                ? 'مستلم'
+                : ($assigned ? 'قيد التسليم' : 'غير معيّن');
+            $code = ParcelCodeHelper::displayForBeneficiary(
+                (string) ($b['disbursement_code'] ?? ''),
+                $codeSuffix !== '' ? $codeSuffix : null,
+                $codePrefix !== '' ? $codePrefix : null
+            );
+            $sheet->setCellValueExplicit('A' . $row, (string) $n, DataType::TYPE_STRING);
+            $sheet->setCellValueExplicit('B' . $row, (string) ($b['name'] ?? ''), DataType::TYPE_STRING);
+            $sheet->setCellValueExplicit('C' . $row, ArabicFormat::toWesternDigits((string) ($b['national_id'] ?? '')), DataType::TYPE_STRING);
+            $sheet->setCellValueExplicit('D' . $row, ArabicFormat::toWesternDigits((string) ($b['mobile'] ?? '')), DataType::TYPE_STRING);
+            $sheet->setCellValueExplicit('E' . $row, $status, DataType::TYPE_STRING);
+            $sheet->setCellValueExplicit('F' . $row, $code !== '' ? $code : '—', DataType::TYPE_STRING);
+            $sheet->setCellValueExplicit('G' . $row, $assigned ? (string) (int) ($b['day_index'] ?? 0) : '—', DataType::TYPE_STRING);
+            $sheet->setCellValueExplicit('H' . $row, (string) ($b['delivery_date'] ?? '—'), DataType::TYPE_STRING);
+            $sheet->setCellValueExplicit('I' . $row, $assigned ? (string) (int) ($b['window_num'] ?? 0) : '—', DataType::TYPE_STRING);
+            $sheet->setCellValueExplicit('J' . $row, (string) ($b['actual_delivery_date'] ?? $b['delivered_at'] ?? '—'), DataType::TYPE_STRING);
+            $row++;
+        }
+
+        $last = max(3, $row - 1);
+        self::borderAll($sheet, 'A3:J' . $last);
+        foreach (['A' => 5, 'B' => 28, 'C' => 16, 'D' => 14, 'E' => 12, 'F' => 14, 'G' => 10, 'H' => 12, 'I' => 8, 'J' => 16] as $col => $w) {
+            $sheet->getColumnDimension($col)->setWidth($w);
+        }
+
+        return self::saveSpreadsheet($spreadsheet, $campaign, 'مرشحين_كامل');
+    }
+
     /** تصدير كشوف التسليم ليوم واحد فقط (شبابيك ذلك اليوم). */
     public static function exportDeliveryDay(int $campaignId, int $dayIndex): string
     {

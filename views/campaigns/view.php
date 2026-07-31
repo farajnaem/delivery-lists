@@ -114,8 +114,8 @@ $defaultDayWorkEnd = substr((string) ($campaign['work_end'] ?? '15:00'), 0, 5);
 
 <?php if ($totalBen > 0): ?>
 <div class="card">
-    <h2 class="panel-title" style="margin-top:0">بحث في كامل الطرد</h2>
-    <p class="text-muted" style="margin:0 0 0.75rem">بالاسم أو رقم الهوية أو الكود — المعيّنين وغير المعيّنين والمستلمين.</p>
+    <h2 class="panel-title" style="margin-top:0">بحث في كشف المرشحين بالكامل</h2>
+    <p class="text-muted" style="margin:0 0 0.75rem">بالاسم أو رقم الهوية أو الكود — كل من في الكشف المرفوع (معيّن / غير معيّن / مستلم) مع بيان حالته.</p>
     <form method="get" action="<?= e(url('/campaigns/beneficiaries')) ?>" class="actions-row" style="align-items:flex-end;gap:0.75rem;flex-wrap:wrap">
         <input type="hidden" name="id" value="<?= $cid ?>">
         <div style="flex:1;min-width:240px">
@@ -124,6 +124,7 @@ $defaultDayWorkEnd = substr((string) ($campaign['work_end'] ?? '15:00'), 0, 5);
                    placeholder="الاسم أو رقم الهوية أو الكود" required autofocus>
         </div>
         <button type="submit" class="btn">بحث</button>
+        <a class="btn btn-outline" href="<?= e(url('/campaigns/beneficiaries?id=' . $cid)) ?>">فتح الكشف</a>
     </form>
 </div>
 <?php endif; ?>
@@ -133,9 +134,13 @@ $defaultDayWorkEnd = substr((string) ($campaign['work_end'] ?? '15:00'), 0, 5);
         <strong>أيام التوزيع</strong>
         <span>اعتماد يوم، إلغاء آخر يوم، توليد</span>
     </a>
+    <a class="op-hub" href="#hub-candidates">
+        <strong>كشف المرشحين</strong>
+        <span>الكشف الكامل، إضافة مجموعة، حذف غير معيّن</span>
+    </a>
     <a class="op-hub" href="#hub-view">
         <strong>العرض والتنزيل</strong>
-        <span>Excel، رسائل، كشوف يوم بيوم</span>
+        <span>كشوف التسليم، رسائل، يوم بيوم</span>
     </a>
     <a class="op-hub op-hub-primary" href="<?= $isGenerated && !empty($canViewStock) ? e(url('/campaigns/stock?id=' . $cid)) : '#hub-stock' ?>">
         <strong>المخزن والتسليم</strong>
@@ -290,10 +295,56 @@ $defaultDayWorkEnd = substr((string) ($campaign['work_end'] ?? '15:00'), 0, 5);
     </div>
 </details>
 
+<details class="op-section" id="hub-candidates" open>
+    <summary class="op-section-summary">
+        <span class="op-section-title">كشف المرشحين بالكامل</span>
+        <span class="op-section-hint">نفس الكشف المرفوع + الحالة — البحث والحذف والإضافة</span>
+    </summary>
+    <div class="op-section-body">
+
+    <div class="card" style="box-shadow:none;border:1px solid var(--border)">
+        <h2 class="panel-title" style="margin-top:0">كشف المرشحين بالكامل</h2>
+        <p class="text-muted" style="margin:0 0 0.75rem">
+            هذا هو الكشف الأصلي في النظام (كل الأسماء والهويات المرفوعة) مع بيان الحالة:
+            غير معيّن / قيد التسليم / مستلم. البحث أعلاه يفتح نفس الكشف.
+        </p>
+        <div class="actions-row" style="flex-wrap:wrap;gap:0.5rem">
+            <a class="btn" href="<?= e(url('/campaigns/beneficiaries?id=' . $cid)) ?>">فتح الكشف والبحث</a>
+            <a class="btn btn-outline" href="<?= e(url('/campaigns/beneficiaries?id=' . $cid . '&filter=unassigned')) ?>">غير المعيّنين فقط</a>
+            <?php if (!empty($canExport) && $totalBen > 0): ?>
+            <a class="btn btn-outline" href="<?= e(url('/campaigns/export-candidates?id=' . $cid)) ?>">تنزيل كشف المرشحين (Excel)</a>
+            <?php endif; ?>
+        </div>
+    </div>
+
+    <?php if (!empty($canEdit) && $totalBen > 0): ?>
+    <div class="card" style="box-shadow:none;border:1px solid var(--border)">
+        <h2 class="panel-title" style="margin-top:0">إضافة مجموعة لغير المعيّنين</h2>
+        <p class="text-muted" style="margin:0 0 0.75rem">
+            ارفع Excel بنفس أعمدة الكشف (الاسم، رقم الهوية، الجوال). يُضاف الجدد فقط كـ«غير معيّن»
+            لأيام التسليم القادمة. أي صف بنفس رقم الهوية أو نفس الاسم بالكامل الموجود مسبقاً يُتجاهل.
+            لا يمس المعيّنين أو المستلمين.
+        </p>
+        <form method="post" action="<?= e(url('/campaigns/append-import')) ?>" enctype="multipart/form-data" class="actions-row" style="flex-wrap:wrap;align-items:flex-end;gap:0.75rem"
+              data-confirm="إضافة الأسماء الجديدة فقط كغير معيّنين؟ المكرر بنفس الهوية أو الاسم لن يُضاف.">
+            <?= \App\Csrf::field() ?>
+            <input type="hidden" name="campaign_id" value="<?= $cid ?>">
+            <div style="flex:1;min-width:220px">
+                <label class="field-label" for="append-excel">ملف Excel</label>
+                <input type="file" id="append-excel" name="excel_file" accept=".xlsx,.xls" required class="form-control">
+            </div>
+            <button type="submit" class="btn">إضافة للمجموعة غير المعيّنة</button>
+        </form>
+    </div>
+    <?php endif; ?>
+
+    </div>
+</details>
+
 <details class="op-section" id="hub-view" <?= $openView ? 'open' : '' ?>>
     <summary class="op-section-summary">
         <span class="op-section-title">2) العرض والتنزيل</span>
-        <span class="op-section-hint">مشاهدة وتنزيل فقط — بدون تسليم</span>
+        <span class="op-section-hint">كشوف التسليم المعتمدة — ليس كشف المرشحين</span>
     </summary>
     <div class="op-section-body">
 
@@ -318,10 +369,13 @@ $defaultDayWorkEnd = substr((string) ($campaign['work_end'] ?? '15:00'), 0, 5);
             </p>
         </div>
         <?php if ($isGenerated && !empty($canExport)): ?>
-        <div class="actions-row" style="margin-top:0.75rem">
-            <a href="<?= e(url('/campaigns/export?id=' . $cid)) ?>" class="btn">تنزيل Excel الكامل</a>
+        <div class="actions-row" style="margin-top:0.75rem;flex-wrap:wrap;gap:0.5rem">
+            <a href="<?= e(url('/campaigns/export?id=' . $cid)) ?>" class="btn">تنزيل كشوف التسليم المعتمدة (Excel)</a>
+            <a href="<?= e(url('/campaigns/export-candidates?id=' . $cid)) ?>" class="btn btn-outline">تنزيل كشف المرشحين بالكامل</a>
         </div>
-        <p class="text-muted" style="margin:0.5rem 0 0;font-size:0.9rem">يشمل الكشف الإجمالي + كشوف التسليم للأيام المعتمدة.</p>
+        <p class="text-muted" style="margin:0.5rem 0 0;font-size:0.9rem">
+            «كشوف التسليم المعتمدة» = المعيّنون لأيام فقط (كشوف الطباعة). «كشف المرشحين بالكامل» = كل من رُفع في Excel مع الحالة.
+        </p>
         <?php endif; ?>
     </div>
 

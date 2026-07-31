@@ -30,17 +30,18 @@ $filterUrl = static function (string $f = '', string $query = '') use ($cid): st
 };
 
 page_header(
-    'كشف المستفيدين — ' . (string) $campaign['name'],
+    'كشف المرشحين بالكامل — ' . (string) $campaign['name'],
     [
         ['label' => 'العمليات', 'url' => '/'],
         ['label' => (string) $campaign['name'], 'url' => '/campaigns/view?id=' . $cid],
-        ['label' => 'كشف المستفيدين'],
+        ['label' => 'كشف المرشحين بالكامل'],
     ],
     [
-        ['label' => 'عودة للعملية', 'url' => '/campaigns/view?id=' . $cid],
-        ['label' => 'Excel الكامل', 'url' => '/campaigns/export?id=' . $cid],
+        ['label' => 'عودة للعملية', 'url' => '/campaigns/view?id=' . $cid . '#hub-candidates'],
+        ['label' => 'تنزيل الكشف (Excel)', 'url' => '/campaigns/export-candidates?id=' . $cid],
+        ['label' => 'كشوف التسليم المعتمدة', 'url' => '/campaigns/export?id=' . $cid],
     ],
-    'بحث بالهوية أو الاسم أو الكود — يشمل المعيّنين وغير المعيّنين والمستلمين'
+    'البحث في الكشف المرفوع مع الحالة — حذف غير المعيّن فقط؛ إضافة مجموعة من باب «كشف المرشحين» في العملية'
 );
 ?>
 

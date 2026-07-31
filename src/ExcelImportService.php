@@ -103,6 +103,92 @@ final class ExcelImportService
         return count($items);
     }
 
+    /**
+     * إضافة مرشحين جدد فقط كغير معيّنين — يرفض المكرر بنفس رقم الهوية (بعد التطبيع).
+     *
+     * @param list<array{name:string,national_id:string,mobile:string,receipt_status:string}> $items
+     * @return array{added:int,skipped_duplicates:int,skipped_ids:list<string>}
+     */
+    public static function appendBeneficiaries(int $campaignId, array $items): array
+    {
+        extend_runtime();
+
+        $pdo = Database::getConnection();
+        $existingStmt = $pdo->prepare('SELECT national_id, name FROM beneficiaries WHERE campaign_id = ?');
+        $existingStmt->execute([$campaignId]);
+        $existingIds = [];
+        $existingNames = [];
+        foreach ($existingStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $key = ArabicFormat::normalizeNationalId((string) ($row['national_id'] ?? ''));
+            if ($key !== '') {
+                $existingIds[$key] = true;
+            }
+            $nameKey = mb_strtolower(preg_replace('/\s+/u', ' ', trim((string) ($row['name'] ?? ''))) ?? '');
+            if ($nameKey !== '') {
+                $existingNames[$nameKey] = true;
+            }
+        }
+
+        $toAdd = [];
+        $skippedIds = [];
+        $seenInFile = [];
+        $seenNamesInFile = [];
+        foreach ($items as $item) {
+            $nid = ArabicFormat::normalizeNationalId($item['national_id'] ?? '');
+            $nameKey = mb_strtolower(preg_replace('/\s+/u', ' ', trim((string) ($item['name'] ?? ''))) ?? '');
+            if ($nid === '') {
+                continue;
+            }
+            if (
+                isset($existingIds[$nid])
+                || isset($seenInFile[$nid])
+                || ($nameKey !== '' && (isset($existingNames[$nameKey]) || isset($seenNamesInFile[$nameKey])))
+            ) {
+                $skippedIds[] = $nid;
+                continue;
+            }
+            $seenInFile[$nid] = true;
+            if ($nameKey !== '') {
+                $seenNamesInFile[$nameKey] = true;
+            }
+            $toAdd[] = [
+                'name' => (string) ($item['name'] ?? ''),
+                'national_id' => $nid,
+                'mobile' => PhoneHelper::normalize((string) ($item['mobile'] ?? '')),
+                // الملحق دائماً بانتظار التعيين لأيام لاحقة
+                'receipt_status' => DeliveryService::STATUS_PENDING,
+            ];
+        }
+
+        if ($toAdd !== []) {
+            $pdo->beginTransaction();
+            try {
+                foreach (array_chunk($toAdd, self::BATCH_SIZE) as $chunk) {
+                    self::insertBatch($pdo, $campaignId, $chunk);
+                }
+                $pdo->commit();
+            } catch (\Throwable $e) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                throw $e;
+            }
+
+            // إن كانت الكمية الافتتاحية مضبوطة مسبقاً — زِدها بعدد المضافين حتى يبقى رصيد المخزن متسقاً
+            $camp = CampaignService::find($campaignId);
+            $opening = (int) ($camp['opening_quantity'] ?? 0);
+            if ($opening > 0) {
+                CampaignService::updateOpeningQuantity($campaignId, $opening + count($toAdd));
+            }
+        }
+
+        return [
+            'added' => count($toAdd),
+            'skipped_duplicates' => count($skippedIds),
+            'skipped_ids' => array_values(array_unique($skippedIds)),
+        ];
+    }
+
     /** @param list<array{name:string,national_id:string,mobile:string,receipt_status:string}> $chunk */
     private static function insertBatch(PDO $pdo, int $campaignId, array $chunk): void
     {

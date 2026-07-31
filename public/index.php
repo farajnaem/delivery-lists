@@ -955,6 +955,39 @@ if ($uri === '/campaigns/import' && $method === 'POST') {
     redirect('/campaigns/view?id=' . $id);
 }
 
+/** إضافة مجموعة مرشحين جدد كغير معيّنين فقط — بدون مسح الكشف الحالي وبدون تكرار هوية. */
+if ($uri === '/campaigns/append-import' && $method === 'POST') {
+    Auth::requireRole(fn ($r) => RoleHelper::canEditCampaign($r));
+    $id = (int) ($_POST['campaign_id'] ?? 0);
+    $back = '/campaigns/view?id=' . $id . '#hub-candidates';
+    if (!Csrf::verify($_POST['_csrf'] ?? null)) {
+        flash('error', Csrf::failureMessage());
+        redirect($back);
+    }
+    try {
+        $ext = strtolower(pathinfo($_FILES['excel_file']['name'] ?? '', PATHINFO_EXTENSION));
+        if (!in_array($ext, ['xlsx', 'xls'], true)) {
+            throw new RuntimeException('صيغة الملف يجب أن تكون Excel (xlsx/xls).');
+        }
+        $tmp = dirname(__DIR__) . '/storage/uploads/' . uniqid('append_', true) . '.' . $ext;
+        if (!move_uploaded_file($_FILES['excel_file']['tmp_name'] ?? '', $tmp)) {
+            throw new RuntimeException('تعذّر رفع الملف.');
+        }
+        $items = ExcelImportService::parse($tmp);
+        $result = ExcelImportService::appendBeneficiaries($id, $items);
+        @unlink($tmp);
+        $msg = "أُضيف {$result['added']} مرشحاً جديداً كغير معيّنين (لأيام التسليم القادمة).";
+        if ((int) $result['skipped_duplicates'] > 0) {
+            $msg .= " تُجاهل {$result['skipped_duplicates']} صفاً لتكرار رقم الهوية أو الاسم بالكامل.";
+        }
+        flash('success', $msg);
+        redirect('/campaigns/beneficiaries?id=' . $id . '&filter=unassigned');
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+        redirect($back);
+    }
+}
+
 if ($uri === '/campaigns/generate' && $method === 'POST') {
     Auth::requireRole(fn ($r) => RoleHelper::canEditCampaign($r));
     $id = (int) ($_POST['campaign_id'] ?? 0);
@@ -1038,7 +1071,25 @@ if ($uri === '/campaigns/export' && $method === 'GET') {
     try {
         $path = ExcelExportService::export($id);
         $campaign = CampaignService::find($id);
-        $filename = ($campaign['name'] ?? 'export') . '.xlsx';
+        $filename = ($campaign['name'] ?? 'export') . '_كشوف_التسليم.xlsx';
+        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        header('Content-Disposition: attachment; filename="' . rawurlencode($filename) . '"');
+        header('Content-Length: ' . filesize($path));
+        readfile($path);
+        exit;
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+        redirect('/campaigns/view?id=' . $id);
+    }
+}
+
+if ($uri === '/campaigns/export-candidates' && $method === 'GET') {
+    Auth::requireRole(fn ($r) => RoleHelper::canExport($r));
+    $id = (int) ($_GET['id'] ?? 0);
+    try {
+        $path = ExcelExportService::exportCandidates($id);
+        $campaign = CampaignService::find($id);
+        $filename = ($campaign['name'] ?? 'candidates') . '_كشف_المرشحين_بالكامل.xlsx';
         header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         header('Content-Disposition: attachment; filename="' . rawurlencode($filename) . '"');
         header('Content-Length: ' . filesize($path));
