@@ -286,23 +286,33 @@ final class CampaignService
         $unassignedExpr = '(b.day_index IS NULL OR b.day_index = 0 OR b.disbursement_code IS NULL OR b.disbursement_code = \'\')';
         $assignedExpr = '(b.day_index IS NOT NULL AND b.day_index > 0 AND b.disbursement_code IS NOT NULL AND b.disbursement_code != \'\')';
         $arabicIdExpr = self::sqlNationalIdHasIndicDigits('b.national_id');
-        $nidExpr = ArabicFormat::sqlNormalizeNationalIdExpr('b.national_id');
         $today = date('Y-m-d');
 
         $where = 'b.campaign_id = ?';
         $params = [$campaignId];
-        $query = ArabicFormat::toWesternDigits(trim($query));
+        $query = trim(ArabicFormat::toWesternDigits(trim($query)));
         if ($query !== '') {
             $nid = ArabicFormat::normalizeNationalId($query);
-            $where .= " AND (
-                {$nidExpr} = ?
-                OR b.name LIKE ?
-                OR b.mobile LIKE ?
-                OR b.disbursement_code LIKE ?
-                OR CAST(b.sort_order AS CHAR) = ?
-            )";
-            $like = '%' . $query . '%';
-            array_push($params, $nid, $like, $like, $like, $nid);
+            $nameLike = '%' . $query . '%';
+            // مسار سريع بدون REPLACE على العمود (كان يبطئ البحث جداً على كشوف كبيرة)
+            $parts = ['b.name LIKE ?'];
+            $params[] = $nameLike;
+            if ($nid !== '') {
+                $parts[] = 'b.national_id = ?';
+                $parts[] = 'b.national_id LIKE ?';
+                array_push($params, $nid, '%' . $nid . '%');
+                // إن بقي رقم عربي مخزَّن: مطابقة مباشرة للنص المدخل بعد التغريب فقط على المدخل
+                if ($nid !== $query) {
+                    $parts[] = 'b.national_id = ?';
+                    $params[] = $query;
+                }
+            }
+            // كود الصرف فقط إذا بدا الاستعلام كرقم/كود وليس اسماً عربياً طويلاً
+            if ($nid !== '' || preg_match('/^[A-Za-z0-9_-]{3,}$/u', $query)) {
+                $parts[] = 'b.disbursement_code LIKE ?';
+                $params[] = '%' . $query . '%';
+            }
+            $where .= ' AND (' . implode(' OR ', $parts) . ')';
         }
 
         if ($filter === 'anomaly') {
@@ -322,12 +332,12 @@ final class CampaignService
             $where .= " AND {$unassignedExpr} AND (b.receipt_status IS NULL OR b.receipt_status != ?)";
             $params[] = $delivered;
         } elseif ($filter === 'duplicates') {
-            $nidExpr2 = ArabicFormat::sqlNormalizeNationalIdExpr('b2.national_id');
-            $where .= " AND {$nidExpr} != '' AND EXISTS (
+            // بدون تطبيع REPLACE — التجميع على القيمة المخزّنة (بعد migrate الهويات موحّدة)
+            $where .= " AND b.national_id IS NOT NULL AND TRIM(b.national_id) != '' AND EXISTS (
                 SELECT 1 FROM beneficiaries b2
                 WHERE b2.campaign_id = b.campaign_id
                   AND b2.id != b.id
-                  AND {$nidExpr2} = {$nidExpr}
+                  AND b2.national_id = b.national_id
             )";
         } elseif ($filter === 'no_mobile') {
             $where .= " AND {$assignedExpr}
@@ -354,9 +364,8 @@ final class CampaignService
 
         $orderBy = match ($filter) {
             'today' => 'b.delivered_at DESC, b.id DESC',
-            'duplicates' => $nidExpr . ' ASC, b.id ASC',
-            default => 'CASE WHEN b.day_index IS NULL OR b.day_index = 0 THEN 1 ELSE 0 END,
-              b.day_index ASC, b.sort_order ASC, b.id ASC',
+            'duplicates' => 'b.national_id ASC, b.id ASC',
+            default => 'b.id DESC',
         };
 
         $sql = "
@@ -400,18 +409,124 @@ final class CampaignService
         return (int) self::searchAllBeneficiaries($campaignId, '', 1, 20, 'anomaly')['total'];
     }
 
-    /** @return array{today:int,anomaly:int,arabic_id:int,delivered_no_mobile:int,no_mobile:int,unassigned:int,duplicates:int} */
+    /**
+     * عدّادات مراجعة بمسار واحد سريع (بدل 7 استعلامات ثقيلة كانت تجمّد الصفحة).
+     *
+     * @return array{today:int,anomaly:int,arabic_id:int,delivered_no_mobile:int,no_mobile:int,unassigned:int,duplicates:int}
+     */
     public static function reviewCounts(int $campaignId): array
     {
+        $pdo = Database::getConnection();
+        $delivered = DeliveryService::STATUS_DELIVERED;
+        $today = date('Y-m-d');
+        $unassigned = '(day_index IS NULL OR day_index = 0 OR disbursement_code IS NULL OR disbursement_code = \'\')';
+        $assigned = '(day_index IS NOT NULL AND day_index > 0 AND disbursement_code IS NOT NULL AND disbursement_code != \'\')';
+
+        $stmt = $pdo->prepare("
+            SELECT
+              SUM(CASE WHEN {$unassigned} AND (receipt_status IS NULL OR receipt_status != ?) THEN 1 ELSE 0 END) AS unassigned,
+              SUM(CASE WHEN receipt_status = ? AND (
+                    actual_delivery_date = ? OR CAST(delivered_at AS CHAR) LIKE ?
+                  ) THEN 1 ELSE 0 END) AS today,
+              SUM(CASE WHEN {$assigned} AND (receipt_status IS NULL OR receipt_status != ?)
+                    AND (mobile IS NULL OR TRIM(mobile) = '' OR TRIM(mobile) = '0') THEN 1 ELSE 0 END) AS no_mobile,
+              SUM(CASE WHEN receipt_status = ?
+                    AND (mobile IS NULL OR TRIM(mobile) = '' OR TRIM(mobile) = '0') THEN 1 ELSE 0 END) AS delivered_no_mobile,
+              SUM(CASE WHEN {$unassigned} AND (
+                    receipt_status = ?
+                    OR (delivered_at IS NOT NULL AND CAST(delivered_at AS CHAR) != '')
+                    OR delivered_by IS NOT NULL
+                    OR (actual_delivery_date IS NOT NULL AND actual_delivery_date != '')
+                  ) THEN 1 ELSE 0 END) AS anomaly
+            FROM beneficiaries
+            WHERE campaign_id = ?
+        ");
+        $stmt->execute([
+            $delivered,
+            $delivered, $today, $today . '%',
+            $delivered,
+            $delivered,
+            $delivered,
+            $campaignId,
+        ]);
+        $row = $stmt->fetch() ?: [];
+
+        $dupStmt = $pdo->prepare('
+            SELECT COUNT(*) FROM beneficiaries b
+            WHERE b.campaign_id = ?
+              AND b.national_id IS NOT NULL AND TRIM(b.national_id) != \'\'
+              AND EXISTS (
+                SELECT 1 FROM beneficiaries b2
+                WHERE b2.campaign_id = b.campaign_id
+                  AND b2.id != b.id
+                  AND b2.national_id = b.national_id
+              )
+        ');
+        $dupStmt->execute([$campaignId]);
+
         return [
-            'today' => (int) self::searchAllBeneficiaries($campaignId, '', 1, 20, 'today')['total'],
-            'anomaly' => (int) self::searchAllBeneficiaries($campaignId, '', 1, 20, 'anomaly')['total'],
-            'arabic_id' => (int) self::searchAllBeneficiaries($campaignId, '', 1, 20, 'arabic_id')['total'],
-            'delivered_no_mobile' => (int) self::searchAllBeneficiaries($campaignId, '', 1, 20, 'delivered_no_mobile')['total'],
-            'no_mobile' => (int) self::searchAllBeneficiaries($campaignId, '', 1, 20, 'no_mobile')['total'],
-            'unassigned' => (int) self::searchAllBeneficiaries($campaignId, '', 1, 20, 'unassigned')['total'],
-            'duplicates' => (int) self::searchAllBeneficiaries($campaignId, '', 1, 20, 'duplicates')['total'],
+            'today' => (int) ($row['today'] ?? 0),
+            'anomaly' => (int) ($row['anomaly'] ?? 0),
+            'arabic_id' => 0,
+            'delivered_no_mobile' => (int) ($row['delivered_no_mobile'] ?? 0),
+            'no_mobile' => (int) ($row['no_mobile'] ?? 0),
+            'unassigned' => (int) ($row['unassigned'] ?? 0),
+            'duplicates' => (int) $dupStmt->fetchColumn(),
         ];
+    }
+
+    /**
+     * تعديل بيانات مرشح (اسم / هوية / جوال).
+     * للمستلم: الاسم والجوال فقط. لغير المستلم: الثلاثة مع منع تكرار الهوية.
+     *
+     * @return array{ok:bool,error?:string}
+     */
+    public static function updateBeneficiary(int $campaignId, int $beneficiaryId, array $data): array
+    {
+        $pdo = Database::getConnection();
+        $stmt = $pdo->prepare('SELECT * FROM beneficiaries WHERE id = ? AND campaign_id = ? LIMIT 1');
+        $stmt->execute([$beneficiaryId, $campaignId]);
+        $row = $stmt->fetch();
+        if (!$row) {
+            return ['ok' => false, 'error' => 'المستفيد غير موجود في هذه العملية.'];
+        }
+
+        $name = trim((string) ($data['name'] ?? ''));
+        $mobile = PhoneHelper::normalize((string) ($data['mobile'] ?? ''));
+        $nid = ArabicFormat::normalizeNationalId($data['national_id'] ?? '');
+        $delivered = DeliveryService::isDeliveredStatus($row['receipt_status'] ?? '');
+
+        if ($name === '') {
+            return ['ok' => false, 'error' => 'الاسم مطلوب.'];
+        }
+
+        if ($delivered) {
+            $pdo->prepare('UPDATE beneficiaries SET name = ?, mobile = ?, updated_at = ? WHERE id = ? AND campaign_id = ?')
+                ->execute([$name, $mobile, db_now(), $beneficiaryId, $campaignId]);
+            return ['ok' => true];
+        }
+
+        if ($nid === '') {
+            return ['ok' => false, 'error' => 'رقم الهوية مطلوب.'];
+        }
+
+        $dup = $pdo->prepare('
+            SELECT id FROM beneficiaries
+            WHERE campaign_id = ? AND national_id = ? AND id != ?
+            LIMIT 1
+        ');
+        $dup->execute([$campaignId, $nid, $beneficiaryId]);
+        if ($dup->fetch()) {
+            return ['ok' => false, 'error' => 'رقم الهوية مكرر لمستفيد آخر في نفس العملية.'];
+        }
+
+        $pdo->prepare('
+            UPDATE beneficiaries
+            SET name = ?, national_id = ?, mobile = ?, updated_at = ?
+            WHERE id = ? AND campaign_id = ?
+        ')->execute([$name, $nid, $mobile, db_now(), $beneficiaryId, $campaignId]);
+
+        return ['ok' => true];
     }
 
     public static function stats(int $campaignId): array

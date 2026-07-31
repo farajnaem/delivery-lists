@@ -877,12 +877,15 @@ select.form-control { cursor: pointer; }
 }
 .actions-row form { display: inline-flex; gap: var(--space-2); align-items: center; margin: 0; }
 
-/* أبواب العملية / المخزن — تجميع بدل صف أزرار طويل */
+/* أبواب العملية — اختيار واحد ثم تظهر إجراءاته فقط */
 .op-hubs {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--space-3);
     margin: 0 0 var(--space-4);
+}
+@media (min-width: 900px) {
+    .op-hubs { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 .op-hub {
     display: flex;
@@ -907,6 +910,17 @@ select.form-control { cursor: pointer; }
 .op-hub-primary {
     border-color: #99D5CF;
     background: var(--primary-soft);
+}
+.op-hub-active {
+    border-color: var(--primary);
+    background: var(--primary-soft);
+    box-shadow: inset 0 0 0 1px var(--primary);
+}
+.op-panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    margin-bottom: var(--space-4);
 }
 .op-section {
     border: 1px solid var(--border);

@@ -7,16 +7,18 @@ $q = (string) ($q ?? '');
 $filter = (string) ($filter ?? '');
 $page = max(1, (int) ($page ?? 1));
 $total = (int) ($total ?? 0);
-$perPage = max(1, (int) ($perPage ?? 100));
+$perPage = max(1, (int) ($perPage ?? 50));
 $totalPages = max(1, (int) ceil($total / $perPage));
 $rows = $rows ?? [];
 $canManualDeliver = !empty($canManualDeliver);
 $canDeleteBeneficiary = !empty($canDeleteBeneficiary);
-$showReviewFilters = $canManualDeliver || $canDeleteBeneficiary;
+$canEditRow = $canDeleteBeneficiary;
+$searched = !empty($searched);
 $review = is_array($reviewCounts ?? null) ? $reviewCounts : [];
 $cid = (int) $campaign['id'];
+$showReviewFilters = $canManualDeliver || $canDeleteBeneficiary;
 
-$colspan = 9 + ($canManualDeliver ? 1 : 0) + ($canDeleteBeneficiary ? 1 : 0);
+$colspan = 7 + ($canManualDeliver ? 1 : 0) + ($canEditRow ? 1 : 0);
 
 $filterUrl = static function (string $f = '', string $query = '') use ($cid): string {
     $url = '/campaigns/beneficiaries?id=' . $cid;
@@ -30,18 +32,16 @@ $filterUrl = static function (string $f = '', string $query = '') use ($cid): st
 };
 
 page_header(
-    'كشف المرشحين بالكامل — ' . (string) $campaign['name'],
+    'بحث المرشحين — ' . (string) $campaign['name'],
     [
         ['label' => 'العمليات', 'url' => '/'],
         ['label' => (string) $campaign['name'], 'url' => '/campaigns/view?id=' . $cid],
-        ['label' => 'كشف المرشحين بالكامل'],
+        ['label' => 'بحث المرشحين'],
     ],
     [
-        ['label' => 'عودة للعملية', 'url' => '/campaigns/view?id=' . $cid . '#hub-candidates'],
-        ['label' => 'تنزيل الكشف (Excel)', 'url' => '/campaigns/export-candidates?id=' . $cid],
-        ['label' => 'كشوف التسليم المعتمدة', 'url' => '/campaigns/export?id=' . $cid],
+        ['label' => 'عودة', 'url' => '/campaigns/view?id=' . $cid . '&panel=candidates'],
     ],
-    'البحث في الكشف المرفوع مع الحالة — حذف غير المعيّن فقط؛ إضافة مجموعة من باب «كشف المرشحين» في العملية'
+    'ابحث برقم الهوية أو جزء من الاسم — ثم عدّل أو احذف'
 );
 ?>
 
@@ -52,109 +52,66 @@ page_header(
         <input type="hidden" name="filter" value="<?= e($filter) ?>">
         <?php endif; ?>
         <div style="flex:1;min-width:220px">
-            <label class="field-label">بحث</label>
-            <input type="search" name="q" class="form-control" value="<?= e($q) ?>" placeholder="رقم الهوية أو الاسم أو الكود" autofocus>
+            <label class="field-label">الهوية أو جزء من الاسم</label>
+            <input type="search" name="q" class="form-control" value="<?= e($q) ?>" placeholder="رقم الهوية أو جزء من الاسم" autofocus>
         </div>
         <button type="submit" class="btn">بحث</button>
-        <?php if ($q !== ''): ?>
-        <a class="btn btn-ghost" href="<?= e($filterUrl($filter)) ?>">مسح البحث</a>
+        <?php if ($q !== '' || $filter !== ''): ?>
+        <a class="btn btn-ghost" href="<?= e(url('/campaigns/beneficiaries?id=' . $cid)) ?>">مسح</a>
         <?php endif; ?>
     </form>
 
     <?php if ($showReviewFilters): ?>
-    <div class="actions-row" style="margin-top:0.85rem;gap:0.5rem;flex-wrap:wrap">
-        <a class="btn btn-sm <?= $filter === '' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('', $q)) ?>">الكل</a>
-        <a class="btn btn-sm <?= $filter === 'unassigned' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('unassigned', $q)) ?>">
-            غير معيّنين (<?= ar_digits((int) ($review['unassigned'] ?? 0)) ?>)
-        </a>
-        <a class="btn btn-sm <?= $filter === 'duplicates' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('duplicates', $q)) ?>">
-            مكررون (<?= ar_digits((int) ($review['duplicates'] ?? 0)) ?>)
-        </a>
-        <?php if ($canManualDeliver): ?>
-        <a class="btn btn-sm <?= $filter === 'today' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('today', $q)) ?>">
-            مستلمو اليوم (<?= ar_digits((int) ($review['today'] ?? 0)) ?>)
-        </a>
-        <a class="btn btn-sm <?= $filter === 'anomaly' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('anomaly', $q)) ?>">
-            تسليم بلا تعيين (<?= ar_digits((int) ($review['anomaly'] ?? 0)) ?>)
-        </a>
-        <a class="btn btn-sm <?= $filter === 'arabic_id' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('arabic_id', $q)) ?>">
-            هوية بأرقام عربية (<?= ar_digits((int) ($review['arabic_id'] ?? 0)) ?>)
-        </a>
-        <a class="btn btn-sm <?= $filter === 'delivered_no_mobile' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('delivered_no_mobile', $q)) ?>">
-            مستلم بلا جوال (<?= ar_digits((int) ($review['delivered_no_mobile'] ?? 0)) ?>)
-        </a>
-        <a class="btn btn-sm <?= $filter === 'no_mobile' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('no_mobile', $q)) ?>">
-            معيّن بلا جوال (<?= ar_digits((int) ($review['no_mobile'] ?? 0)) ?>)
-        </a>
-        <?php endif; ?>
-    </div>
-    <?php if ($filter === 'unassigned'): ?>
-    <p class="text-muted" style="margin:0.75rem 0 0">
-        غير معيّنين ليوم بعد — يمكن حذف المكرر غير المعيّن من عمود الإجراءات.
-    </p>
-    <?php elseif ($filter === 'duplicates'): ?>
-    <p class="text-muted" style="margin:0.75rem 0 0">
-        نفس رقم الهوية يظهر أكثر من مرة. احذف النسخة <strong>غير المعيّنة</strong> واترك المعيّنة/المستلمة.
-    </p>
-    <?php elseif ($filter === 'anomaly'): ?>
-    <p class="text-muted" style="margin:0.75rem 0 0">
-        غير معيّنين وعليهم أثر تسليم في السيرفر. راجعهم وسجّل استلاماً يدوياً إن لزم حتى لا يُعاد تعيينهم.
-    </p>
-    <?php elseif ($filter === 'today'): ?>
-    <p class="text-muted" style="margin:0.75rem 0 0">
-        كل من سُجّل مستلماً اليوم في النظام — قارن العدد والقائمة مع العدد الفعلي في المخزن.
-    </p>
-    <?php elseif ($filter === 'arabic_id'): ?>
-    <p class="text-muted" style="margin:0.75rem 0 0">
-        هويات مخزّنة بأرقام عربية/هندية — غالباً يفشل البحث بالهوية وينجح بالكود. بعد migrate تُوحَّد للهوية الإنجليزية.
-    </p>
-    <?php elseif ($filter === 'delivered_no_mobile'): ?>
-    <p class="text-muted" style="margin:0.75rem 0 0">
-        مستلمون بلا جوال صالح — لا يظهرون في كشف الرسائل حتى لو كانوا معيّنين.
-    </p>
-    <?php endif; ?>
+    <details class="op-filters" style="margin-top:0.85rem">
+        <summary style="cursor:pointer;color:var(--muted);font-size:0.9rem">فلاتر إضافية (اختياري)</summary>
+        <div class="actions-row" style="margin-top:0.65rem;gap:0.5rem;flex-wrap:wrap">
+            <a class="btn btn-sm <?= $filter === 'unassigned' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('unassigned', $q)) ?>">غير معيّنين</a>
+            <a class="btn btn-sm <?= $filter === 'duplicates' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('duplicates', $q)) ?>">مكررون</a>
+            <?php if ($canManualDeliver): ?>
+            <a class="btn btn-sm <?= $filter === 'today' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('today', $q)) ?>">مستلمو اليوم</a>
+            <a class="btn btn-sm <?= $filter === 'anomaly' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('anomaly', $q)) ?>">تسليم بلا تعيين</a>
+            <?php endif; ?>
+        </div>
+    </details>
     <?php endif; ?>
 
+    <?php if ($searched): ?>
     <p class="text-muted" style="margin:0.75rem 0 0">
         النتيجة: <strong><?= ar_digits($total) ?></strong>
+        <?php if ($totalPages > 1): ?>
         — صفحة <?= ar_digits($page) ?> من <?= ar_digits($totalPages) ?>
+        <?php endif; ?>
     </p>
+    <?php else: ?>
+    <p class="text-muted" style="margin:0.75rem 0 0">أدخل رقم هوية أو جزءاً من الاسم ثم اضغط بحث.</p>
+    <?php endif; ?>
 </div>
 
-<?php if ($canManualDeliver): ?>
-<div class="card">
-    <h2 class="panel-title" style="margin-top:0">استلام يدوي (مدير النظام)</h2>
-    <p class="text-muted" style="margin:0 0 0.75rem">
-        لمن استلم فعلياً ولم يُسجَّل، أو لمن تريد تثبيت حالته كمستلم حتى لا يُعاد تعيينه.
-    </p>
-</div>
-<?php endif; ?>
+<?php if ($searched): ?>
 
+<?php if ($canManualDeliver && $filter === 'anomaly'): ?>
 <form method="post" action="<?= e(url('/campaigns/beneficiaries/mark-delivered')) ?>" id="manual-deliver-form">
     <?= \App\Csrf::field() ?>
     <input type="hidden" name="campaign_id" value="<?= $cid ?>">
     <input type="hidden" name="q" value="<?= e($q) ?>">
     <input type="hidden" name="page" value="<?= (int) $page ?>">
     <input type="hidden" name="filter" value="<?= e($filter) ?>">
-
-<?php if ($canManualDeliver): ?>
-<div class="card actions-row" style="align-items:flex-end;gap:0.75rem;flex-wrap:wrap">
-    <div style="flex:1;min-width:240px">
-        <label class="field-label">سبب الاستلام اليدوي *</label>
-        <input type="text" name="reason" class="form-control" required
-               placeholder="مثال: استلم ميدانياً ويحتاج تثبيت حتى لا يستلم مرة ثانية">
+    <div class="card actions-row" style="align-items:flex-end;gap:0.75rem;flex-wrap:wrap">
+        <div style="flex:1;min-width:240px">
+            <label class="field-label">سبب الاستلام اليدوي *</label>
+            <input type="text" name="reason" class="form-control" required placeholder="سبب التثبيت">
+        </div>
+        <button type="submit" class="btn" data-confirm="تأكيد تسجيل الاستلام اليدوي للمحددين؟">تسجيل استلام المحددين</button>
     </div>
-    <button type="submit" class="btn" data-confirm="تأكيد تسجيل الاستلام اليدوي للمحددين؟">تسجيل استلام المحددين</button>
-</div>
-<?php endif; ?>
 </form>
+<?php endif; ?>
 
 <div class="card table-panel">
     <div class="table-wrap">
     <table class="data-table">
         <thead>
             <tr>
-                <?php if ($canManualDeliver): ?>
+                <?php if ($canManualDeliver && $filter === 'anomaly'): ?>
                 <th style="width:2.5rem">
                     <input type="checkbox" id="manual-check-all" title="تحديد الكل" aria-label="تحديد الكل">
                 </th>
@@ -164,18 +121,15 @@ page_header(
                 <th>الجوال</th>
                 <th>الكود</th>
                 <th>اليوم</th>
-                <th>التاريخ</th>
                 <th>الحالة</th>
-                <th>الاستلام</th>
-                <th>أمين المخزن</th>
-                <?php if ($canDeleteBeneficiary): ?>
+                <?php if ($canEditRow): ?>
                 <th>إجراء</th>
                 <?php endif; ?>
             </tr>
         </thead>
         <tbody>
         <?php if ($rows === []): ?>
-        <tr><td colspan="<?= (int) $colspan ?>" class="text-muted">لا نتائج.</td></tr>
+        <tr><td colspan="<?= (int) $colspan ?>" class="text-muted">لا نتائج لهذا البحث.</td></tr>
         <?php endif; ?>
         <?php foreach ($rows as $b): ?>
         <?php
@@ -190,22 +144,21 @@ page_header(
             if ($display === '' && !empty($b['sort_order'])) {
                 $display = (string) $b['sort_order'];
             }
-            $precheck = $canManualDeliver && !$delivered && $filter === 'anomaly';
+            $rowId = (int) $b['id'];
         ?>
         <tr>
-            <?php if ($canManualDeliver): ?>
+            <?php if ($canManualDeliver && $filter === 'anomaly'): ?>
             <td>
                 <?php if (!$delivered): ?>
-                <input type="checkbox" form="manual-deliver-form" name="beneficiary_ids[]" value="<?= (int) $b['id'] ?>" class="manual-check" <?= $precheck ? 'checked' : '' ?>>
+                <input type="checkbox" form="manual-deliver-form" name="beneficiary_ids[]" value="<?= $rowId ?>" class="manual-check" checked>
                 <?php endif; ?>
             </td>
             <?php endif; ?>
             <td><?= e((string) ($b['name'] ?? '')) ?></td>
             <td><?= e((string) ($b['national_id'] ?? '')) ?></td>
             <td><?= e((string) ($b['mobile'] ?? '')) ?></td>
-            <td><?= e($display) ?></td>
+            <td><?= e($display !== '' ? $display : '—') ?></td>
             <td><?= $assigned ? ar_digits((int) $b['day_index']) : '—' ?></td>
-            <td><?= e((string) ($b['delivery_date'] ?? '—')) ?></td>
             <td>
                 <?php if ($delivered): ?>
                 <span class="badge badge-ok">مستلم</span>
@@ -215,36 +168,57 @@ page_header(
                 <span class="badge">غير معيّن</span>
                 <?php endif; ?>
             </td>
+            <?php if ($canEditRow): ?>
             <td>
-                <?php if ($delivered): ?>
-                <?= e((string) ($b['actual_delivery_date'] ?? $b['delivered_at'] ?? '')) ?>
-                <div class="text-muted" style="font-size:0.85em">
-                    <?= e(DeliveryService::receivedByLabel($b['received_by_mode'] ?? null, $b['received_by_name'] ?? null) ?: '') ?>
+                <div class="actions-row" style="gap:0.35rem;flex-wrap:wrap">
+                    <button type="button" class="btn btn-sm btn-outline" data-edit-toggle="<?= $rowId ?>">تعديل</button>
+                    <?php if ($canDeleteRow): ?>
+                    <form method="post" action="<?= e(url('/campaigns/beneficiaries/delete')) ?>" style="margin:0"
+                          data-confirm="حذف «<?= e((string) ($b['name'] ?? '')) ?>» نهائياً؟">
+                        <?= \App\Csrf::field() ?>
+                        <input type="hidden" name="campaign_id" value="<?= $cid ?>">
+                        <input type="hidden" name="beneficiary_id" value="<?= $rowId ?>">
+                        <input type="hidden" name="q" value="<?= e($q) ?>">
+                        <input type="hidden" name="page" value="<?= (int) $page ?>">
+                        <input type="hidden" name="filter" value="<?= e($filter) ?>">
+                        <button type="submit" class="btn btn-sm btn-danger">حذف</button>
+                    </form>
+                    <?php endif; ?>
                 </div>
-                <?php else: ?>
-                —
-                <?php endif; ?>
-            </td>
-            <td><?= e((string) ($b['delivered_by_name'] ?? '—')) ?></td>
-            <?php if ($canDeleteBeneficiary): ?>
-            <td>
-                <?php if ($canDeleteRow): ?>
-                <form method="post" action="<?= e(url('/campaigns/beneficiaries/delete')) ?>" style="margin:0"
-                      data-confirm="حذف «<?= e((string) ($b['name'] ?? '')) ?>» نهائياً من العملية؟">
-                    <?= \App\Csrf::field() ?>
-                    <input type="hidden" name="campaign_id" value="<?= $cid ?>">
-                    <input type="hidden" name="beneficiary_id" value="<?= (int) $b['id'] ?>">
-                    <input type="hidden" name="q" value="<?= e($q) ?>">
-                    <input type="hidden" name="page" value="<?= (int) $page ?>">
-                    <input type="hidden" name="filter" value="<?= e($filter) ?>">
-                    <button type="submit" class="btn btn-sm btn-danger">حذف</button>
-                </form>
-                <?php else: ?>
-                <span class="text-muted">—</span>
-                <?php endif; ?>
             </td>
             <?php endif; ?>
         </tr>
+        <?php if ($canEditRow): ?>
+        <tr id="edit-row-<?= $rowId ?>" class="edit-row" hidden>
+            <td colspan="<?= (int) $colspan ?>">
+                <form method="post" action="<?= e(url('/campaigns/beneficiaries/update')) ?>" class="grid-2" style="gap:0.65rem;align-items:end">
+                    <?= \App\Csrf::field() ?>
+                    <input type="hidden" name="campaign_id" value="<?= $cid ?>">
+                    <input type="hidden" name="beneficiary_id" value="<?= $rowId ?>">
+                    <input type="hidden" name="q" value="<?= e($q) ?>">
+                    <input type="hidden" name="page" value="<?= (int) $page ?>">
+                    <input type="hidden" name="filter" value="<?= e($filter) ?>">
+                    <div>
+                        <label class="field-label">الاسم</label>
+                        <input type="text" name="name" class="form-control" required value="<?= e((string) ($b['name'] ?? '')) ?>">
+                    </div>
+                    <div>
+                        <label class="field-label">رقم الهوية<?= $delivered ? ' (للمستلم لا يُغيَّر)' : '' ?></label>
+                        <input type="text" name="national_id" class="form-control" required value="<?= e((string) ($b['national_id'] ?? '')) ?>"
+                            <?= $delivered ? 'readonly' : '' ?>>
+                    </div>
+                    <div>
+                        <label class="field-label">الجوال</label>
+                        <input type="text" name="mobile" class="form-control" value="<?= e((string) ($b['mobile'] ?? '')) ?>">
+                    </div>
+                    <div class="actions-row" style="gap:0.5rem">
+                        <button type="submit" class="btn btn-sm">حفظ</button>
+                        <button type="button" class="btn btn-sm btn-ghost" data-edit-toggle="<?= $rowId ?>">إلغاء</button>
+                    </div>
+                </form>
+            </td>
+        </tr>
+        <?php endif; ?>
         <?php endforeach; ?>
         </tbody>
     </table>
@@ -253,13 +227,15 @@ page_header(
 
 <?php if ($totalPages > 1): ?>
 <div class="actions-row" style="justify-content:center;gap:0.5rem;flex-wrap:wrap">
-    <?php for ($p = 1; $p <= $totalPages; $p++): ?>
-        <?php
-            $pageUrl = '/campaigns/beneficiaries?id=' . $cid
-                . ($filter !== '' ? '&filter=' . rawurlencode($filter) : '')
-                . ($q !== '' ? '&q=' . rawurlencode($q) : '')
-                . '&page=' . $p;
-        ?>
+    <?php
+    $from = max(1, $page - 3);
+    $to = min($totalPages, $page + 3);
+    for ($p = $from; $p <= $to; $p++):
+        $pageUrl = '/campaigns/beneficiaries?id=' . $cid
+            . ($filter !== '' ? '&filter=' . rawurlencode($filter) : '')
+            . ($q !== '' ? '&q=' . rawurlencode($q) : '')
+            . '&page=' . $p;
+    ?>
         <?php if ($p === $page): ?>
         <span class="btn btn-sm"><?= ar_digits($p) ?></span>
         <?php else: ?>
@@ -269,16 +245,25 @@ page_header(
 </div>
 <?php endif; ?>
 
-<?php if ($canManualDeliver): ?>
 <script>
 (function () {
-    var all = document.getElementById('manual-check-all');
-    if (!all) return;
-    all.addEventListener('change', function () {
-        document.querySelectorAll('.manual-check').forEach(function (el) {
-            el.checked = all.checked;
+    document.querySelectorAll('[data-edit-toggle]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var id = btn.getAttribute('data-edit-toggle');
+            var row = document.getElementById('edit-row-' + id);
+            if (!row) return;
+            row.hidden = !row.hidden;
         });
     });
+    var all = document.getElementById('manual-check-all');
+    if (all) {
+        all.addEventListener('change', function () {
+            document.querySelectorAll('.manual-check').forEach(function (el) {
+                el.checked = all.checked;
+            });
+        });
+    }
 })();
 </script>
+
 <?php endif; ?>

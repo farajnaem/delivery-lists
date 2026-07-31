@@ -774,7 +774,11 @@ if ($uri === '/campaigns/beneficiaries' && $method === 'GET') {
     $q = trim((string) ($_GET['q'] ?? ''));
     $page = max(1, (int) ($_GET['page'] ?? 1));
     $filter = trim((string) ($_GET['filter'] ?? ''));
-    $result = CampaignService::searchAllBeneficiaries($id, $q, $page, 100, $filter);
+    // بدون بحث أو فلتر: لا نحمّل آلاف الصفوف — الصفحة للبحث فقط
+    $shouldList = $q !== '' || $filter !== '';
+    $result = $shouldList
+        ? CampaignService::searchAllBeneficiaries($id, $q, $page, 50, $filter)
+        : ['rows' => [], 'total' => 0, 'page' => 1, 'per_page' => 50, 'filter' => ''];
     $codePrefix = (string) ($campaign['parcel_code'] ?? '');
     $codeSuffix = (string) ($campaign['parcel_code_suffix'] ?? '');
     $rows = array_map(
@@ -783,15 +787,18 @@ if ($uri === '/campaigns/beneficiaries' && $method === 'GET') {
     );
     $canManual = RoleHelper::canBulkDeliver(Auth::role() ?? '');
     $canDeleteBeneficiary = RoleHelper::canEditCampaign(Auth::role() ?? '');
-    $review = ($canManual || $canDeleteBeneficiary) ? CampaignService::reviewCounts($id) : [
-        'today' => 0,
-        'anomaly' => 0,
-        'arabic_id' => 0,
-        'delivered_no_mobile' => 0,
-        'no_mobile' => 0,
-        'unassigned' => 0,
-        'duplicates' => 0,
-    ];
+    // العدّادات الثقيلة فقط عند طلب فلتر مراجعة
+    $review = ($canManual || $canDeleteBeneficiary) && ($filter !== '' || isset($_GET['filters']))
+        ? CampaignService::reviewCounts($id)
+        : [
+            'today' => 0,
+            'anomaly' => 0,
+            'arabic_id' => 0,
+            'delivered_no_mobile' => 0,
+            'no_mobile' => 0,
+            'unassigned' => 0,
+            'duplicates' => 0,
+        ];
     view('campaigns/beneficiaries', [
         'campaign' => $campaign,
         'rows' => $rows,
@@ -803,8 +810,37 @@ if ($uri === '/campaigns/beneficiaries' && $method === 'GET') {
         'canManualDeliver' => $canManual,
         'canDeleteBeneficiary' => $canDeleteBeneficiary,
         'reviewCounts' => $review,
+        'searched' => $shouldList,
     ]);
     exit;
+}
+
+if ($uri === '/campaigns/beneficiaries/update' && $method === 'POST') {
+    Auth::requireRole(fn ($r) => RoleHelper::canEditCampaign($r));
+    $id = (int) ($_POST['campaign_id'] ?? 0);
+    $beneficiaryId = (int) ($_POST['beneficiary_id'] ?? 0);
+    $q = trim((string) ($_POST['q'] ?? ''));
+    $page = max(1, (int) ($_POST['page'] ?? 1));
+    $filter = trim((string) ($_POST['filter'] ?? ''));
+    $back = '/campaigns/beneficiaries?id=' . $id
+        . ($q !== '' ? '&q=' . rawurlencode($q) : '')
+        . ($filter !== '' ? '&filter=' . rawurlencode($filter) : '')
+        . ($page > 1 ? '&page=' . $page : '');
+    if (!Csrf::verify($_POST['_csrf'] ?? null)) {
+        flash('error', Csrf::failureMessage());
+        redirect($back);
+    }
+    $result = CampaignService::updateBeneficiary($id, $beneficiaryId, [
+        'name' => (string) ($_POST['name'] ?? ''),
+        'national_id' => (string) ($_POST['national_id'] ?? ''),
+        'mobile' => (string) ($_POST['mobile'] ?? ''),
+    ]);
+    if (!$result['ok']) {
+        flash('error', $result['error'] ?? 'تعذّر التعديل.');
+        redirect($back);
+    }
+    flash('success', 'تم تحديث بيانات المرشح.');
+    redirect($back);
 }
 
 if ($uri === '/campaigns/beneficiaries/delete' && $method === 'POST') {
@@ -879,10 +915,18 @@ if ($uri === '/campaigns/view' && $method === 'GET') {
         redirect('/');
     }
     $stats = CampaignService::stats($id);
-    $preview = CampaignService::beneficiaries($id);
+    $panel = strtolower(trim((string) ($_GET['panel'] ?? '')));
+    if (!in_array($panel, ['', 'days', 'candidates', 'downloads'], true)) {
+        $panel = '';
+    }
     $plan = null;
     $suggestedDayDate = DistributionService::suggestNextDayDate($campaign);
-    if ((int) ($stats['unassigned'] ?? 0) > 0 && (int) ($stats['assigned'] ?? 0) === 0) {
+    // خطة المعاينة فقط عند باب الأيام ووجود غير معيّنين بلا أيام بعد
+    if (
+        $panel === 'days'
+        && (int) ($stats['unassigned'] ?? 0) > 0
+        && (int) ($stats['assigned'] ?? 0) === 0
+    ) {
         $perWindow = max(1, (int) $campaign['per_window_capacity']);
         $numWindows = \App\DistributionService::resolveNumWindows(
             $campaign,
@@ -901,22 +945,13 @@ if ($uri === '/campaigns/view' && $method === 'GET') {
             );
         }
     }
-    $previewRows = array_slice($preview, 0, 20);
-    $codePrefix = (string) ($campaign['parcel_code'] ?? '');
-    $codeSuffix = (string) ($campaign['parcel_code_suffix'] ?? '');
-    if (($campaign['status'] ?? '') === 'generated') {
-        $previewRows = array_map(
-            static fn (array $b): array => ArabicFormat::localizeBeneficiary($b, $codePrefix, $codeSuffix),
-            $previewRows
-        );
-    }
     view('campaigns/view', [
         'title' => $campaign['name'],
         'campaign' => ArabicFormat::localizeCampaignTimes($campaign),
         'stats' => $stats,
         'plan' => $plan,
+        'panel' => $panel,
         'suggestedDayDate' => $suggestedDayDate,
-        'preview' => $previewRows,
         'canEdit' => RoleHelper::canEditCampaign(Auth::role() ?? ''),
         'canExport' => RoleHelper::canExport(Auth::role() ?? ''),
         'canViewStock' => RoleHelper::canViewStock(Auth::role() ?? ''),
@@ -924,12 +959,6 @@ if ($uri === '/campaigns/view' && $method === 'GET') {
         'deliveryStats' => ($campaign['status'] ?? '') === 'generated'
             ? DeliveryService::stockStats($id)
             : null,
-        'deliveredList' => ($campaign['status'] ?? '') === 'generated'
-            ? DeliveryService::deliveredBeneficiaries($id, 50)
-            : [],
-        'deliveredTotal' => ($campaign['status'] ?? '') === 'generated'
-            ? ArabicFormat::toArabicDigits((string) DeliveryService::deliveredCount($id))
-            : '0',
     ]);
     exit;
 }
@@ -959,7 +988,7 @@ if ($uri === '/campaigns/import' && $method === 'POST') {
 if ($uri === '/campaigns/append-import' && $method === 'POST') {
     Auth::requireRole(fn ($r) => RoleHelper::canEditCampaign($r));
     $id = (int) ($_POST['campaign_id'] ?? 0);
-    $back = '/campaigns/view?id=' . $id . '#hub-candidates';
+    $back = '/campaigns/view?id=' . $id . '&panel=candidates';
     if (!Csrf::verify($_POST['_csrf'] ?? null)) {
         flash('error', Csrf::failureMessage());
         redirect($back);
@@ -1039,7 +1068,7 @@ if ($uri === '/campaigns/generate-day' && $method === 'POST') {
     } catch (Throwable $e) {
         flash('error', $e->getMessage());
     }
-    redirect('/campaigns/view?id=' . $id);
+    redirect('/campaigns/view?id=' . $id . '&panel=days');
 }
 
 if ($uri === '/campaigns/cancel-last-day' && $method === 'POST') {
@@ -1062,7 +1091,7 @@ if ($uri === '/campaigns/cancel-last-day' && $method === 'POST') {
     } catch (Throwable $e) {
         flash('error', $e->getMessage());
     }
-    redirect('/campaigns/view?id=' . $id);
+    redirect('/campaigns/view?id=' . $id . '&panel=days');
 }
 
 if ($uri === '/campaigns/export' && $method === 'GET') {
