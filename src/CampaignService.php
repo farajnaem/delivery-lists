@@ -206,6 +206,49 @@ final class CampaignService
         return ['ok' => true, 'name' => $name];
     }
 
+    /**
+     * حذف مجموعة مستفيدين غير معيّنين (نفس قيود الحذف الفردي).
+     *
+     * @param list<int|string> $beneficiaryIds
+     * @return array{ok:bool,error?:string,deleted?:int,skipped?:int}
+     */
+    public static function deleteBeneficiariesMany(int $campaignId, array $beneficiaryIds): array
+    {
+        $ids = array_values(array_unique(array_filter(
+            array_map('intval', $beneficiaryIds),
+            static fn (int $id): bool => $id > 0
+        )));
+        if ($ids === []) {
+            return ['ok' => false, 'error' => 'لم يتم تحديد أي مستفيد للحذف.'];
+        }
+
+        $deleted = 0;
+        $skipped = 0;
+        foreach ($ids as $beneficiaryId) {
+            $result = self::deleteBeneficiary($campaignId, $beneficiaryId);
+            if (!empty($result['ok'])) {
+                $deleted++;
+            } else {
+                $skipped++;
+            }
+        }
+
+        if ($deleted < 1) {
+            return [
+                'ok' => false,
+                'error' => 'تعذّر حذف المحددين — قد يكونون معيّنين أو مستلمين.',
+                'deleted' => 0,
+                'skipped' => $skipped,
+            ];
+        }
+
+        return [
+            'ok' => true,
+            'deleted' => $deleted,
+            'skipped' => $skipped,
+        ];
+    }
+
     public static function deliveredCount(int $id): int
     {
         $pdo = Database::getConnection();

@@ -867,6 +867,37 @@ if ($uri === '/campaigns/beneficiaries/delete' && $method === 'POST') {
     redirect($back);
 }
 
+if ($uri === '/campaigns/beneficiaries/delete-many' && $method === 'POST') {
+    Auth::requireRole(fn ($r) => RoleHelper::canEditCampaign($r));
+    $id = (int) ($_POST['campaign_id'] ?? 0);
+    $q = trim((string) ($_POST['q'] ?? ''));
+    $page = max(1, (int) ($_POST['page'] ?? 1));
+    $filter = trim((string) ($_POST['filter'] ?? ''));
+    $back = '/campaigns/beneficiaries?id=' . $id
+        . ($q !== '' ? '&q=' . rawurlencode($q) : '')
+        . ($filter !== '' ? '&filter=' . rawurlencode($filter) : '')
+        . ($page > 1 ? '&page=' . $page : '');
+    if (!Csrf::verify($_POST['_csrf'] ?? null)) {
+        flash('error', Csrf::failureMessage());
+        redirect($back);
+    }
+    $ids = $_POST['beneficiary_ids'] ?? [];
+    if (!is_array($ids)) {
+        $ids = [];
+    }
+    $result = CampaignService::deleteBeneficiariesMany($id, $ids);
+    if (!$result['ok']) {
+        flash('error', $result['error'] ?? 'تعذّر الحذف الجماعي.');
+        redirect($back);
+    }
+    $msg = 'تم حذف ' . (int) ($result['deleted'] ?? 0) . ' مستفيد.';
+    if ((int) ($result['skipped'] ?? 0) > 0) {
+        $msg .= ' تُخطّي ' . (int) $result['skipped'] . ' (معيّن أو مستلم).';
+    }
+    flash('success', $msg);
+    redirect($back);
+}
+
 if ($uri === '/campaigns/beneficiaries/mark-delivered' && $method === 'POST') {
     Auth::requireRole(fn ($r) => RoleHelper::canBulkDeliver($r));
     $id = (int) ($_POST['campaign_id'] ?? 0);

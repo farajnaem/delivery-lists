@@ -17,8 +17,13 @@ $searched = !empty($searched);
 $review = is_array($reviewCounts ?? null) ? $reviewCounts : [];
 $cid = (int) $campaign['id'];
 $showReviewFilters = $canManualDeliver || $canDeleteBeneficiary;
+$showManualChecks = $canManualDeliver && $filter === 'anomaly';
+$showBulkDelete = $canDeleteBeneficiary;
 
-$colspan = 7 + ($canManualDeliver ? 1 : 0) + ($canEditRow ? 1 : 0);
+$colspan = 7
+    + ($showManualChecks ? 1 : 0)
+    + ($showBulkDelete ? 1 : 0)
+    + ($canEditRow ? 1 : 0);
 
 $filterUrl = static function (string $f = '', string $query = '') use ($cid): string {
     $url = '/campaigns/beneficiaries?id=' . $cid;
@@ -41,7 +46,7 @@ page_header(
     [
         ['label' => 'عودة', 'url' => '/campaigns/view?id=' . $cid . '&panel=candidates'],
     ],
-    'ابحث برقم الهوية أو جزء من الاسم — ثم عدّل أو احذف'
+    'ابحث برقم الهوية أو جزء من الاسم — ثم عدّل أو احذف. من «غير معيّنين» يمكن تحديد مجموعة وحذفها دفعة واحدة.'
 );
 ?>
 
@@ -62,7 +67,7 @@ page_header(
     </form>
 
     <?php if ($showReviewFilters): ?>
-    <details class="op-filters" style="margin-top:0.85rem">
+    <details class="op-filters" style="margin-top:0.85rem" <?= $filter !== '' ? 'open' : '' ?>>
         <summary style="cursor:pointer;color:var(--muted);font-size:0.9rem">فلاتر إضافية (اختياري)</summary>
         <div class="actions-row" style="margin-top:0.65rem;gap:0.5rem;flex-wrap:wrap">
             <a class="btn btn-sm <?= $filter === 'unassigned' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('unassigned', $q)) ?>">غير معيّنين</a>
@@ -83,13 +88,13 @@ page_header(
         <?php endif; ?>
     </p>
     <?php else: ?>
-    <p class="text-muted" style="margin:0.75rem 0 0">أدخل رقم هوية أو جزءاً من الاسم ثم اضغط بحث.</p>
+    <p class="text-muted" style="margin:0.75rem 0 0">أدخل رقم هوية أو جزءاً من الاسم ثم اضغط بحث — أو افتح فلتر «غير معيّنين».</p>
     <?php endif; ?>
 </div>
 
 <?php if ($searched): ?>
 
-<?php if ($canManualDeliver && $filter === 'anomaly'): ?>
+<?php if ($showManualChecks): ?>
 <form method="post" action="<?= e(url('/campaigns/beneficiaries/mark-delivered')) ?>" id="manual-deliver-form">
     <?= \App\Csrf::field() ?>
     <input type="hidden" name="campaign_id" value="<?= $cid ?>">
@@ -106,12 +111,37 @@ page_header(
 </form>
 <?php endif; ?>
 
+<?php if ($showBulkDelete): ?>
+<form method="post" action="<?= e(url('/campaigns/beneficiaries/delete-many')) ?>" id="bulk-delete-form"
+      data-confirm="حذف المحددين نهائياً؟ لا يمكن التراجع.">
+    <?= \App\Csrf::field() ?>
+    <input type="hidden" name="campaign_id" value="<?= $cid ?>">
+    <input type="hidden" name="q" value="<?= e($q) ?>">
+    <input type="hidden" name="page" value="<?= (int) $page ?>">
+    <input type="hidden" name="filter" value="<?= e($filter) ?>">
+    <div class="card actions-row" style="align-items:center;gap:0.75rem;flex-wrap:wrap">
+        <p class="text-muted" style="margin:0;flex:1;min-width:220px">
+            حدّد غير المعيّنين من القائمة ثم احذفهم دفعة واحدة.
+            <?php if ($filter === 'unassigned'): ?>
+            <strong>(فلتر غير المعيّنين نشط)</strong>
+            <?php endif; ?>
+        </p>
+        <button type="submit" class="btn btn-danger" id="bulk-delete-btn">حذف المحددين</button>
+    </div>
+</form>
+<?php endif; ?>
+
 <div class="card table-panel">
     <div class="table-wrap">
     <table class="data-table">
         <thead>
             <tr>
-                <?php if ($canManualDeliver && $filter === 'anomaly'): ?>
+                <?php if ($showBulkDelete): ?>
+                <th style="width:2.5rem">
+                    <input type="checkbox" id="bulk-check-all" title="تحديد الكل القابل للحذف" aria-label="تحديد الكل القابل للحذف">
+                </th>
+                <?php endif; ?>
+                <?php if ($showManualChecks): ?>
                 <th style="width:2.5rem">
                     <input type="checkbox" id="manual-check-all" title="تحديد الكل" aria-label="تحديد الكل">
                 </th>
@@ -147,7 +177,14 @@ page_header(
             $rowId = (int) $b['id'];
         ?>
         <tr>
-            <?php if ($canManualDeliver && $filter === 'anomaly'): ?>
+            <?php if ($showBulkDelete): ?>
+            <td>
+                <?php if ($canDeleteRow): ?>
+                <input type="checkbox" form="bulk-delete-form" name="beneficiary_ids[]" value="<?= $rowId ?>" class="bulk-delete-check">
+                <?php endif; ?>
+            </td>
+            <?php endif; ?>
+            <?php if ($showManualChecks): ?>
             <td>
                 <?php if (!$delivered): ?>
                 <input type="checkbox" form="manual-deliver-form" name="beneficiary_ids[]" value="<?= $rowId ?>" class="manual-check" checked>
@@ -262,6 +299,25 @@ page_header(
                 el.checked = all.checked;
             });
         });
+    }
+    var bulkAll = document.getElementById('bulk-check-all');
+    if (bulkAll) {
+        bulkAll.addEventListener('change', function () {
+            document.querySelectorAll('.bulk-delete-check').forEach(function (el) {
+                el.checked = bulkAll.checked;
+            });
+        });
+    }
+    var bulkForm = document.getElementById('bulk-delete-form');
+    if (bulkForm) {
+        bulkForm.addEventListener('submit', function (e) {
+            var checked = document.querySelectorAll('.bulk-delete-check:checked').length;
+            if (checked < 1) {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                alert('حدّد مستفيداً واحداً على الأقل للحذف.');
+            }
+        }, true);
     }
 })();
 </script>
