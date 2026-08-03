@@ -334,7 +334,16 @@ final class CampaignService
         $where = 'b.campaign_id = ?';
         $params = [$campaignId];
         $query = trim(ArabicFormat::toWesternDigits(trim($query)));
-        if ($query !== '') {
+        $idList = $query !== '' ? self::extractNationalIdList($query) : [];
+
+        // لصق مجموعة هويات: عرضها دفعة واحدة (مع فلتر غير المعيّنين إن طُلب)
+        if (count($idList) >= 2) {
+            $perPage = max($perPage, min(500, max(50, count($idList) * 3)));
+            $offset = ($page - 1) * $perPage;
+            $placeholders = implode(',', array_fill(0, count($idList), '?'));
+            $where .= " AND b.national_id IN ({$placeholders})";
+            array_push($params, ...$idList);
+        } elseif ($query !== '') {
             $nid = ArabicFormat::normalizeNationalId($query);
             $nameLike = '%' . $query . '%';
             // مسار سريع بدون REPLACE على العمود (كان يبطئ البحث جداً على كشوف كبيرة)
@@ -429,7 +438,29 @@ final class CampaignService
             'page' => $page,
             'per_page' => $perPage,
             'filter' => $filter,
+            'id_list_count' => count($idList) >= 2 ? count($idList) : 0,
         ];
+    }
+
+    /**
+     * استخراج قائمة هويات من نص ملصوق (سطر / فاصلة / مسافة).
+     *
+     * @return list<string>
+     */
+    private static function extractNationalIdList(string $query): array
+    {
+        $western = ArabicFormat::toWesternDigits($query);
+        $tokens = preg_split('/[\s,;|\/\\\\]+/u', $western, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        $ids = [];
+        foreach ($tokens as $token) {
+            $nid = ArabicFormat::normalizeNationalId($token);
+            $nid = preg_replace('/[^\d]/u', '', $nid) ?? $nid;
+            if ($nid !== '' && preg_match('/^\d{5,15}$/', $nid)) {
+                $ids[$nid] = true;
+            }
+        }
+
+        return array_keys($ids);
     }
 
     /** تعبير SQL: رقم الهوية يحتوي أرقاماً عربية/فارسية. */

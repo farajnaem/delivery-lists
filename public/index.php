@@ -811,6 +811,7 @@ if ($uri === '/campaigns/beneficiaries' && $method === 'GET') {
         'canDeleteBeneficiary' => $canDeleteBeneficiary,
         'reviewCounts' => $review,
         'searched' => $shouldList,
+        'idListCount' => (int) ($result['id_list_count'] ?? 0),
     ]);
     exit;
 }

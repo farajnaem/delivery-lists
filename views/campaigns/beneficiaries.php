@@ -19,6 +19,7 @@ $cid = (int) $campaign['id'];
 $showReviewFilters = $canManualDeliver || $canDeleteBeneficiary;
 $showManualChecks = $canManualDeliver && $filter === 'anomaly';
 $showBulkDelete = $canDeleteBeneficiary;
+$idListCount = (int) ($idListCount ?? 0);
 
 $colspan = 7
     + ($showManualChecks ? 1 : 0)
@@ -46,7 +47,7 @@ page_header(
     [
         ['label' => 'عودة', 'url' => '/campaigns/view?id=' . $cid . '&panel=candidates'],
     ],
-    'ابحث برقم الهوية أو جزء من الاسم — ثم عدّل أو احذف. من «غير معيّنين» يمكن تحديد مجموعة وحذفها دفعة واحدة.'
+    'ابحث برقم الهوية أو جزء من الاسم — أو الصق مجموعة هويات دفعة واحدة ثم احذف المحددين.'
 );
 ?>
 
@@ -56,9 +57,11 @@ page_header(
         <?php if ($filter !== ''): ?>
         <input type="hidden" name="filter" value="<?= e($filter) ?>">
         <?php endif; ?>
-        <div style="flex:1;min-width:220px">
-            <label class="field-label">الهوية أو جزء من الاسم</label>
-            <input type="search" name="q" class="form-control" value="<?= e($q) ?>" placeholder="رقم الهوية أو جزء من الاسم" autofocus>
+        <div style="flex:1;min-width:260px">
+            <label class="field-label">هوية / اسم / أو مجموعة هويات</label>
+            <textarea name="q" class="form-control" rows="<?= $idListCount >= 2 || substr_count($q, "\n") > 0 ? '5' : '2' ?>"
+                      placeholder="هوية واحدة، أو الصق عدة هويات (سطر أو فاصلة بين كل رقم)" autofocus><?= e($q) ?></textarea>
+            <p class="field-hint" style="margin:0.35rem 0 0">مثال لصق مجموعة: كل هوية في سطر، أو مفصولة بفاصلة/مسافة. مع فلتر «غير معيّنين» تظهر فقط غير المعيّنة منها.</p>
         </div>
         <button type="submit" class="btn">بحث</button>
         <?php if ($q !== '' || $filter !== ''): ?>
@@ -83,12 +86,15 @@ page_header(
     <?php if ($searched): ?>
     <p class="text-muted" style="margin:0.75rem 0 0">
         النتيجة: <strong><?= ar_digits($total) ?></strong>
+        <?php if ($idListCount >= 2): ?>
+        — تم التعرّف على <strong><?= ar_digits($idListCount) ?></strong> هوية ملصوقة
+        <?php endif; ?>
         <?php if ($totalPages > 1): ?>
         — صفحة <?= ar_digits($page) ?> من <?= ar_digits($totalPages) ?>
         <?php endif; ?>
     </p>
     <?php else: ?>
-    <p class="text-muted" style="margin:0.75rem 0 0">أدخل رقم هوية أو جزءاً من الاسم ثم اضغط بحث — أو افتح فلتر «غير معيّنين».</p>
+    <p class="text-muted" style="margin:0.75rem 0 0">أدخل هوية أو اسماً، أو الصق مجموعة هويات — ويفضَّل مع فلتر «غير معيّنين».</p>
     <?php endif; ?>
 </div>
 
