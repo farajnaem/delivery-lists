@@ -78,6 +78,7 @@ page_header(
         <summary style="cursor:pointer;color:var(--muted);font-size:0.9rem">فلاتر إضافية (اختياري)</summary>
         <div class="actions-row" style="margin-top:0.65rem;gap:0.5rem;flex-wrap:wrap">
             <a class="btn btn-sm <?= $filter === 'unassigned' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('unassigned', $q)) ?>">غير معيّنين</a>
+            <a class="btn btn-sm <?= $filter === 'unassigned_today' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('unassigned_today', $q)) ?>">غير معيّنين مضافون اليوم</a>
             <a class="btn btn-sm <?= $filter === 'duplicates' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('duplicates', $q)) ?>">مكررون</a>
             <?php if ($canManualDeliver): ?>
             <a class="btn btn-sm <?= $filter === 'today' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('today', $q)) ?>">مستلمو اليوم</a>
@@ -135,13 +136,46 @@ page_header(
     <div class="card actions-row" style="align-items:center;gap:0.75rem;flex-wrap:wrap">
         <p class="text-muted" style="margin:0;flex:1;min-width:220px">
             حدّد غير المعيّنين من القائمة ثم احذفهم دفعة واحدة.
-            <?php if ($filter === 'unassigned'): ?>
-            <strong>(فلتر غير المعيّنين نشط)</strong>
+            <?php if ($filter === 'unassigned' || $filter === 'unassigned_today'): ?>
+            <strong>(فلتر <?= $filter === 'unassigned_today' ? 'مضافون اليوم' : 'غير المعيّنين' ?> نشط)</strong>
             <?php endif; ?>
         </p>
         <button type="submit" class="btn btn-danger" id="bulk-delete-btn">حذف المحددين</button>
     </div>
 </form>
+
+<?php if ($filter === 'unassigned_today' && $searched && $total > 0): ?>
+<form method="post" action="<?= e(url('/campaigns/beneficiaries/delete-unassigned-today')) ?>"
+      data-confirm="حذف كل غير المعيّنين المضافين اليوم (<?= ar_digits($total) ?>) نهائياً؟ لا يمكن التراجع.">
+    <?= \App\Csrf::field() ?>
+    <input type="hidden" name="campaign_id" value="<?= $cid ?>">
+    <div class="card actions-row" style="align-items:center;gap:0.75rem;flex-wrap:wrap;border-color:#c0392b">
+        <p class="text-muted" style="margin:0;flex:1;min-width:220px">
+            حذف دفعة واحدة لكل نتائج هذا الفلتر (<?= ar_digits($total) ?>) بدون تحديد يدوي.
+            راجع العدد أولاً — قد يشمل ملحقين بلا تاريخ إضافة إن وُجدوا.
+        </p>
+        <button type="submit" class="btn btn-danger">حذف كل المضافين اليوم</button>
+    </div>
+</form>
+<?php endif; ?>
+
+<div class="card">
+    <h2 class="panel-title" style="margin-top:0;font-size:1rem">حذف غير معيّنين بنفس ملف الإكسل</h2>
+    <p class="text-muted" style="margin:0 0 0.75rem">
+        ارفع نفس ملف الرفع الخاطئ: يُحذف فقط غير المعيّنين المطابقين للهويات في الملف (الآمن عند وجود ملحقين سابقين).
+    </p>
+    <form method="post" action="<?= e(url('/campaigns/beneficiaries/delete-by-excel')) ?>" enctype="multipart/form-data"
+          class="actions-row" style="flex-wrap:wrap;align-items:flex-end;gap:0.75rem"
+          data-confirm="حذف غير المعيّنين المطابقين لهويات الملف نهائياً؟">
+        <?= \App\Csrf::field() ?>
+        <input type="hidden" name="campaign_id" value="<?= $cid ?>">
+        <div style="flex:1;min-width:220px">
+            <label class="field-label" for="delete-excel">ملف Excel</label>
+            <input type="file" id="delete-excel" name="excel_file" accept=".xlsx,.xls" required class="form-control">
+        </div>
+        <button type="submit" class="btn btn-danger">حذف المطابقين غير المعيّنين</button>
+    </form>
+</div>
 <?php endif; ?>
 
 <div class="card table-panel">

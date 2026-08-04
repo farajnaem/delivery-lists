@@ -312,6 +312,11 @@ $panelUrl = static function (string $p) use ($cid): string {
             </div>
             <button type="submit" class="btn">إضافة</button>
         </form>
+        <p class="text-muted" style="margin:0.85rem 0 0">
+            رفعت ملفاً بالخطأ؟ من
+            <a href="<?= e(url('/campaigns/beneficiaries?id=' . $cid . '&filter=unassigned_today')) ?>">بحث المرشحين</a>
+            : فلتر «غير معيّنين مضافون اليوم» أو ارفع نفس الملف واختر حذف المطابقين.
+        </p>
     </div>
     <?php elseif ($totalBen === 0 && !empty($canEdit)): ?>
     <div class="card">

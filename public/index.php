@@ -995,6 +995,63 @@ if ($uri === '/campaigns/beneficiaries/delete-many' && $method === 'POST') {
     redirect($back);
 }
 
+if ($uri === '/campaigns/beneficiaries/delete-unassigned-today' && $method === 'POST') {
+    Auth::requireRole(fn ($r) => RoleHelper::canEditCampaign($r));
+    $id = (int) ($_POST['campaign_id'] ?? 0);
+    $back = '/campaigns/beneficiaries?id=' . $id . '&filter=unassigned_today';
+    if (!Csrf::verify($_POST['_csrf'] ?? null)) {
+        flash('error', Csrf::failureMessage());
+        redirect($back);
+    }
+    $result = CampaignService::deleteUnassignedAddedOnDate($id);
+    if (!$result['ok']) {
+        flash('error', $result['error'] ?? 'تعذّر الحذف.');
+        redirect($back);
+    }
+    $msg = 'تم حذف ' . (int) ($result['deleted'] ?? 0) . ' غير معيّن مضاف اليوم.';
+    if ((int) ($result['skipped'] ?? 0) > 0) {
+        $msg .= ' تُخطّي ' . (int) $result['skipped'] . ' (معيّن أو مستلم).';
+    }
+    flash('success', $msg);
+    redirect($back);
+}
+
+if ($uri === '/campaigns/beneficiaries/delete-by-excel' && $method === 'POST') {
+    Auth::requireRole(fn ($r) => RoleHelper::canEditCampaign($r));
+    $id = (int) ($_POST['campaign_id'] ?? 0);
+    $back = '/campaigns/beneficiaries?id=' . $id . '&filter=unassigned';
+    if (!Csrf::verify($_POST['_csrf'] ?? null)) {
+        flash('error', Csrf::failureMessage());
+        redirect($back);
+    }
+    try {
+        $ext = strtolower(pathinfo($_FILES['excel_file']['name'] ?? '', PATHINFO_EXTENSION));
+        if (!in_array($ext, ['xlsx', 'xls'], true)) {
+            throw new RuntimeException('صيغة الملف يجب أن تكون Excel (xlsx/xls).');
+        }
+        $tmp = dirname(__DIR__) . '/storage/uploads/' . uniqid('del_', true) . '.' . $ext;
+        if (!move_uploaded_file($_FILES['excel_file']['tmp_name'] ?? '', $tmp)) {
+            throw new RuntimeException('تعذّر رفع الملف.');
+        }
+        $items = ExcelImportService::parse($tmp);
+        $result = ExcelImportService::deleteUnassignedMatchingFile($id, $items);
+        @unlink($tmp);
+        if (!$result['ok']) {
+            flash('error', $result['error'] ?? 'تعذّر الحذف من الملف.');
+            redirect($back);
+        }
+        $msg = 'تم حذف ' . (int) ($result['deleted'] ?? 0) . ' غير معيّن مطابق لملف الإكسل.';
+        if ((int) ($result['skipped'] ?? 0) > 0) {
+            $msg .= ' تُخطّي ' . (int) $result['skipped'] . ' (معيّن أو مستلم).';
+        }
+        flash('success', $msg);
+        redirect($back);
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+        redirect($back);
+    }
+}
+
 if ($uri === '/campaigns/beneficiaries/mark-delivered' && $method === 'POST') {
     Auth::requireRole(fn ($r) => RoleHelper::canBulkDeliver($r));
     $id = (int) ($_POST['campaign_id'] ?? 0);
@@ -1138,7 +1195,7 @@ if ($uri === '/campaigns/append-import' && $method === 'POST') {
             $msg .= " تُجاهل {$result['skipped_duplicates']} صفاً لتكرار رقم الهوية أو الاسم بالكامل.";
         }
         flash('success', $msg);
-        redirect('/campaigns/beneficiaries?id=' . $id . '&filter=unassigned');
+        redirect('/campaigns/beneficiaries?id=' . $id . '&filter=unassigned_today');
     } catch (Throwable $e) {
         flash('error', $e->getMessage());
         redirect($back);

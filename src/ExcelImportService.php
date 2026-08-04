@@ -196,9 +196,10 @@ final class ExcelImportService
             return;
         }
 
-        $placeholders = implode(',', array_fill(0, count($chunk), '(?,?,?,?,?)'));
+        $now = db_now();
+        $placeholders = implode(',', array_fill(0, count($chunk), '(?,?,?,?,?,?,?)'));
         $sql = '
-            INSERT INTO beneficiaries (campaign_id, name, national_id, mobile, receipt_status)
+            INSERT INTO beneficiaries (campaign_id, name, national_id, mobile, receipt_status, created_at, updated_at)
             VALUES ' . $placeholders;
 
         $params = [];
@@ -208,9 +209,33 @@ final class ExcelImportService
             $params[] = $item['national_id'];
             $params[] = $item['mobile'];
             $params[] = $item['receipt_status'];
+            $params[] = $now;
+            $params[] = $now;
         }
 
         $pdo->prepare($sql)->execute($params);
+    }
+
+    /**
+     * حذف غير المعيّنين المطابقين لهويات ملف Excel (للتراجع عن رفع خاطئ).
+     *
+     * @return array{ok:bool,error?:string,deleted?:int,skipped?:int,matched?:int}
+     */
+    public static function deleteUnassignedMatchingFile(int $campaignId, array $items): array
+    {
+        $ids = [];
+        foreach ($items as $item) {
+            $nid = ArabicFormat::normalizeNationalId((string) ($item['national_id'] ?? ''));
+            if ($nid !== '') {
+                $ids[$nid] = true;
+            }
+        }
+        $nationalIds = array_keys($ids);
+        if ($nationalIds === []) {
+            return ['ok' => false, 'error' => 'الملف لا يحتوي أرقام هوية صالحة.'];
+        }
+
+        return CampaignService::deleteUnassignedByNationalIds($campaignId, $nationalIds);
     }
 
     private static function normalizeHeader(string $h): string

@@ -249,6 +249,86 @@ final class CampaignService
         ];
     }
 
+    /**
+     * حذف غير المعيّنين حسب أرقام الهوية (مثلاً من ملف Excel مرفوع بالخطأ).
+     *
+     * @param list<string> $nationalIds
+     * @return array{ok:bool,error?:string,deleted?:int,skipped?:int,matched?:int}
+     */
+    public static function deleteUnassignedByNationalIds(int $campaignId, array $nationalIds): array
+    {
+        $normalized = [];
+        foreach ($nationalIds as $nid) {
+            $n = ArabicFormat::normalizeNationalId((string) $nid);
+            if ($n !== '') {
+                $normalized[$n] = true;
+            }
+        }
+        $list = array_keys($normalized);
+        if ($list === []) {
+            return ['ok' => false, 'error' => 'لا توجد هويات صالحة للحذف.'];
+        }
+
+        $pdo = Database::getConnection();
+        $beneficiaryIds = [];
+        foreach (array_chunk($list, 400) as $chunk) {
+            $placeholders = implode(',', array_fill(0, count($chunk), '?'));
+            $stmt = $pdo->prepare(
+                "SELECT id FROM beneficiaries WHERE campaign_id = ? AND national_id IN ({$placeholders})"
+            );
+            $stmt->execute(array_merge([$campaignId], $chunk));
+            foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $id) {
+                $beneficiaryIds[] = (int) $id;
+            }
+        }
+
+        if ($beneficiaryIds === []) {
+            return ['ok' => false, 'error' => 'لا يوجد في هذه العملية أي مستفيد مطابق لهويات الملف.', 'matched' => 0];
+        }
+
+        $result = self::deleteBeneficiariesMany($campaignId, $beneficiaryIds);
+        $result['matched'] = count($beneficiaryIds);
+
+        return $result;
+    }
+
+    /**
+     * حذف كل غير المعيّنين المضافين في تاريخ معيّن (افتراضياً اليوم).
+     *
+     * @return array{ok:bool,error?:string,deleted?:int,skipped?:int,matched?:int}
+     */
+    public static function deleteUnassignedAddedOnDate(int $campaignId, ?string $date = null): array
+    {
+        $date = $date !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) ? $date : date('Y-m-d');
+        $pdo = Database::getConnection();
+        $delivered = DeliveryService::STATUS_DELIVERED;
+        $unassignedExpr = '(day_index IS NULL OR day_index = 0 OR disbursement_code IS NULL OR disbursement_code = \'\')';
+
+        $stmt = $pdo->prepare("
+            SELECT id FROM beneficiaries
+            WHERE campaign_id = ?
+              AND {$unassignedExpr}
+              AND (receipt_status IS NULL OR receipt_status != ?)
+              AND (
+                CAST(created_at AS CHAR) LIKE ?
+                OR (
+                    (created_at IS NULL OR CAST(created_at AS CHAR) = '')
+                    AND (updated_at IS NULL OR CAST(updated_at AS CHAR) = '')
+                )
+              )
+        ");
+        $stmt->execute([$campaignId, $delivered, $date . '%']);
+        $ids = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+        if ($ids === []) {
+            return ['ok' => false, 'error' => 'لا يوجد غير معيّنين مضافين في هذا التاريخ للحذف.', 'matched' => 0];
+        }
+
+        $result = self::deleteBeneficiariesMany($campaignId, $ids);
+        $result['matched'] = count($ids);
+
+        return $result;
+    }
+
     public static function deliveredCount(int $id): int
     {
         $pdo = Database::getConnection();
@@ -317,7 +397,7 @@ final class CampaignService
         $perPage = max(20, min(500, $perPage));
         $offset = ($page - 1) * $perPage;
         $filter = strtolower(trim($filter));
-        $allowed = ['', 'all', 'anomaly', 'unassigned', 'no_mobile', 'today', 'delivered_no_mobile', 'arabic_id', 'duplicates'];
+        $allowed = ['', 'all', 'anomaly', 'unassigned', 'unassigned_today', 'no_mobile', 'today', 'delivered_no_mobile', 'arabic_id', 'duplicates'];
         if (!in_array($filter, $allowed, true)) {
             $filter = '';
         }
@@ -383,6 +463,17 @@ final class CampaignService
         } elseif ($filter === 'unassigned') {
             $where .= " AND {$unassignedExpr} AND (b.receipt_status IS NULL OR b.receipt_status != ?)";
             $params[] = $delivered;
+        } elseif ($filter === 'unassigned_today') {
+            // مضافون اليوم حسب created_at — أو بلا ختم زمني (ملحق قديم قبل إضافة العمود)
+            $where .= " AND {$unassignedExpr} AND (b.receipt_status IS NULL OR b.receipt_status != ?)
+              AND (
+                CAST(b.created_at AS CHAR) LIKE ?
+                OR (
+                    (b.created_at IS NULL OR CAST(b.created_at AS CHAR) = '')
+                    AND (b.updated_at IS NULL OR CAST(b.updated_at AS CHAR) = '')
+                )
+              )";
+            array_push($params, $delivered, $today . '%');
         } elseif ($filter === 'duplicates') {
             // بدون تطبيع REPLACE — التجميع على القيمة المخزّنة (بعد migrate الهويات موحّدة)
             $where .= " AND b.national_id IS NOT NULL AND TRIM(b.national_id) != '' AND EXISTS (
@@ -416,6 +507,7 @@ final class CampaignService
 
         $orderBy = match ($filter) {
             'today' => 'b.delivered_at DESC, b.id DESC',
+            'unassigned_today' => 'b.created_at DESC, b.id DESC',
             'duplicates' => 'b.national_id ASC, b.id ASC',
             default => 'b.id DESC',
         };

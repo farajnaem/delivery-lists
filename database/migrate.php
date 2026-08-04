@@ -18,6 +18,7 @@ $migrations = $isMysql ? [
     'delivery_opens_at' => 'ALTER TABLE campaigns ADD COLUMN delivery_opens_at DATETIME NULL',
     'pipeline_name' => "ALTER TABLE campaigns ADD COLUMN pipeline_name VARCHAR(255) NOT NULL DEFAULT ''",
     'beneficiaries_updated_at' => 'ALTER TABLE beneficiaries ADD COLUMN updated_at DATETIME NULL',
+    'beneficiaries_created_at' => 'ALTER TABLE beneficiaries ADD COLUMN created_at DATETIME NULL',
     'delivered_at' => 'ALTER TABLE beneficiaries ADD COLUMN delivered_at DATETIME NULL',
     'delivered_by' => 'ALTER TABLE beneficiaries ADD COLUMN delivered_by INT NULL',
     'delivery_type' => 'ALTER TABLE beneficiaries ADD COLUMN delivery_type VARCHAR(30) NULL',
@@ -32,6 +33,7 @@ $migrations = $isMysql ? [
     'delivery_opens_at' => 'ALTER TABLE campaigns ADD COLUMN delivery_opens_at TEXT',
     'pipeline_name' => "ALTER TABLE campaigns ADD COLUMN pipeline_name TEXT NOT NULL DEFAULT ''",
     'beneficiaries_updated_at' => 'ALTER TABLE beneficiaries ADD COLUMN updated_at TEXT',
+    'beneficiaries_created_at' => 'ALTER TABLE beneficiaries ADD COLUMN created_at TEXT',
     'delivered_at' => 'ALTER TABLE beneficiaries ADD COLUMN delivered_at TEXT',
     'delivered_by' => 'ALTER TABLE beneficiaries ADD COLUMN delivered_by INTEGER',
     'delivery_type' => 'ALTER TABLE beneficiaries ADD COLUMN delivery_type TEXT',
@@ -243,6 +245,16 @@ try {
     echo 'WARN: disbursement_code uniqueness — ' . $e->getMessage() . "\n";
 }
 
+// created_at: الملحقون بلا ختم زمني (غالباً مضافون حديثاً) → الآن، ثم الباقي من updated_at/delivered_at
+try {
+    $now = db_now();
+    $pdo->exec("UPDATE beneficiaries SET created_at = '{$now}' WHERE (created_at IS NULL OR created_at = '') AND (updated_at IS NULL OR updated_at = '')");
+    $pdo->exec("UPDATE beneficiaries SET created_at = COALESCE(updated_at, delivered_at, '{$now}') WHERE created_at IS NULL OR created_at = ''");
+    echo "OK: beneficiaries created_at backfill\n";
+} catch (Throwable) {
+    echo "SKIP: beneficiaries created_at backfill\n";
+}
+
 // تعبئة updated_at للسجلات القديمة
 try {
     $now = db_now();
@@ -294,6 +306,13 @@ CREATE TABLE IF NOT EXISTS mobile_tokens (
         echo "OK: idx_beneficiaries_updated\n";
     } catch (Throwable) {
         echo "SKIP: idx_beneficiaries_updated\n";
+    }
+
+    try {
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_beneficiaries_created ON beneficiaries(campaign_id, created_at)');
+        echo "OK: idx_beneficiaries_created\n";
+    } catch (Throwable) {
+        echo "SKIP: idx_beneficiaries_created\n";
     }
 
     try {
