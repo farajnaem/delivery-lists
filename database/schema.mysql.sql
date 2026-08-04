@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS beneficiaries (
     received_by_name VARCHAR(255) NULL,
     created_at DATETIME NULL,
     updated_at DATETIME NULL,
+    shelter_name VARCHAR(255) NULL,
     delivery_batch_id INT NULL,
     INDEX idx_beneficiaries_campaign (campaign_id),
     INDEX idx_beneficiaries_day_window (campaign_id, day_index, window_num),

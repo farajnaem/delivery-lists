@@ -18,11 +18,12 @@ final class ExcelImportService
             'name' => 'اسم رب الأسرة (أو: اسم المستفيد، الاسم)',
             'national_id' => 'رقم الهوية',
             'mobile' => 'رقم التواصل (أو: رقم الجوال)',
+            'shelter' => 'مركز الإيواء (اختياري — أو: المخيم، اسم المركز)',
             'status' => 'حالة الاستلام (اختياري — افتراضي: قيد التسليم)',
         ];
     }
 
-    /** @return list<array{name:string,national_id:string,mobile:string,receipt_status:string}> */
+    /** @return list<array{name:string,national_id:string,mobile:string,shelter_name:string,receipt_status:string}> */
     public static function parse(string $filePath): array
     {
         extend_runtime();
@@ -49,6 +50,10 @@ final class ExcelImportService
             $name = trim((string) ($row[$map['name']] ?? ''));
             $nationalId = ArabicFormat::normalizeNationalId($row[$map['national_id']] ?? '');
             $mobile = trim((string) ($row[$map['mobile']] ?? ''));
+            $shelter = '';
+            if ($map['shelter'] !== null) {
+                $shelter = trim((string) ($row[$map['shelter']] ?? ''));
+            }
 
             if ($name === '' && $nationalId === '' && $mobile === '') {
                 continue;
@@ -67,6 +72,7 @@ final class ExcelImportService
                 'name' => $name,
                 'national_id' => $nationalId,
                 'mobile' => PhoneHelper::normalize($mobile),
+                'shelter_name' => $shelter,
                 'receipt_status' => $status,
             ];
         }
@@ -155,6 +161,7 @@ final class ExcelImportService
                 'name' => (string) ($item['name'] ?? ''),
                 'national_id' => $nid,
                 'mobile' => PhoneHelper::normalize((string) ($item['mobile'] ?? '')),
+                'shelter_name' => trim((string) ($item['shelter_name'] ?? '')),
                 // الملحق دائماً بانتظار التعيين لأيام لاحقة
                 'receipt_status' => DeliveryService::STATUS_PENDING,
             ];
@@ -189,7 +196,7 @@ final class ExcelImportService
         ];
     }
 
-    /** @param list<array{name:string,national_id:string,mobile:string,receipt_status:string}> $chunk */
+    /** @param list<array{name:string,national_id:string,mobile:string,shelter_name?:string,receipt_status:string}> $chunk */
     private static function insertBatch(PDO $pdo, int $campaignId, array $chunk): void
     {
         if ($chunk === []) {
@@ -197,9 +204,9 @@ final class ExcelImportService
         }
 
         $now = db_now();
-        $placeholders = implode(',', array_fill(0, count($chunk), '(?,?,?,?,?,?,?)'));
+        $placeholders = implode(',', array_fill(0, count($chunk), '(?,?,?,?,?,?,?,?)'));
         $sql = '
-            INSERT INTO beneficiaries (campaign_id, name, national_id, mobile, receipt_status, created_at, updated_at)
+            INSERT INTO beneficiaries (campaign_id, name, national_id, mobile, receipt_status, shelter_name, created_at, updated_at)
             VALUES ' . $placeholders;
 
         $params = [];
@@ -209,6 +216,7 @@ final class ExcelImportService
             $params[] = $item['national_id'];
             $params[] = $item['mobile'];
             $params[] = $item['receipt_status'];
+            $params[] = trim((string) ($item['shelter_name'] ?? ''));
             $params[] = $now;
             $params[] = $now;
         }
@@ -278,6 +286,18 @@ final class ExcelImportService
                 'الحالة',
                 'status',
             ],
+            'shelter' => [
+                'مركز الإيواء',
+                'مركز ايواء',
+                'مركز إيواء',
+                'اسم المركز',
+                'المركز',
+                'المخيم',
+                'اسم المخيم',
+                'shelter',
+                'camp',
+                'camp name',
+            ],
         ];
 
         $requiredLabels = [
@@ -302,12 +322,15 @@ final class ExcelImportService
             if (!isset($map[$required])) {
                 throw new \RuntimeException(
                     'عمود مطلوب غير موجود: ' . ($requiredLabels[$required] ?? $required)
-                    . '. الأعمدة المعتمدة: اسم رب الأسرة، رقم الهوية، رقم التواصل، حالة الاستلام (اختياري).'
+                    . '. الأعمدة المعتمدة: اسم رب الأسرة، رقم الهوية، رقم التواصل، مركز الإيواء (اختياري)، حالة الاستلام (اختياري).'
                 );
             }
         }
         if (!isset($map['status'])) {
             $map['status'] = null;
+        }
+        if (!isset($map['shelter'])) {
+            $map['shelter'] = null;
         }
 
         return $map;

@@ -1008,7 +1008,7 @@ if ($uri === '/campaigns/beneficiaries/delete-unassigned-today' && $method === '
         flash('error', $result['error'] ?? 'تعذّر الحذف.');
         redirect($back);
     }
-    $msg = 'تم حذف ' . (int) ($result['deleted'] ?? 0) . ' غير معيّن مضاف اليوم.';
+    $msg = 'تم حذف ' . (int) ($result['deleted'] ?? 0) . ' غير معيّن من آخر دفعة مضافة.';
     if ((int) ($result['skipped'] ?? 0) > 0) {
         $msg .= ' تُخطّي ' . (int) $result['skipped'] . ' (معيّن أو مستلم).';
     }

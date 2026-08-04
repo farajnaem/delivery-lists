@@ -293,40 +293,94 @@ final class CampaignService
     }
 
     /**
-     * حذف كل غير المعيّنين المضافين في تاريخ معيّن (افتراضياً اليوم).
+     * حذف كل غير المعيّنين من آخر دفعة مضافة (نفس منطق فلتر unassigned_today).
      *
      * @return array{ok:bool,error?:string,deleted?:int,skipped?:int,matched?:int}
      */
     public static function deleteUnassignedAddedOnDate(int $campaignId, ?string $date = null): array
     {
-        $date = $date !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) ? $date : date('Y-m-d');
         $pdo = Database::getConnection();
         $delivered = DeliveryService::STATUS_DELIVERED;
         $unassignedExpr = '(day_index IS NULL OR day_index = 0 OR disbursement_code IS NULL OR disbursement_code = \'\')';
+        $where = 'campaign_id = ?';
+        $params = [$campaignId];
+        self::appendUnassignedLatestBatchFilter($pdo, $campaignId, $unassignedExpr, $delivered, $where, $params, '');
 
-        $stmt = $pdo->prepare("
-            SELECT id FROM beneficiaries
-            WHERE campaign_id = ?
-              AND {$unassignedExpr}
-              AND (receipt_status IS NULL OR receipt_status != ?)
-              AND (
-                CAST(created_at AS CHAR) LIKE ?
-                OR (
-                    (created_at IS NULL OR CAST(created_at AS CHAR) = '')
-                    AND (updated_at IS NULL OR CAST(updated_at AS CHAR) = '')
-                )
-              )
-        ");
-        $stmt->execute([$campaignId, $delivered, $date . '%']);
+        $stmt = $pdo->prepare("SELECT id FROM beneficiaries WHERE {$where}");
+        $stmt->execute($params);
         $ids = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
         if ($ids === []) {
-            return ['ok' => false, 'error' => 'لا يوجد غير معيّنين مضافين في هذا التاريخ للحذف.', 'matched' => 0];
+            return ['ok' => false, 'error' => 'لا يوجد غير معيّنين من آخر دفعة مضافة للحذف.', 'matched' => 0];
         }
 
         $result = self::deleteBeneficiariesMany($campaignId, $ids);
         $result['matched'] = count($ids);
 
         return $result;
+    }
+
+    /**
+     * فلتر آخر يوم إضافة لغير المعيّنين (أحدث COALESCE(created_at, updated_at) + بلا ختم زمني).
+     *
+     * @param-out string $where
+     * @param-out list<mixed> $params
+     */
+    private static function appendUnassignedLatestBatchFilter(
+        PDO $pdo,
+        int $campaignId,
+        string $unassignedExpr,
+        string $delivered,
+        string &$where,
+        array &$params,
+        string $alias = 'b'
+    ): void {
+        $p = $alias !== '' ? $alias . '.' : '';
+        // تكييف تعبير غير المعيّنين إذا جاء ببادئة b.
+        $ua = $unassignedExpr;
+        if ($alias === '' && str_contains($unassignedExpr, 'b.')) {
+            $ua = str_replace('b.', '', $unassignedExpr);
+        } elseif ($alias !== '' && !str_contains($unassignedExpr, 'b.')) {
+            $ua = preg_replace(
+                '/\b(day_index|disbursement_code)\b/',
+                $alias . '.$1',
+                $unassignedExpr
+            ) ?? $unassignedExpr;
+        }
+
+        $where .= " AND {$ua} AND ({$p}receipt_status IS NULL OR {$p}receipt_status != ?)";
+        $params[] = $delivered;
+
+        $maxStmt = $pdo->prepare("
+            SELECT MAX(COALESCE(created_at, updated_at))
+            FROM beneficiaries
+            WHERE campaign_id = ?
+              AND (day_index IS NULL OR day_index = 0 OR disbursement_code IS NULL OR disbursement_code = '')
+              AND (receipt_status IS NULL OR receipt_status != ?)
+              AND (
+                (created_at IS NOT NULL AND CAST(created_at AS CHAR) != '')
+                OR (updated_at IS NOT NULL AND CAST(updated_at AS CHAR) != '')
+              )
+        ");
+        $maxStmt->execute([$campaignId, $delivered]);
+        $maxTs = $maxStmt->fetchColumn();
+
+        $days = [date('Y-m-d'), date('Y-m-d', strtotime('-1 day'))];
+        if (is_string($maxTs) && preg_match('/^(\d{4}-\d{2}-\d{2})/', $maxTs, $m)) {
+            $days[] = $m[1];
+        }
+        $days = array_values(array_unique($days));
+
+        $parts = [];
+        foreach ($days as $day) {
+            $parts[] = "CAST(COALESCE({$p}created_at, {$p}updated_at) AS CHAR) LIKE ?";
+            $params[] = $day . '%';
+        }
+        $parts[] = "(
+            ({$p}created_at IS NULL OR CAST({$p}created_at AS CHAR) = '')
+            AND ({$p}updated_at IS NULL OR CAST({$p}updated_at AS CHAR) = '')
+        )";
+
+        $where .= ' AND (' . implode(' OR ', $parts) . ')';
     }
 
     public static function deliveredCount(int $id): int
@@ -444,6 +498,9 @@ final class CampaignService
                 $parts[] = 'b.disbursement_code LIKE ?';
                 $params[] = '%' . $query . '%';
             }
+            // مركز الإيواء
+            $parts[] = 'b.shelter_name LIKE ?';
+            $params[] = $nameLike;
             $where .= ' AND (' . implode(' OR ', $parts) . ')';
         }
 
@@ -464,16 +521,10 @@ final class CampaignService
             $where .= " AND {$unassignedExpr} AND (b.receipt_status IS NULL OR b.receipt_status != ?)";
             $params[] = $delivered;
         } elseif ($filter === 'unassigned_today') {
-            // مضافون اليوم حسب created_at — أو بلا ختم زمني (ملحق قديم قبل إضافة العمود)
-            $where .= " AND {$unassignedExpr} AND (b.receipt_status IS NULL OR b.receipt_status != ?)
-              AND (
-                CAST(b.created_at AS CHAR) LIKE ?
-                OR (
-                    (b.created_at IS NULL OR CAST(b.created_at AS CHAR) = '')
-                    AND (b.updated_at IS NULL OR CAST(b.updated_at AS CHAR) = '')
-                )
-              )";
-            array_push($params, $delivered, $today . '%');
+            // آخر يوم إضافة فعلي لغير المعيّنين (وليس فقط تقويم «اليوم» — يصلح اختلاف المنطقة/الـ migrate)
+            self::appendUnassignedLatestBatchFilter($pdo, $campaignId, $unassignedExpr, $delivered, $where, $params, 'b');
+            $perPage = max($perPage, 200);
+            $offset = ($page - 1) * $perPage;
         } elseif ($filter === 'duplicates') {
             // بدون تطبيع REPLACE — التجميع على القيمة المخزّنة (بعد migrate الهويات موحّدة)
             $where .= " AND b.national_id IS NOT NULL AND TRIM(b.national_id) != '' AND EXISTS (

@@ -314,8 +314,8 @@ $panelUrl = static function (string $p) use ($cid): string {
         </form>
         <p class="text-muted" style="margin:0.85rem 0 0">
             رفعت ملفاً بالخطأ؟ من
-            <a href="<?= e(url('/campaigns/beneficiaries?id=' . $cid . '&filter=unassigned_today')) ?>">بحث المرشحين</a>
-            : فلتر «غير معيّنين مضافون اليوم» أو ارفع نفس الملف واختر حذف المطابقين.
+            <a href="<?= e(url('/campaigns/beneficiaries?id=' . $cid . '&filter=unassigned_today')) ?>">بحث المرشحين — آخر دفعة غير معيّنين</a>
+            : راجع الأسماء ثم احذف، أو ارفع نفس الملف واختر حذف المطابقين.
         </p>
     </div>
     <?php elseif ($totalBen === 0 && !empty($canEdit)): ?>

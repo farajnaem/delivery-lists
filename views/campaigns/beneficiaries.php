@@ -22,10 +22,12 @@ $showBulkDelete = $canDeleteBeneficiary;
 $idListCount = (int) ($idListCount ?? 0);
 $useIdsFlag = !empty($useIdsFlag) || $idListCount >= 2;
 
-$colspan = 7
+$colspan = 8
     + ($showManualChecks ? 1 : 0)
     + ($showBulkDelete ? 1 : 0)
     + ($canEditRow ? 1 : 0);
+$showShelterCol = true;
+$autoCheckBulk = $showBulkDelete && ($filter === 'unassigned_today' || $filter === 'unassigned');
 
 $filterUrl = static function (string $f = '', string $query = '') use ($cid, $useIdsFlag): string {
     $url = '/campaigns/beneficiaries?id=' . $cid;
@@ -78,7 +80,7 @@ page_header(
         <summary style="cursor:pointer;color:var(--muted);font-size:0.9rem">فلاتر إضافية (اختياري)</summary>
         <div class="actions-row" style="margin-top:0.65rem;gap:0.5rem;flex-wrap:wrap">
             <a class="btn btn-sm <?= $filter === 'unassigned' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('unassigned', $q)) ?>">غير معيّنين</a>
-            <a class="btn btn-sm <?= $filter === 'unassigned_today' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('unassigned_today', $q)) ?>">غير معيّنين مضافون اليوم</a>
+            <a class="btn btn-sm <?= $filter === 'unassigned_today' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('unassigned_today', $q)) ?>">آخر دفعة غير معيّنين</a>
             <a class="btn btn-sm <?= $filter === 'duplicates' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('duplicates', $q)) ?>">مكررون</a>
             <?php if ($canManualDeliver): ?>
             <a class="btn btn-sm <?= $filter === 'today' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('today', $q)) ?>">مستلمو اليوم</a>
@@ -137,7 +139,7 @@ page_header(
         <p class="text-muted" style="margin:0;flex:1;min-width:220px">
             حدّد غير المعيّنين من القائمة ثم احذفهم دفعة واحدة.
             <?php if ($filter === 'unassigned' || $filter === 'unassigned_today'): ?>
-            <strong>(فلتر <?= $filter === 'unassigned_today' ? 'مضافون اليوم' : 'غير المعيّنين' ?> نشط)</strong>
+            <strong>(فلتر <?= $filter === 'unassigned_today' ? 'آخر دفعة مضافة' : 'غير المعيّنين' ?> نشط)</strong>
             <?php endif; ?>
         </p>
         <button type="submit" class="btn btn-danger" id="bulk-delete-btn">حذف المحددين</button>
@@ -146,15 +148,14 @@ page_header(
 
 <?php if ($filter === 'unassigned_today' && $searched && $total > 0): ?>
 <form method="post" action="<?= e(url('/campaigns/beneficiaries/delete-unassigned-today')) ?>"
-      data-confirm="حذف كل غير المعيّنين المضافين اليوم (<?= ar_digits($total) ?>) نهائياً؟ لا يمكن التراجع.">
+      data-confirm="حذف كل غير المعيّنين من آخر دفعة مضافة (<?= ar_digits($total) ?>) نهائياً؟ لا يمكن التراجع.">
     <?= \App\Csrf::field() ?>
     <input type="hidden" name="campaign_id" value="<?= $cid ?>">
     <div class="card actions-row" style="align-items:center;gap:0.75rem;flex-wrap:wrap;border-color:#c0392b">
         <p class="text-muted" style="margin:0;flex:1;min-width:220px">
-            حذف دفعة واحدة لكل نتائج هذا الفلتر (<?= ar_digits($total) ?>) بدون تحديد يدوي.
-            راجع العدد أولاً — قد يشمل ملحقين بلا تاريخ إضافة إن وُجدوا.
+            حذف دفعة واحدة لكل نتائج هذا الفلتر (<?= ar_digits($total) ?>) — راجع الأسماء ومراكز الإيواء قبل التأكيد.
         </p>
-        <button type="submit" class="btn btn-danger">حذف كل المضافين اليوم</button>
+        <button type="submit" class="btn btn-danger">حذف كل نتائج آخر دفعة</button>
     </div>
 </form>
 <?php endif; ?>
@@ -195,8 +196,10 @@ page_header(
                 <?php endif; ?>
                 <th>الاسم</th>
                 <th>الهوية</th>
+                <th>مركز الإيواء</th>
                 <th>الجوال</th>
                 <th>الكود</th>
+                <th>تاريخ الإضافة</th>
                 <th>اليوم</th>
                 <th>الحالة</th>
                 <?php if ($canEditRow): ?>
@@ -222,12 +225,17 @@ page_header(
                 $display = (string) $b['sort_order'];
             }
             $rowId = (int) $b['id'];
+            $createdRaw = trim((string) ($b['created_at'] ?? ''));
+            if ($createdRaw === '') {
+                $createdRaw = trim((string) ($b['updated_at'] ?? ''));
+            }
+            $shelter = trim((string) ($b['shelter_name'] ?? ''));
         ?>
         <tr>
             <?php if ($showBulkDelete): ?>
             <td>
                 <?php if ($canDeleteRow): ?>
-                <input type="checkbox" form="bulk-delete-form" name="beneficiary_ids[]" value="<?= $rowId ?>" class="bulk-delete-check">
+                <input type="checkbox" form="bulk-delete-form" name="beneficiary_ids[]" value="<?= $rowId ?>" class="bulk-delete-check"<?= !empty($autoCheckBulk) ? ' checked' : '' ?>>
                 <?php endif; ?>
             </td>
             <?php endif; ?>
@@ -240,8 +248,10 @@ page_header(
             <?php endif; ?>
             <td><?= e((string) ($b['name'] ?? '')) ?></td>
             <td><?= e((string) ($b['national_id'] ?? '')) ?></td>
+            <td><?= e($shelter !== '' ? $shelter : '—') ?></td>
             <td><?= e((string) ($b['mobile'] ?? '')) ?></td>
             <td><?= e($display !== '' ? $display : '—') ?></td>
+            <td><?= $createdRaw !== '' ? e(ar_datetime($createdRaw)) : '—' ?></td>
             <td><?= $assigned ? ar_digits((int) $b['day_index']) : '—' ?></td>
             <td>
                 <?php if ($delivered): ?>
