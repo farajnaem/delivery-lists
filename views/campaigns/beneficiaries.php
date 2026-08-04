@@ -20,18 +20,21 @@ $showReviewFilters = $canManualDeliver || $canDeleteBeneficiary;
 $showManualChecks = $canManualDeliver && $filter === 'anomaly';
 $showBulkDelete = $canDeleteBeneficiary;
 $idListCount = (int) ($idListCount ?? 0);
+$useIdsFlag = !empty($useIdsFlag) || $idListCount >= 2;
 
 $colspan = 7
     + ($showManualChecks ? 1 : 0)
     + ($showBulkDelete ? 1 : 0)
     + ($canEditRow ? 1 : 0);
 
-$filterUrl = static function (string $f = '', string $query = '') use ($cid): string {
+$filterUrl = static function (string $f = '', string $query = '') use ($cid, $useIdsFlag): string {
     $url = '/campaigns/beneficiaries?id=' . $cid;
     if ($f !== '') {
         $url .= '&filter=' . rawurlencode($f);
     }
-    if ($query !== '') {
+    if ($useIdsFlag) {
+        $url .= '&ids=1';
+    } elseif ($query !== '') {
         $url .= '&q=' . rawurlencode($query);
     }
     return url($url);
@@ -52,20 +55,21 @@ page_header(
 ?>
 
 <div class="card">
-    <form method="get" action="<?= e(url('/campaigns/beneficiaries')) ?>" class="actions-row" style="align-items:flex-end;gap:0.75rem;flex-wrap:wrap">
+    <form method="post" action="<?= e(url('/campaigns/beneficiaries/search')) ?>" class="actions-row" style="align-items:flex-end;gap:0.75rem;flex-wrap:wrap">
+        <?= \App\Csrf::field() ?>
         <input type="hidden" name="id" value="<?= $cid ?>">
         <?php if ($filter !== ''): ?>
         <input type="hidden" name="filter" value="<?= e($filter) ?>">
         <?php endif; ?>
         <div style="flex:1;min-width:260px">
             <label class="field-label">هوية / اسم / أو مجموعة هويات</label>
-            <textarea name="q" class="form-control" rows="<?= $idListCount >= 2 || substr_count($q, "\n") > 0 ? '5' : '2' ?>"
+            <textarea name="q" class="form-control" rows="<?= $idListCount >= 2 || substr_count($q, "\n") > 0 ? '6' : '2' ?>"
                       placeholder="هوية واحدة، أو الصق عدة هويات (سطر أو فاصلة بين كل رقم)" autofocus><?= e($q) ?></textarea>
-            <p class="field-hint" style="margin:0.35rem 0 0">مثال لصق مجموعة: كل هوية في سطر، أو مفصولة بفاصلة/مسافة. مع فلتر «غير معيّنين» تظهر فقط غير المعيّنة منها.</p>
+            <p class="field-hint" style="margin:0.35rem 0 0">مجموعة الهويات تُرسل بأمان عبر POST حتى لا يظهر خطأ Request-URI Too Long. مع فلتر «غير معيّنين» تظهر فقط غير المعيّنة.</p>
         </div>
         <button type="submit" class="btn">بحث</button>
-        <?php if ($q !== '' || $filter !== ''): ?>
-        <a class="btn btn-ghost" href="<?= e(url('/campaigns/beneficiaries?id=' . $cid)) ?>">مسح</a>
+        <?php if ($q !== '' || $filter !== '' || $useIdsFlag): ?>
+        <a class="btn btn-ghost" href="<?= e(url('/campaigns/beneficiaries?id=' . $cid . '&clear=1')) ?>">مسح</a>
         <?php endif; ?>
     </form>
 
@@ -125,6 +129,9 @@ page_header(
     <input type="hidden" name="q" value="<?= e($q) ?>">
     <input type="hidden" name="page" value="<?= (int) $page ?>">
     <input type="hidden" name="filter" value="<?= e($filter) ?>">
+    <?php if ($useIdsFlag): ?>
+    <input type="hidden" name="use_ids" value="1">
+    <?php endif; ?>
     <div class="card actions-row" style="align-items:center;gap:0.75rem;flex-wrap:wrap">
         <p class="text-muted" style="margin:0;flex:1;min-width:220px">
             حدّد غير المعيّنين من القائمة ثم احذفهم دفعة واحدة.
@@ -224,6 +231,9 @@ page_header(
                         <input type="hidden" name="q" value="<?= e($q) ?>">
                         <input type="hidden" name="page" value="<?= (int) $page ?>">
                         <input type="hidden" name="filter" value="<?= e($filter) ?>">
+                        <?php if ($useIdsFlag): ?>
+                        <input type="hidden" name="use_ids" value="1">
+                        <?php endif; ?>
                         <button type="submit" class="btn btn-sm btn-danger">حذف</button>
                     </form>
                     <?php endif; ?>
@@ -241,6 +251,9 @@ page_header(
                     <input type="hidden" name="q" value="<?= e($q) ?>">
                     <input type="hidden" name="page" value="<?= (int) $page ?>">
                     <input type="hidden" name="filter" value="<?= e($filter) ?>">
+                    <?php if ($useIdsFlag): ?>
+                    <input type="hidden" name="use_ids" value="1">
+                    <?php endif; ?>
                     <div>
                         <label class="field-label">الاسم</label>
                         <input type="text" name="name" class="form-control" required value="<?= e((string) ($b['name'] ?? '')) ?>">
@@ -276,7 +289,7 @@ page_header(
     for ($p = $from; $p <= $to; $p++):
         $pageUrl = '/campaigns/beneficiaries?id=' . $cid
             . ($filter !== '' ? '&filter=' . rawurlencode($filter) : '')
-            . ($q !== '' ? '&q=' . rawurlencode($q) : '')
+            . ($useIdsFlag ? '&ids=1' : ($q !== '' ? '&q=' . rawurlencode($q) : ''))
             . '&page=' . $p;
     ?>
         <?php if ($p === $page): ?>

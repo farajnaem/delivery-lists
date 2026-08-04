@@ -764,6 +764,31 @@ if ($uri === '/admin/database/delete' && $method === 'POST') {
     redirect('/admin/database');
 }
 
+if ($uri === '/campaigns/beneficiaries/search' && $method === 'POST') {
+    $id = (int) ($_POST['id'] ?? $_POST['campaign_id'] ?? 0);
+    $campaign = CampaignService::find($id);
+    if (!$campaign) {
+        flash('error', 'العملية غير موجودة.');
+        redirect('/');
+    }
+    if (!Csrf::verify($_POST['_csrf'] ?? null)) {
+        flash('error', Csrf::failureMessage());
+        redirect('/campaigns/beneficiaries?id=' . $id);
+    }
+    $q = trim((string) ($_POST['q'] ?? ''));
+    $filter = trim((string) ($_POST['filter'] ?? ''));
+    $_SESSION['ben_search'][$id] = [
+        'q' => $q,
+        'filter' => $filter,
+        'at' => time(),
+    ];
+    $back = '/campaigns/beneficiaries?id=' . $id . '&ids=1';
+    if ($filter !== '') {
+        $back .= '&filter=' . rawurlencode($filter);
+    }
+    redirect($back);
+}
+
 if ($uri === '/campaigns/beneficiaries' && $method === 'GET') {
     $id = (int) ($_GET['id'] ?? 0);
     $campaign = CampaignService::find($id);
@@ -771,14 +796,38 @@ if ($uri === '/campaigns/beneficiaries' && $method === 'GET') {
         flash('error', 'العملية غير موجودة.');
         redirect('/');
     }
-    $q = trim((string) ($_GET['q'] ?? ''));
-    $page = max(1, (int) ($_GET['page'] ?? 1));
+
+    $useSessionIds = isset($_GET['ids']) && (string) $_GET['ids'] === '1';
+    $clearSearch = isset($_GET['clear']) && (string) $_GET['clear'] === '1';
+    if ($clearSearch) {
+        unset($_SESSION['ben_search'][$id]);
+        redirect('/campaigns/beneficiaries?id=' . $id);
+    }
+
+    $sessionSearch = is_array($_SESSION['ben_search'][$id] ?? null) ? $_SESSION['ben_search'][$id] : null;
+    $q = '';
     $filter = trim((string) ($_GET['filter'] ?? ''));
+    if ($useSessionIds && $sessionSearch) {
+        $q = trim((string) ($sessionSearch['q'] ?? ''));
+        if ($filter === '' && isset($sessionSearch['filter'])) {
+            $filter = trim((string) $sessionSearch['filter']);
+        }
+        // حدّث الفلتر المحفوظ إذا تغيّر من الروابط القصيرة
+        $_SESSION['ben_search'][$id]['filter'] = $filter;
+    } else {
+        $q = trim((string) ($_GET['q'] ?? ''));
+        // بحث قصير عبر GET: لا تعتمد على جلسة الهويات
+        if ($q !== '' && isset($_SESSION['ben_search'][$id])) {
+            unset($_SESSION['ben_search'][$id]);
+        }
+    }
+
+    $page = max(1, (int) ($_GET['page'] ?? 1));
     // بدون بحث أو فلتر: لا نحمّل آلاف الصفوف — الصفحة للبحث فقط
     $shouldList = $q !== '' || $filter !== '';
     $result = $shouldList
         ? CampaignService::searchAllBeneficiaries($id, $q, $page, 50, $filter)
-        : ['rows' => [], 'total' => 0, 'page' => 1, 'per_page' => 50, 'filter' => ''];
+        : ['rows' => [], 'total' => 0, 'page' => 1, 'per_page' => 50, 'filter' => '', 'id_list_count' => 0];
     $codePrefix = (string) ($campaign['parcel_code'] ?? '');
     $codeSuffix = (string) ($campaign['parcel_code_suffix'] ?? '');
     $rows = array_map(
@@ -799,6 +848,8 @@ if ($uri === '/campaigns/beneficiaries' && $method === 'GET') {
             'unassigned' => 0,
             'duplicates' => 0,
         ];
+    $idListCount = (int) ($result['id_list_count'] ?? 0);
+    $useIdsFlag = $useSessionIds || $idListCount >= 2;
     view('campaigns/beneficiaries', [
         'campaign' => $campaign,
         'rows' => $rows,
@@ -811,7 +862,8 @@ if ($uri === '/campaigns/beneficiaries' && $method === 'GET') {
         'canDeleteBeneficiary' => $canDeleteBeneficiary,
         'reviewCounts' => $review,
         'searched' => $shouldList,
-        'idListCount' => (int) ($result['id_list_count'] ?? 0),
+        'idListCount' => $idListCount,
+        'useIdsFlag' => $useIdsFlag,
     ]);
     exit;
 }
@@ -823,10 +875,24 @@ if ($uri === '/campaigns/beneficiaries/update' && $method === 'POST') {
     $q = trim((string) ($_POST['q'] ?? ''));
     $page = max(1, (int) ($_POST['page'] ?? 1));
     $filter = trim((string) ($_POST['filter'] ?? ''));
-    $back = '/campaigns/beneficiaries?id=' . $id
-        . ($q !== '' ? '&q=' . rawurlencode($q) : '')
-        . ($filter !== '' ? '&filter=' . rawurlencode($filter) : '')
-        . ($page > 1 ? '&page=' . $page : '');
+    $back = '/campaigns/beneficiaries?id=' . $id;
+    $useIds = !empty($_POST['use_ids']) || strlen($q) > 180 || substr_count($q, "\n") >= 1;
+    if ($useIds && $q !== '') {
+        $_SESSION['ben_search'][$id] = [
+            'q' => $q,
+            'filter' => $filter,
+            'at' => time(),
+        ];
+        $back .= '&ids=1';
+    } elseif ($q !== '') {
+        $back .= '&q=' . rawurlencode($q);
+    }
+    if ($filter !== '') {
+        $back .= '&filter=' . rawurlencode($filter);
+    }
+    if ($page > 1) {
+        $back .= '&page=' . $page;
+    }
     if (!Csrf::verify($_POST['_csrf'] ?? null)) {
         flash('error', Csrf::failureMessage());
         redirect($back);
@@ -851,10 +917,24 @@ if ($uri === '/campaigns/beneficiaries/delete' && $method === 'POST') {
     $q = trim((string) ($_POST['q'] ?? ''));
     $page = max(1, (int) ($_POST['page'] ?? 1));
     $filter = trim((string) ($_POST['filter'] ?? ''));
-    $back = '/campaigns/beneficiaries?id=' . $id
-        . ($q !== '' ? '&q=' . rawurlencode($q) : '')
-        . ($filter !== '' ? '&filter=' . rawurlencode($filter) : '')
-        . ($page > 1 ? '&page=' . $page : '');
+    $back = '/campaigns/beneficiaries?id=' . $id;
+    $useIds = !empty($_POST['use_ids']) || strlen($q) > 180 || substr_count($q, "\n") >= 1;
+    if ($useIds && $q !== '') {
+        $_SESSION['ben_search'][$id] = [
+            'q' => $q,
+            'filter' => $filter,
+            'at' => time(),
+        ];
+        $back .= '&ids=1';
+    } elseif ($q !== '') {
+        $back .= '&q=' . rawurlencode($q);
+    }
+    if ($filter !== '') {
+        $back .= '&filter=' . rawurlencode($filter);
+    }
+    if ($page > 1) {
+        $back .= '&page=' . $page;
+    }
     if (!Csrf::verify($_POST['_csrf'] ?? null)) {
         flash('error', Csrf::failureMessage());
         redirect($back);
@@ -874,10 +954,26 @@ if ($uri === '/campaigns/beneficiaries/delete-many' && $method === 'POST') {
     $q = trim((string) ($_POST['q'] ?? ''));
     $page = max(1, (int) ($_POST['page'] ?? 1));
     $filter = trim((string) ($_POST['filter'] ?? ''));
-    $back = '/campaigns/beneficiaries?id=' . $id
-        . ($q !== '' ? '&q=' . rawurlencode($q) : '')
-        . ($filter !== '' ? '&filter=' . rawurlencode($filter) : '')
-        . ($page > 1 ? '&page=' . $page : '');
+    $useIds = !empty($_POST['use_ids']) || strlen($q) > 180 || substr_count($q, "\n") >= 1;
+    if ($useIds && $q !== '') {
+        $_SESSION['ben_search'][$id] = [
+            'q' => $q,
+            'filter' => $filter,
+            'at' => time(),
+        ];
+    }
+    $back = '/campaigns/beneficiaries?id=' . $id;
+    if ($useIds && $q !== '') {
+        $back .= '&ids=1';
+    } elseif ($q !== '') {
+        $back .= '&q=' . rawurlencode($q);
+    }
+    if ($filter !== '') {
+        $back .= '&filter=' . rawurlencode($filter);
+    }
+    if ($page > 1) {
+        $back .= '&page=' . $page;
+    }
     if (!Csrf::verify($_POST['_csrf'] ?? null)) {
         flash('error', Csrf::failureMessage());
         redirect($back);
