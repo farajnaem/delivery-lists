@@ -144,7 +144,7 @@ page_header(
     </div>
     <?php else: ?>
     <div class="card actions-row" style="align-items:center;gap:0.75rem;flex-wrap:wrap">
-        <p class="text-muted" style="margin:0;flex:1">لحذف غير المعيّنين: حدّد الصفوف ثم احذف.</p>
+        <p class="text-muted" style="margin:0;flex:1">لحذف غير المعيّنين أو قيد التسليم: حدّد الصفوف ثم احذف. المستلم لا يُحذف.</p>
         <button type="submit" class="btn btn-danger" id="bulk-delete-btn">حذف المحددين</button>
     </div>
     <?php endif; ?>
@@ -194,7 +194,7 @@ page_header(
         <?php
             $assigned = (int) ($b['day_index'] ?? 0) > 0 && trim((string) ($b['disbursement_code'] ?? '')) !== '';
             $delivered = DeliveryService::isDeliveredStatus($b['receipt_status'] ?? '');
-            $canDeleteRow = $canDeleteBeneficiary && !$delivered && !$assigned;
+            $canDeleteRow = $canDeleteBeneficiary && !$delivered;
             $canMarkDelivered = $canManualDeliver && !$delivered && $assigned;
             $rowId = (int) $b['id'];
             $shelter = trim((string) ($b['shelter_name'] ?? ''));
@@ -248,7 +248,7 @@ page_header(
                     <?php endif; ?>
                     <?php if ($canDeleteRow): ?>
                     <form method="post" action="<?= e(url('/campaigns/beneficiaries/delete')) ?>" style="margin:0"
-                          data-confirm="حذف «<?= e((string) ($b['name'] ?? '')) ?>» نهائياً؟">
+                          data-confirm="حذف «<?= e((string) ($b['name'] ?? '')) ?>»<?= $assigned ? ' (قيد التسليم — سيُحذف من الكشف أيضاً)' : '' ?> نهائياً؟">
                         <?= \App\Csrf::field() ?>
                         <input type="hidden" name="campaign_id" value="<?= $cid ?>">
                         <input type="hidden" name="beneficiary_id" value="<?= $rowId ?>">

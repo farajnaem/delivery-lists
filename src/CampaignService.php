@@ -164,7 +164,7 @@ final class CampaignService
     }
 
     /**
-     * حذف مستفيد واحد — للمستلم ممنوع؛ لغير المعيّن مسموح (إزالة تكرار).
+     * حذف مستفيد — للمستلم ممنوع؛ لغير المعيّن أو قيد التسليم (غير مستلم) مسموح.
      *
      * @return array{ok:bool,error?:string,name?:string}
      */
@@ -179,14 +179,6 @@ final class CampaignService
         }
         if (DeliveryService::isDeliveredStatus($row['receipt_status'] ?? '')) {
             return ['ok' => false, 'error' => 'لا يمكن حذف مستفيد مستلم — ألغِ التسليم أولاً إن لزم.'];
-        }
-        $assigned = (int) ($row['day_index'] ?? 0) > 0
-            && trim((string) ($row['disbursement_code'] ?? '')) !== '';
-        if ($assigned) {
-            return [
-                'ok' => false,
-                'error' => 'لا يمكن حذف مستفيد معيّن ليوم/كود. ألغِ يومه أولاً أو احذف النسخة غير المعيّنة إن وُجدت.',
-            ];
         }
 
         $name = (string) ($row['name'] ?? '');
