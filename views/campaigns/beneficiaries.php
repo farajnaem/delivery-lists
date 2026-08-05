@@ -14,20 +14,18 @@ $canManualDeliver = !empty($canManualDeliver);
 $canDeleteBeneficiary = !empty($canDeleteBeneficiary);
 $canEditRow = $canDeleteBeneficiary;
 $searched = !empty($searched);
-$review = is_array($reviewCounts ?? null) ? $reviewCounts : [];
 $cid = (int) $campaign['id'];
-$showReviewFilters = $canManualDeliver || $canDeleteBeneficiary;
 $showManualChecks = $canManualDeliver && $filter === 'anomaly';
 $showBulkDelete = $canDeleteBeneficiary;
 $idListCount = (int) ($idListCount ?? 0);
 $useIdsFlag = !empty($useIdsFlag) || $idListCount >= 2;
+$autoCheckBulk = $showBulkDelete && ($filter === 'unassigned_today' || $filter === 'unassigned');
+$isSpecialFilter = in_array($filter, ['unassigned', 'unassigned_today', 'anomaly', 'duplicates', 'today'], true);
 
-$colspan = 8
+$colspan = 6
     + ($showManualChecks ? 1 : 0)
     + ($showBulkDelete ? 1 : 0)
-    + ($canEditRow ? 1 : 0);
-$showShelterCol = true;
-$autoCheckBulk = $showBulkDelete && ($filter === 'unassigned_today' || $filter === 'unassigned');
+    + ($canEditRow || $canManualDeliver ? 1 : 0);
 
 $filterUrl = static function (string $f = '', string $query = '') use ($cid, $useIdsFlag): string {
     $url = '/campaigns/beneficiaries?id=' . $cid;
@@ -43,16 +41,16 @@ $filterUrl = static function (string $f = '', string $query = '') use ($cid, $us
 };
 
 page_header(
-    'بحث المرشحين — ' . (string) $campaign['name'],
+    'بحث الأشخاص — ' . (string) $campaign['name'],
     [
         ['label' => 'العمليات', 'url' => '/'],
         ['label' => (string) $campaign['name'], 'url' => '/campaigns/view?id=' . $cid],
-        ['label' => 'بحث المرشحين'],
+        ['label' => 'بحث الأشخاص'],
     ],
     [
-        ['label' => 'عودة', 'url' => '/campaigns/view?id=' . $cid . '&panel=candidates'],
+        ['label' => 'عودة للعملية', 'url' => '/campaigns/view?id=' . $cid],
     ],
-    'ابحث برقم الهوية أو جزء من الاسم — أو الصق مجموعة هويات دفعة واحدة ثم احذف المحددين.'
+    'ابحث عن شخص أو مجموعة — تظهر الحالة وإمكانية الحذف أو تسجيل الاستلام.'
 );
 ?>
 
@@ -64,10 +62,9 @@ page_header(
         <input type="hidden" name="filter" value="<?= e($filter) ?>">
         <?php endif; ?>
         <div style="flex:1;min-width:260px">
-            <label class="field-label">هوية / اسم / أو مجموعة هويات</label>
-            <textarea name="q" class="form-control" rows="<?= $idListCount >= 2 || substr_count($q, "\n") > 0 ? '6' : '2' ?>"
-                      placeholder="هوية واحدة، أو الصق عدة هويات (سطر أو فاصلة بين كل رقم)" autofocus><?= e($q) ?></textarea>
-            <p class="field-hint" style="margin:0.35rem 0 0">مجموعة الهويات تُرسل بأمان عبر POST حتى لا يظهر خطأ Request-URI Too Long. مع فلتر «غير معيّنين» تظهر فقط غير المعيّنة.</p>
+            <label class="field-label">هوية / اسم / مجموعة هويات</label>
+            <textarea name="q" class="form-control" rows="<?= $idListCount >= 2 || substr_count($q, "\n") > 0 ? '5' : '2' ?>"
+                      placeholder="هوية واحدة، أو الصق عدة هويات" autofocus><?= e($q) ?></textarea>
         </div>
         <button type="submit" class="btn">بحث</button>
         <?php if ($q !== '' || $filter !== '' || $useIdsFlag): ?>
@@ -75,33 +72,38 @@ page_header(
         <?php endif; ?>
     </form>
 
-    <?php if ($showReviewFilters): ?>
-    <details class="op-filters" style="margin-top:0.85rem" <?= $filter !== '' ? 'open' : '' ?>>
-        <summary style="cursor:pointer;color:var(--muted);font-size:0.9rem">فلاتر إضافية (اختياري)</summary>
+    <details style="margin-top:0.75rem" <?= $isSpecialFilter ? 'open' : '' ?>>
+        <summary style="cursor:pointer;color:var(--muted);font-size:0.9rem">أدوات خاصة (عند الحاجة فقط)</summary>
         <div class="actions-row" style="margin-top:0.65rem;gap:0.5rem;flex-wrap:wrap">
             <a class="btn btn-sm <?= $filter === 'unassigned' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('unassigned', $q)) ?>">غير معيّنين</a>
-            <a class="btn btn-sm <?= $filter === 'unassigned_today' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('unassigned_today', $q)) ?>">آخر دفعة غير معيّنين</a>
-            <a class="btn btn-sm <?= $filter === 'duplicates' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('duplicates', $q)) ?>">مكررون</a>
+            <a class="btn btn-sm <?= $filter === 'unassigned_today' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('unassigned_today', $q)) ?>">آخر دفعة مضافة</a>
             <?php if ($canManualDeliver): ?>
             <a class="btn btn-sm <?= $filter === 'today' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('today', $q)) ?>">مستلمو اليوم</a>
             <a class="btn btn-sm <?= $filter === 'anomaly' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('anomaly', $q)) ?>">تسليم بلا تعيين</a>
             <?php endif; ?>
         </div>
+        <?php if ($canDeleteBeneficiary): ?>
+        <form method="post" action="<?= e(url('/campaigns/beneficiaries/delete-by-excel')) ?>" enctype="multipart/form-data"
+              class="actions-row" style="margin-top:0.75rem;flex-wrap:wrap;align-items:flex-end;gap:0.5rem"
+              data-confirm="حذف غير المعيّنين المطابقين لهويات الملف؟">
+            <?= \App\Csrf::field() ?>
+            <input type="hidden" name="campaign_id" value="<?= $cid ?>">
+            <input type="file" name="excel_file" accept=".xlsx,.xls" required class="form-control" style="max-width:240px">
+            <button type="submit" class="btn btn-sm btn-danger">حذف بملف Excel</button>
+        </form>
+        <?php endif; ?>
     </details>
-    <?php endif; ?>
 
     <?php if ($searched): ?>
     <p class="text-muted" style="margin:0.75rem 0 0">
         النتيجة: <strong><?= ar_digits($total) ?></strong>
         <?php if ($idListCount >= 2): ?>
-        — تم التعرّف على <strong><?= ar_digits($idListCount) ?></strong> هوية ملصوقة
+        — <?= ar_digits($idListCount) ?> هوية ملصوقة
         <?php endif; ?>
         <?php if ($totalPages > 1): ?>
-        — صفحة <?= ar_digits($page) ?> من <?= ar_digits($totalPages) ?>
+        — صفحة <?= ar_digits($page) ?> / <?= ar_digits($totalPages) ?>
         <?php endif; ?>
     </p>
-    <?php else: ?>
-    <p class="text-muted" style="margin:0.75rem 0 0">أدخل هوية أو اسماً، أو الصق مجموعة هويات — ويفضَّل مع فلتر «غير معيّنين».</p>
     <?php endif; ?>
 </div>
 
@@ -119,7 +121,7 @@ page_header(
             <label class="field-label">سبب الاستلام اليدوي *</label>
             <input type="text" name="reason" class="form-control" required placeholder="سبب التثبيت">
         </div>
-        <button type="submit" class="btn" data-confirm="تأكيد تسجيل الاستلام اليدوي للمحددين؟">تسجيل استلام المحددين</button>
+        <button type="submit" class="btn" data-confirm="تأكيد تسجيل الاستلام للمحددين؟">تسجيل استلام المحددين</button>
     </div>
 </form>
 <?php endif; ?>
@@ -135,48 +137,28 @@ page_header(
     <?php if ($useIdsFlag): ?>
     <input type="hidden" name="use_ids" value="1">
     <?php endif; ?>
+    <?php if ($filter === 'unassigned_today' && $total > 0): ?>
     <div class="card actions-row" style="align-items:center;gap:0.75rem;flex-wrap:wrap">
-        <p class="text-muted" style="margin:0;flex:1;min-width:220px">
-            حدّد غير المعيّنين من القائمة ثم احذفهم دفعة واحدة.
-            <?php if ($filter === 'unassigned' || $filter === 'unassigned_today'): ?>
-            <strong>(فلتر <?= $filter === 'unassigned_today' ? 'آخر دفعة مضافة' : 'غير المعيّنين' ?> نشط)</strong>
-            <?php endif; ?>
-        </p>
+        <p class="text-muted" style="margin:0;flex:1">حدّد من القائمة أو احذف كل نتائج آخر دفعة (<?= ar_digits($total) ?>).</p>
         <button type="submit" class="btn btn-danger" id="bulk-delete-btn">حذف المحددين</button>
     </div>
+    <?php else: ?>
+    <div class="card actions-row" style="align-items:center;gap:0.75rem;flex-wrap:wrap">
+        <p class="text-muted" style="margin:0;flex:1">لحذف غير المعيّنين: حدّد الصفوف ثم احذف.</p>
+        <button type="submit" class="btn btn-danger" id="bulk-delete-btn">حذف المحددين</button>
+    </div>
+    <?php endif; ?>
 </form>
-
-<?php if ($filter === 'unassigned_today' && $searched && $total > 0): ?>
+<?php if ($filter === 'unassigned_today' && $total > 0): ?>
 <form method="post" action="<?= e(url('/campaigns/beneficiaries/delete-unassigned-today')) ?>"
-      data-confirm="حذف كل غير المعيّنين من آخر دفعة مضافة (<?= ar_digits($total) ?>) نهائياً؟ لا يمكن التراجع.">
+      data-confirm="حذف كل نتائج آخر دفعة (<?= ar_digits($total) ?>)؟">
     <?= \App\Csrf::field() ?>
     <input type="hidden" name="campaign_id" value="<?= $cid ?>">
-    <div class="card actions-row" style="align-items:center;gap:0.75rem;flex-wrap:wrap;border-color:#c0392b">
-        <p class="text-muted" style="margin:0;flex:1;min-width:220px">
-            حذف دفعة واحدة لكل نتائج هذا الفلتر (<?= ar_digits($total) ?>) — راجع الأسماء ومراكز الإيواء قبل التأكيد.
-        </p>
+    <div class="card actions-row" style="justify-content:flex-end">
         <button type="submit" class="btn btn-danger">حذف كل نتائج آخر دفعة</button>
     </div>
 </form>
 <?php endif; ?>
-
-<div class="card">
-    <h2 class="panel-title" style="margin-top:0;font-size:1rem">حذف غير معيّنين بنفس ملف الإكسل</h2>
-    <p class="text-muted" style="margin:0 0 0.75rem">
-        ارفع نفس ملف الرفع الخاطئ: يُحذف فقط غير المعيّنين المطابقين للهويات في الملف (الآمن عند وجود ملحقين سابقين).
-    </p>
-    <form method="post" action="<?= e(url('/campaigns/beneficiaries/delete-by-excel')) ?>" enctype="multipart/form-data"
-          class="actions-row" style="flex-wrap:wrap;align-items:flex-end;gap:0.75rem"
-          data-confirm="حذف غير المعيّنين المطابقين لهويات الملف نهائياً؟">
-        <?= \App\Csrf::field() ?>
-        <input type="hidden" name="campaign_id" value="<?= $cid ?>">
-        <div style="flex:1;min-width:220px">
-            <label class="field-label" for="delete-excel">ملف Excel</label>
-            <input type="file" id="delete-excel" name="excel_file" accept=".xlsx,.xls" required class="form-control">
-        </div>
-        <button type="submit" class="btn btn-danger">حذف المطابقين غير المعيّنين</button>
-    </form>
-</div>
 <?php endif; ?>
 
 <div class="card table-panel">
@@ -186,7 +168,7 @@ page_header(
             <tr>
                 <?php if ($showBulkDelete): ?>
                 <th style="width:2.5rem">
-                    <input type="checkbox" id="bulk-check-all" title="تحديد الكل القابل للحذف" aria-label="تحديد الكل القابل للحذف">
+                    <input type="checkbox" id="bulk-check-all" title="تحديد الكل" aria-label="تحديد الكل">
                 </th>
                 <?php endif; ?>
                 <?php if ($showManualChecks): ?>
@@ -196,46 +178,32 @@ page_header(
                 <?php endif; ?>
                 <th>الاسم</th>
                 <th>الهوية</th>
-                <th>مركز الإيواء</th>
                 <th>الجوال</th>
-                <th>الكود</th>
-                <th>تاريخ الإضافة</th>
-                <th>اليوم</th>
+                <th>المخيم / الإيواء</th>
                 <th>الحالة</th>
-                <?php if ($canEditRow): ?>
+                <?php if ($canEditRow || $canManualDeliver): ?>
                 <th>إجراء</th>
                 <?php endif; ?>
             </tr>
         </thead>
         <tbody>
         <?php if ($rows === []): ?>
-        <tr><td colspan="<?= (int) $colspan ?>" class="text-muted">لا نتائج لهذا البحث.</td></tr>
+        <tr><td colspan="<?= (int) $colspan ?>" class="text-muted">لا نتائج — جرّب هوية أو اسماً آخر.</td></tr>
         <?php endif; ?>
         <?php foreach ($rows as $b): ?>
         <?php
             $assigned = (int) ($b['day_index'] ?? 0) > 0 && trim((string) ($b['disbursement_code'] ?? '')) !== '';
             $delivered = DeliveryService::isDeliveredStatus($b['receipt_status'] ?? '');
             $canDeleteRow = $canDeleteBeneficiary && !$delivered && !$assigned;
-            $display = \App\ParcelCodeHelper::displayForBeneficiary(
-                (string) ($b['disbursement_code'] ?? ''),
-                $codeSuffix !== '' ? $codeSuffix : null,
-                $codePrefix !== '' ? $codePrefix : null
-            );
-            if ($display === '' && !empty($b['sort_order'])) {
-                $display = (string) $b['sort_order'];
-            }
+            $canMarkDelivered = $canManualDeliver && !$delivered && $assigned;
             $rowId = (int) $b['id'];
-            $createdRaw = trim((string) ($b['created_at'] ?? ''));
-            if ($createdRaw === '') {
-                $createdRaw = trim((string) ($b['updated_at'] ?? ''));
-            }
             $shelter = trim((string) ($b['shelter_name'] ?? ''));
         ?>
         <tr>
             <?php if ($showBulkDelete): ?>
             <td>
                 <?php if ($canDeleteRow): ?>
-                <input type="checkbox" form="bulk-delete-form" name="beneficiary_ids[]" value="<?= $rowId ?>" class="bulk-delete-check"<?= !empty($autoCheckBulk) ? ' checked' : '' ?>>
+                <input type="checkbox" form="bulk-delete-form" name="beneficiary_ids[]" value="<?= $rowId ?>" class="bulk-delete-check"<?= $autoCheckBulk ? ' checked' : '' ?>>
                 <?php endif; ?>
             </td>
             <?php endif; ?>
@@ -248,11 +216,8 @@ page_header(
             <?php endif; ?>
             <td><?= e((string) ($b['name'] ?? '')) ?></td>
             <td><?= e((string) ($b['national_id'] ?? '')) ?></td>
+            <td><?= e((string) ($b['mobile'] ?? '') !== '' ? (string) $b['mobile'] : '—') ?></td>
             <td><?= e($shelter !== '' ? $shelter : '—') ?></td>
-            <td><?= e((string) ($b['mobile'] ?? '')) ?></td>
-            <td><?= e($display !== '' ? $display : '—') ?></td>
-            <td><?= $createdRaw !== '' ? e(ar_datetime($createdRaw)) : '—' ?></td>
-            <td><?= $assigned ? ar_digits((int) $b['day_index']) : '—' ?></td>
             <td>
                 <?php if ($delivered): ?>
                 <span class="badge badge-ok">مستلم</span>
@@ -262,10 +227,25 @@ page_header(
                 <span class="badge">غير معيّن</span>
                 <?php endif; ?>
             </td>
-            <?php if ($canEditRow): ?>
+            <?php if ($canEditRow || $canManualDeliver): ?>
             <td>
                 <div class="actions-row" style="gap:0.35rem;flex-wrap:wrap">
+                    <?php if ($canEditRow): ?>
                     <button type="button" class="btn btn-sm btn-outline" data-edit-toggle="<?= $rowId ?>">تعديل</button>
+                    <?php endif; ?>
+                    <?php if ($canMarkDelivered): ?>
+                    <form method="post" action="<?= e(url('/campaigns/beneficiaries/mark-delivered')) ?>" style="margin:0"
+                          data-confirm="تسجيل «<?= e((string) ($b['name'] ?? '')) ?>» كمستلم؟">
+                        <?= \App\Csrf::field() ?>
+                        <input type="hidden" name="campaign_id" value="<?= $cid ?>">
+                        <input type="hidden" name="beneficiary_id" value="<?= $rowId ?>">
+                        <input type="hidden" name="reason" value="تسجيل استلام من بحث الأشخاص">
+                        <input type="hidden" name="q" value="<?= e($q) ?>">
+                        <input type="hidden" name="page" value="<?= (int) $page ?>">
+                        <input type="hidden" name="filter" value="<?= e($filter) ?>">
+                        <button type="submit" class="btn btn-sm">مستلم</button>
+                    </form>
+                    <?php endif; ?>
                     <?php if ($canDeleteRow): ?>
                     <form method="post" action="<?= e(url('/campaigns/beneficiaries/delete')) ?>" style="margin:0"
                           data-confirm="حذف «<?= e((string) ($b['name'] ?? '')) ?>» نهائياً؟">
@@ -303,7 +283,7 @@ page_header(
                         <input type="text" name="name" class="form-control" required value="<?= e((string) ($b['name'] ?? '')) ?>">
                     </div>
                     <div>
-                        <label class="field-label">رقم الهوية<?= $delivered ? ' (للمستلم لا يُغيَّر)' : '' ?></label>
+                        <label class="field-label">رقم الهوية<?= $delivered ? ' (لا يُغيَّر للمستلم)' : '' ?></label>
                         <input type="text" name="national_id" class="form-control" required value="<?= e((string) ($b['national_id'] ?? '')) ?>"
                             <?= $delivered ? 'readonly' : '' ?>>
                     </div>

@@ -18,13 +18,20 @@ $suggestedDayDate = (string) ($suggestedDayDate ?? $campaign['delivery_start'] ?
 $cid = (int) $campaign['id'];
 $totalBen = (int) ($stats['total'] ?? 0);
 $panel = (string) ($panel ?? '');
+// روابط قديمة → أيام التوزيع (يشمل التنزيل)
+if ($panel === 'downloads') {
+    $panel = 'days';
+}
+if ($panel === '') {
+    $panel = 'search';
+}
 
 $viewActions = [];
-if ($isGenerated && !empty($canViewStock)) {
-    $viewActions[] = ['label' => 'المخزن والتسليم', 'url' => '/campaigns/stock?id=' . $cid, 'primary' => true];
-}
 if (!empty($canEdit)) {
     $viewActions[] = ['label' => 'تعديل العملية', 'url' => '/campaigns/edit?id=' . $cid];
+}
+if ($isGenerated && !empty($canViewStock)) {
+    $viewActions[] = ['label' => 'المخزن', 'url' => '/campaigns/stock?id=' . $cid];
 }
 
 $desc = $campaign['parcel_name'] . ' — كود الطرد: ' . $parcelLabel;
@@ -83,73 +90,77 @@ $panelUrl = static function (string $p) use ($cid): string {
     <div class="stat-card">
         <div class="stat-label">أيام معتمدة</div>
         <div class="stat-value"><?= ar_digits(count($dayStats)) ?></div>
-        <div class="stat-meta">افتراضي: <?= ar_digits($numWindows) ?> شباك × <?= ar_digits($perWindow) ?></div>
     </div>
     <div class="stat-card">
-        <div class="stat-label">طاقة يومية</div>
-        <div class="stat-value"><?= ar_digits($dailyCapacity) ?></div>
-        <?php if (!empty($deliveryStats)): ?>
-        <div class="stat-meta">رصيد: <?= ar_digits((int) ($deliveryStats['balance'] ?? 0)) ?></div>
-        <?php endif; ?>
+        <div class="stat-label">رصيد المخزن</div>
+        <div class="stat-value"><?= ar_digits((int) ($deliveryStats['balance'] ?? $dailyCapacity)) ?></div>
     </div>
 </div>
 
-<?php if ($totalBen > 0): ?>
-<div class="card">
-    <h2 class="panel-title" style="margin-top:0">بحث سريع</h2>
-    <p class="text-muted" style="margin:0 0 0.75rem">برقم الهوية أو جزء من الاسم — ثم عرض / تعديل / حذف.</p>
-    <form method="get" action="<?= e(url('/campaigns/beneficiaries')) ?>" class="actions-row" style="align-items:flex-end;gap:0.75rem;flex-wrap:wrap">
-        <input type="hidden" name="id" value="<?= $cid ?>">
-        <div style="flex:1;min-width:240px">
-            <label class="field-label" for="campaign-beneficiary-search">الهوية أو الاسم</label>
-            <input type="search" id="campaign-beneficiary-search" name="q" class="form-control"
-                   placeholder="مثال: 802469809 أو جزء من الاسم" required autofocus>
-        </div>
-        <button type="submit" class="btn">بحث</button>
-    </form>
-</div>
-<?php endif; ?>
-
 <nav class="op-hubs" aria-label="أبواب العملية">
+    <a class="op-hub<?= $panel === 'search' ? ' op-hub-active' : '' ?>" href="<?= e($panelUrl('search')) ?>">
+        <strong>1) بحث الأشخاص</strong>
+        <span>هوية / اسم / مجموعة — حالة وإجراء</span>
+    </a>
     <a class="op-hub<?= $panel === 'days' ? ' op-hub-active' : '' ?>" href="<?= e($panelUrl('days')) ?>">
-        <strong>أيام التوزيع</strong>
-        <span>اعتماد يوم أو إلغاء آخر يوم</span>
+        <strong>2) الأيام والكشوف</strong>
+        <span>اعتماد يوم، إلغاء، طباعة الكشوف</span>
     </a>
     <a class="op-hub<?= $panel === 'candidates' ? ' op-hub-active' : '' ?>" href="<?= e($panelUrl('candidates')) ?>">
-        <strong>كشف المرشحين</strong>
-        <span>بحث، إضافة مجموعة، تنزيل الكشف</span>
+        <strong>3) إضافة مرشحين</strong>
+        <span>رفع Excel أو إضافة مجموعة</span>
     </a>
-    <a class="op-hub<?= $panel === 'downloads' ? ' op-hub-active' : '' ?>" href="<?= e($panelUrl('downloads')) ?>">
-        <strong>التنزيل</strong>
-        <span>كشوف التسليم والرسائل يوم بيوم</span>
-    </a>
-    <?php if ($isGenerated && !empty($canViewStock)): ?>
-    <a class="op-hub op-hub-primary" href="<?= e(url('/campaigns/stock?id=' . $cid)) ?>">
-        <strong>المخزن والتسليم</strong>
-        <span>يفتح صفحة المخزن</span>
-    </a>
-    <?php else: ?>
-    <a class="op-hub" href="<?= e($panelUrl('days')) ?>">
-        <strong>المخزن والتسليم</strong>
-        <span>اعتمد يوماً أولاً</span>
-    </a>
-    <?php endif; ?>
 </nav>
 
-<?php if ($panel === ''): ?>
-<div class="card">
-    <p class="text-muted" style="margin:0">اضغط أحد الأبواب أعلاه لعرض إجراءاته فقط — بدون تكرار على الشاشة.</p>
-</div>
+<?php if ($panel === 'search'): ?>
+<section class="op-panel">
+    <div class="card">
+        <h2 class="panel-title" style="margin-top:0">بحث الأشخاص</h2>
+        <p class="text-muted" style="margin:0 0 0.75rem">
+            ابحث عن شخص أو الصق عدة هويات — تظهر الهوية والجوال والاسم والمخيم والحالة، مع حذف أو تسجيل استلام.
+        </p>
+        <?php if ($totalBen > 0): ?>
+        <form method="post" action="<?= e(url('/campaigns/beneficiaries/search')) ?>" class="actions-row" style="align-items:flex-end;gap:0.75rem;flex-wrap:wrap">
+            <?= \App\Csrf::field() ?>
+            <input type="hidden" name="id" value="<?= $cid ?>">
+            <div style="flex:1;min-width:260px">
+                <label class="field-label" for="campaign-beneficiary-search">هوية أو اسم أو مجموعة هويات</label>
+                <textarea id="campaign-beneficiary-search" name="q" class="form-control" rows="3"
+                          placeholder="هوية واحدة، أو عدة هويات (سطر أو فاصلة)" autofocus required></textarea>
+            </div>
+            <button type="submit" class="btn">بحث</button>
+        </form>
+        <?php else: ?>
+        <p class="text-muted" style="margin:0">لا مرشحين بعد — ارفع الكشف من تبويب «إضافة مرشحين».</p>
+        <?php endif; ?>
+    </div>
+</section>
 <?php endif; ?>
 
 <?php if ($panel === 'days'): ?>
 <section class="op-panel">
+
+    <?php if ($isGenerated && !empty($canExport)): ?>
+    <div class="card" style="border:2px solid var(--accent, #2563eb)">
+        <h2 class="panel-title" style="margin-top:0">الكشوف النهائية / المطابقة</h2>
+        <p class="text-muted" style="margin:0 0 0.75rem">بعد اعتماد الأيام أو انتهاء الطرد — من هنا تطبع أو تنزّل الكشوف.</p>
+        <div class="actions-row" style="flex-wrap:wrap;gap:0.5rem">
+            <a href="<?= e(url('/campaigns/export?id=' . $cid)) ?>" class="btn">كشوف التسليم المعتمدة (الكل)</a>
+            <?php if (!empty($canViewStock)): ?>
+            <a href="<?= e(url('/campaigns/stock?id=' . $cid)) ?>" class="btn btn-outline">مطابقة التسليم والمخزن</a>
+            <?php endif; ?>
+            <a href="<?= e(url('/campaigns/export-candidates?id=' . $cid)) ?>" class="btn btn-outline">كشف المرشحين Excel</a>
+            <a href="<?= e(url('/campaigns/export-deliveries?id=' . $cid)) ?>" class="btn btn-outline">تقرير المستلمين</a>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <?php if (!empty($dayStats)): ?>
     <div class="card table-panel">
         <div class="table-toolbar">
             <div>
                 <div class="panel-title">الأيام المعتمدة</div>
-                <div class="panel-subtitle">يمكن إلغاء آخر يوم فقط.</div>
+                <div class="panel-subtitle">إلغاء آخر يوم فقط — مع تنزيل كشف ورسائل كل يوم.</div>
             </div>
             <?php if (!empty($canEdit) && $lastDayIndex > 0): ?>
             <form method="post" action="<?= e(url('/campaigns/cancel-last-day')) ?>"
@@ -163,7 +174,14 @@ $panelUrl = static function (string $p) use ($cid): string {
         <div class="table-wrap">
         <table class="data-table">
             <thead>
-                <tr><th>اليوم</th><th>التاريخ</th><th>المستفيدون</th><th>الشبابيك</th><th>الدوام</th></tr>
+                <tr>
+                    <th>اليوم</th>
+                    <th>التاريخ</th>
+                    <th>العدد</th>
+                    <th>الشبابيك</th>
+                    <th>كشف التسليم</th>
+                    <th>رسائل</th>
+                </tr>
             </thead>
             <tbody>
             <?php foreach ($dayStats as $day): ?>
@@ -172,18 +190,28 @@ $panelUrl = static function (string $p) use ($cid): string {
                 <td>
                     <?= ar_digits($di) ?>
                     <?php if ($di === $lastDayIndex): ?>
-                    <span class="badge badge-pending">آخر يوم</span>
+                    <span class="badge badge-pending">آخر</span>
                     <?php endif; ?>
                 </td>
                 <td><?= e((string) ($day['delivery_date'] ?? '')) ?></td>
                 <td><?= ar_digits((int) ($day['cnt'] ?? 0)) ?></td>
                 <td><?= ar_digits((int) ($day['windows'] ?? 0)) ?></td>
                 <td>
-                    <?php
-                    $ws = substr((string) ($day['work_start'] ?? ''), 0, 5);
-                    $we = substr((string) ($day['work_end'] ?? ''), 0, 5);
-                    echo ($ws !== '' && $we !== '') ? e($ws . ' – ' . $we) : '—';
-                    ?>
+                    <?php if (!empty($canExport) && $isGenerated): ?>
+                    <a class="btn btn-sm" href="<?= e(url('/campaigns/export-day?id=' . $cid . '&day=' . $di)) ?>">تنزيل</a>
+                    <?php else: ?>
+                    —
+                    <?php endif; ?>
+                </td>
+                <td>
+                    <?php if (!empty($canExport) && $isGenerated): ?>
+                    <div class="actions-row" style="flex-wrap:wrap;gap:0.35rem">
+                        <a class="btn btn-sm btn-outline" href="<?= e(url('/campaigns/export-messages?id=' . $cid . '&day=' . $di . '&network=jawwal')) ?>">جوال</a>
+                        <a class="btn btn-sm btn-outline" href="<?= e(url('/campaigns/export-messages?id=' . $cid . '&day=' . $di . '&network=ooredoo')) ?>">أوريدو</a>
+                    </div>
+                    <?php else: ?>
+                    —
+                    <?php endif; ?>
                 </td>
             </tr>
             <?php endforeach; ?>
@@ -195,7 +223,7 @@ $panelUrl = static function (string $p) use ($cid): string {
 
     <?php if (!empty($canEdit) && $totalBen > 0 && $unassigned > 0): ?>
     <div class="card">
-        <h2 class="panel-title" style="margin-bottom:0.35rem">اعتماد يوم توزيع</h2>
+        <h2 class="panel-title" style="margin-bottom:0.35rem">اعتماد يوم توزيع جديد</h2>
         <p class="text-muted" style="margin-bottom:1rem">
             المتبقي غير المعيّن: <strong><?= ar_digits($unassigned) ?></strong>
         </p>
@@ -207,7 +235,7 @@ $panelUrl = static function (string $p) use ($cid): string {
                 <input type="date" name="day_date" class="form-control" required value="<?= e($suggestedDayDate) ?>">
             </div>
             <div>
-                <label class="field-label">عدد المستفيدين لهذا اليوم *</label>
+                <label class="field-label">عدد المستفيدين *</label>
                 <input type="number" name="day_beneficiaries" class="form-control" min="1" max="<?= $unassigned ?>" required value="<?= (int) $defaultDayCount ?>">
             </div>
             <div>
@@ -223,86 +251,56 @@ $panelUrl = static function (string $p) use ($cid): string {
                 <input type="time" name="day_work_end" class="form-control" required value="<?= e($defaultDayWorkEnd) ?>">
             </div>
             <div style="display:flex;align-items:flex-end">
-                <button type="submit" class="btn">اعتماد اليوم وتوليد كشوفه</button>
+                <button type="submit" class="btn">اعتماد اليوم</button>
             </div>
         </form>
     </div>
-    <?php endif; ?>
-
-    <?php if (!empty($canEdit)): ?>
+    <?php elseif ($totalBen === 0 && !empty($canEdit)): ?>
     <div class="card">
-        <?php if ($assigned === 0 && $totalBen > 0): ?>
-        <form method="post" action="<?= e(url('/campaigns/generate')) ?>" data-confirm="توليد كل الأيام دفعة واحدة؟ الأفضل عادةً اعتماد يوم بيوم.">
-            <?= \App\Csrf::field() ?>
-            <input type="hidden" name="campaign_id" value="<?= $cid ?>">
-            <button type="submit" class="btn btn-outline">توليد الكل دفعة واحدة</button>
-        </form>
-        <?php elseif ($totalBen === 0): ?>
-        <form method="post" action="<?= e(url('/campaigns/import')) ?>" enctype="multipart/form-data" class="actions-row">
-            <?= \App\Csrf::field() ?>
-            <input type="hidden" name="campaign_id" value="<?= $cid ?>">
-            <input type="file" name="excel_file" accept=".xlsx,.xls" required class="form-control" style="max-width:280px">
-            <button type="submit" class="btn btn-outline">رفع Excel المرشحين</button>
-        </form>
-        <?php elseif ($unassigned < 1): ?>
-        <p class="text-muted" style="margin:0">لا يوجد غير معيّنين — كل المرشحين معيّنون لأيام.</p>
-        <?php endif; ?>
+        <p class="text-muted" style="margin:0">ارفع كشف المرشحين من تبويب «إضافة مرشحين» أولاً.</p>
+    </div>
+    <?php elseif ($unassigned < 1 && $assigned > 0): ?>
+    <div class="card">
+        <p class="text-muted" style="margin:0">لا يوجد غير معيّنين — كل المرشحين معيّنون لأيام. استخدم الكشوف أعلاه للطباعة.</p>
     </div>
     <?php endif; ?>
 
-    <?php if (!empty($plan) && $assigned === 0): ?>
-    <div class="card table-panel">
-        <div class="panel-title">معاينة خطة كاملة (اختياري)</div>
-        <div class="panel-subtitle" style="margin-bottom:0.75rem">
-            <?= ar_digits((int) $plan['total']) ?> ÷ <?= ar_digits((int) ($plan['daily_capacity'] ?? $dailyCapacity)) ?>
-            = <?= ar_digits((int) $plan['num_days']) ?> أيام
-        </div>
-        <div class="table-wrap">
-        <table class="data-table">
-            <thead>
-                <tr><th>اليوم</th><th>التاريخ</th><th>المستفيدون</th><th>الشبابيك</th><th>لكل شباك</th></tr>
-            </thead>
-            <tbody>
-            <?php foreach ($plan['days'] as $i => $day): ?>
-            <tr>
-                <td><?= ar_digits((int) $day['day_index']) ?></td>
-                <td><?= e((string) ($day['date'] ?? $plan['dates'][$i] ?? '')) ?></td>
-                <td><?= ar_digits((int) $day['beneficiaries']) ?></td>
-                <td><?= ar_digits((int) $day['windows']) ?></td>
-                <td><?= e(implode('، ', array_map('strval', $day['per_window']))) ?></td>
-            </tr>
-            <?php endforeach; ?>
-            </tbody>
-        </table>
-        </div>
-    </div>
+    <?php if (!empty($canEdit) && $assigned === 0 && $totalBen > 0): ?>
+    <details class="card" style="padding:1rem">
+        <summary style="cursor:pointer;color:var(--muted)">خيار متقدم: توليد كل الأيام دفعة واحدة</summary>
+        <form method="post" action="<?= e(url('/campaigns/generate')) ?>" style="margin-top:0.75rem"
+              data-confirm="توليد كل الأيام دفعة واحدة؟ الأفضل عادةً اعتماد يوم بيوم.">
+            <?= \App\Csrf::field() ?>
+            <input type="hidden" name="campaign_id" value="<?= $cid ?>">
+            <button type="submit" class="btn btn-outline">توليد الكل</button>
+        </form>
+    </details>
     <?php endif; ?>
+
 </section>
 <?php endif; ?>
 
 <?php if ($panel === 'candidates'): ?>
 <section class="op-panel">
+    <?php if ($totalBen === 0 && !empty($canEdit)): ?>
     <div class="card">
-        <h2 class="panel-title" style="margin-top:0">كشف المرشحين بالكامل</h2>
-        <p class="text-muted" style="margin:0 0 0.75rem">
-            البحث بالهوية أو جزء من الاسم، مع عرض الحالة وإمكانية التعديل أو الحذف (لغير المعيّن).
-        </p>
-        <div class="actions-row" style="flex-wrap:wrap;gap:0.5rem">
-            <a class="btn" href="<?= e(url('/campaigns/beneficiaries?id=' . $cid)) ?>">فتح صفحة البحث</a>
-            <a class="btn btn-outline" href="<?= e(url('/campaigns/beneficiaries?id=' . $cid . '&filter=unassigned')) ?>">غير المعيّنين</a>
-            <?php if (!empty($canExport) && $totalBen > 0): ?>
-            <a class="btn btn-outline" href="<?= e(url('/campaigns/export-candidates?id=' . $cid)) ?>">تنزيل الكشف (Excel)</a>
-            <?php endif; ?>
-        </div>
+        <h2 class="panel-title" style="margin-top:0">رفع كشف المرشحين</h2>
+        <p class="text-muted" style="margin:0 0 0.75rem">Excel: الاسم، رقم الهوية، الجوال، ومركز الإيواء (اختياري).</p>
+        <form method="post" action="<?= e(url('/campaigns/import')) ?>" enctype="multipart/form-data" class="actions-row">
+            <?= \App\Csrf::field() ?>
+            <input type="hidden" name="campaign_id" value="<?= $cid ?>">
+            <input type="file" name="excel_file" accept=".xlsx,.xls" required class="form-control" style="max-width:280px">
+            <button type="submit" class="btn">رفع الكشف</button>
+        </form>
     </div>
-
-    <?php if (!empty($canEdit) && $totalBen > 0): ?>
+    <?php elseif (!empty($canEdit) && $totalBen > 0): ?>
     <div class="card">
         <h2 class="panel-title" style="margin-top:0">إضافة مجموعة لغير المعيّنين</h2>
         <p class="text-muted" style="margin:0 0 0.75rem">
-            Excel بنفس الأعمدة. الجدد يُضافون كغير معيّنين؛ المكرر بالهوية أو الاسم يُتجاهل.
+            الجدد يُضافون كغير معيّنين. المكرر بالهوية أو الاسم يُتجاهل.
         </p>
-        <form method="post" action="<?= e(url('/campaigns/append-import')) ?>" enctype="multipart/form-data" class="actions-row" style="flex-wrap:wrap;align-items:flex-end;gap:0.75rem"
+        <form method="post" action="<?= e(url('/campaigns/append-import')) ?>" enctype="multipart/form-data"
+              class="actions-row" style="flex-wrap:wrap;align-items:flex-end;gap:0.75rem"
               data-confirm="إضافة الجدد فقط كغير معيّنين؟">
             <?= \App\Csrf::field() ?>
             <input type="hidden" name="campaign_id" value="<?= $cid ?>">
@@ -313,83 +311,14 @@ $panelUrl = static function (string $p) use ($cid): string {
             <button type="submit" class="btn">إضافة</button>
         </form>
         <p class="text-muted" style="margin:0.85rem 0 0">
-            رفعت ملفاً بالخطأ؟ من
-            <a href="<?= e(url('/campaigns/beneficiaries?id=' . $cid . '&filter=unassigned_today')) ?>">بحث المرشحين — آخر دفعة غير معيّنين</a>
-            : راجع الأسماء ثم احذف، أو ارفع نفس الملف واختر حذف المطابقين.
+            رفعت بالخطأ؟
+            <a href="<?= e(url('/campaigns/beneficiaries?id=' . $cid . '&filter=unassigned_today')) ?>">احذف آخر دفعة غير معيّنين</a>
+            أو ارفع نفس الملف من صفحة البحث واختر حذف المطابقين.
         </p>
     </div>
-    <?php elseif ($totalBen === 0 && !empty($canEdit)): ?>
+    <?php else: ?>
     <div class="card">
-        <form method="post" action="<?= e(url('/campaigns/import')) ?>" enctype="multipart/form-data" class="actions-row">
-            <?= \App\Csrf::field() ?>
-            <input type="hidden" name="campaign_id" value="<?= $cid ?>">
-            <input type="file" name="excel_file" accept=".xlsx,.xls" required class="form-control" style="max-width:280px">
-            <button type="submit" class="btn">رفع كشف المرشحين</button>
-        </form>
-    </div>
-    <?php endif; ?>
-</section>
-<?php endif; ?>
-
-<?php if ($panel === 'downloads'): ?>
-<section class="op-panel">
-    <div class="card">
-        <h2 class="panel-title" style="margin-top:0">بيانات الطرد</h2>
-        <div class="grid-2">
-            <p><strong>البداية:</strong> <?= e($campaign['delivery_start']) ?></p>
-            <p><strong>النهاية:</strong> <?= e($campaign['delivery_end']) ?></p>
-            <p><strong>المخزن:</strong> <?= e($campaign['warehouse_location']) ?></p>
-            <p><strong>الدوام:</strong> <?= e(substr($campaign['work_start'], 0, 5)) ?> – <?= e(substr($campaign['work_end'], 0, 5)) ?></p>
-        </div>
-        <?php if (!empty($canExport) && $totalBen > 0): ?>
-        <div class="actions-row" style="margin-top:0.75rem;flex-wrap:wrap;gap:0.5rem">
-            <?php if ($isGenerated): ?>
-            <a href="<?= e(url('/campaigns/export?id=' . $cid)) ?>" class="btn">كشوف التسليم المعتمدة</a>
-            <?php endif; ?>
-            <a href="<?= e(url('/campaigns/export-candidates?id=' . $cid)) ?>" class="btn btn-outline">كشف المرشحين بالكامل</a>
-        </div>
-        <?php endif; ?>
-    </div>
-
-    <?php if ($isGenerated && !empty($canExport) && !empty($dayStats)): ?>
-    <div class="card table-panel">
-        <div class="panel-title">تنزيل يوم بيوم</div>
-        <div class="table-wrap">
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th>اليوم</th>
-                    <th>التاريخ</th>
-                    <th>المستفيدون</th>
-                    <th>الرسائل</th>
-                    <th>التسليم</th>
-                </tr>
-            </thead>
-            <tbody>
-            <?php foreach ($dayStats as $day): ?>
-                <?php $di = (int) ($day['day_index'] ?? 0); ?>
-                <tr>
-                    <td>اليوم <?= ar_digits($di) ?></td>
-                    <td><?= e((string) ($day['delivery_date'] ?? '')) ?></td>
-                    <td><?= ar_digits((int) ($day['cnt'] ?? 0)) ?></td>
-                    <td>
-                        <div class="actions-row" style="flex-wrap:wrap;gap:0.35rem">
-                            <a class="btn btn-sm btn-outline" href="<?= e(url('/campaigns/export-messages?id=' . $cid . '&day=' . $di . '&network=jawwal')) ?>">جوال</a>
-                            <a class="btn btn-sm btn-outline" href="<?= e(url('/campaigns/export-messages?id=' . $cid . '&day=' . $di . '&network=ooredoo')) ?>">أوريدو</a>
-                        </div>
-                    </td>
-                    <td>
-                        <a class="btn btn-sm btn-outline" href="<?= e(url('/campaigns/export-day?id=' . $cid . '&day=' . $di)) ?>">كشف اليوم</a>
-                    </td>
-                </tr>
-            <?php endforeach; ?>
-            </tbody>
-        </table>
-        </div>
-    </div>
-    <?php elseif (!$isGenerated): ?>
-    <div class="card">
-        <p class="text-muted" style="margin:0">اعتمد يوماً من باب «أيام التوزيع» أولاً حتى تظهر كشوف التسليم والرسائل.</p>
+        <p class="text-muted" style="margin:0">لا صلاحية لإضافة مرشحين.</p>
     </div>
     <?php endif; ?>
 </section>

@@ -1,18 +1,19 @@
 <?php
 $cid = (int) $campaign['id'];
 $stockActions = [
-    ['label' => 'تفاصيل العملية', 'url' => '/campaigns/view?id=' . $cid],
+    ['label' => 'عودة للعملية', 'url' => '/campaigns/view?id=' . $cid],
+    ['label' => 'الأيام والكشوف', 'url' => '/campaigns/view?id=' . $cid . '&panel=days'],
 ];
 if (!empty($canDeliver)) {
     $stockActions[] = ['label' => 'التسليم الرسمي', 'url' => '/warehouse/deliver?campaign_id=' . $cid, 'primary' => true];
 }
 
 page_header(
-    'متابعة المخزن',
+    'المخزن والتسليم',
     [
         ['label' => 'العمليات', 'url' => '/'],
         ['label' => $campaign['name'], 'url' => '/campaigns/view?id=' . $cid],
-        ['label' => 'متابعة المخزن'],
+        ['label' => 'المخزن'],
     ],
     $stockActions,
     $campaign['parcel_name'] . ' | ' . $campaign['warehouse_name']
@@ -34,19 +35,13 @@ if ($opensRaw !== '') {
 }
 $todayDelivered = (int) ($stock['today_delivered'] ?? 0);
 $plannedToday = (int) ($stock['planned_today'] ?? 0);
-$review = is_array($reviewCounts ?? null) ? $reviewCounts : null;
 ?>
 
 <div class="grid-stats">
     <div class="stat-card">
-        <div class="stat-label">الكمية الافتتاحية</div>
-        <div class="stat-value"><?= ar_digits($opening) ?></div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-label">مُسلَّم</div>
-        <div class="stat-value"><?= ar_digits($delivered) ?></div>
+        <div class="stat-label">مُسلَّم / افتتاحي</div>
+        <div class="stat-value"><?= ar_digits($delivered) ?> / <?= ar_digits($opening) ?></div>
         <div class="progress"><span style="width:<?= min(100, $delPct) ?>%"></span></div>
-        <div class="stat-meta"><?= ar_digits($delPct) ?>% من الافتتاحي</div>
     </div>
     <div class="stat-card">
         <div class="stat-label">الرصيد المتبقي</div>
@@ -56,24 +51,10 @@ $review = is_array($reviewCounts ?? null) ? $reviewCounts : null;
         <div class="stat-label">بانتظار التسليم</div>
         <div class="stat-value"><?= ar_digits((int) ($stock['pending'] ?? 0)) ?></div>
     </div>
-</div>
-
-<div class="grid-stats">
     <div class="stat-card">
-        <div class="stat-label">في الموعد</div>
-        <div class="stat-value"><?= ar_digits((int) ($stock['on_time'] ?? 0)) ?></div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-label">متأخر</div>
-        <div class="stat-value"><?= ar_digits((int) ($stock['late'] ?? 0)) ?></div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-label">تسليم اليوم / المخطط</div>
+        <div class="stat-label">اليوم (نظام / مخطط)</div>
         <div class="stat-value"><?= ar_digits($todayDelivered) ?> / <?= ar_digits($plannedToday) ?></div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-label">الحالة</div>
-        <div class="stat-value" style="font-size:1.1rem">
+        <div class="stat-meta">
             <?php if ($gateState === 'open'): ?>
             <span class="badge badge-ok"><?= e((string) ($gate['label'] ?? 'مفتوح')) ?></span>
             <?php else: ?>
@@ -83,239 +64,140 @@ $review = is_array($reviewCounts ?? null) ? $reviewCounts : null;
     </div>
 </div>
 
-<nav class="op-hubs" aria-label="أبواب المخزن">
-    <a class="op-hub" href="#wh-run"><strong>تشغيل التسليم</strong><span>بدء / قفل / إنهاء</span></a>
-    <a class="op-hub op-hub-primary" href="#wh-match"><strong>المطابقة اليومية</strong><span>عدد النظام ↔ الميدان</span></a>
-    <a class="op-hub" href="#wh-admin"><strong>إدارة المخزن</strong><span>جماعي، كمية، تقارير</span></a>
-</nav>
+<div class="card" style="border:2px solid var(--accent, #2563eb)">
+    <h2 class="panel-title" style="margin-top:0">المطابقة والكشوف النهائية</h2>
+    <p class="text-muted" style="margin:0 0 0.75rem">
+        قارن مستلمي النظام مع الميدان، ثم اطبع الكشوف من هنا أو من تبويب الأيام.
+    </p>
+    <div class="actions-row" style="flex-wrap:wrap;gap:0.5rem">
+        <a class="btn" href="<?= e(url('/campaigns/beneficiaries?id=' . $cid . '&filter=today')) ?>">مستلمو اليوم</a>
+        <?php if (!empty($canExport)): ?>
+        <a class="btn" href="<?= e(url('/campaigns/export?id=' . $cid)) ?>">كشوف التسليم المعتمدة</a>
+        <a class="btn btn-outline" href="<?= e(url('/campaigns/export-deliveries?id=' . $cid)) ?>">تقرير المستلمين Excel</a>
+        <?php endif; ?>
+        <a class="btn btn-outline" href="<?= e(url('/campaigns/view?id=' . $cid . '&panel=days')) ?>">أيام وكشوف يوم بيوم</a>
+        <?php if (!empty($canBulkDeliver)): ?>
+        <a class="btn btn-outline" href="<?= e(url('/campaigns/bulk-delivery?id=' . $cid)) ?>">تسليم جماعي / تصحيح</a>
+        <?php endif; ?>
+    </div>
+</div>
 
 <?php if ($canManageGate): ?>
-<details class="op-section" id="wh-run" open>
-    <summary class="op-section-summary">
-        <span class="op-section-title">تشغيل التسليم</span>
-        <span class="op-section-hint"><?= e((string) ($gate['label'] ?? '')) ?></span>
-    </summary>
-    <div class="op-section-body">
-    <div class="card" style="box-shadow:none;border:1px solid var(--border)">
-        <p class="text-muted" style="margin:0 0 1rem">
-            <?= e((string) ($gate['detail'] ?? '')) ?>
-        </p>
-        <?php if (!empty($canStartDelivery) && $gateState !== 'closed'): ?>
-        <div class="grid-2" style="margin-bottom:1rem;align-items:end">
-            <form method="post" action="<?= e(url('/campaigns/start-delivery')) ?>" data-confirm="بدء التسليم الآن؟ سيتمكن أمناء المخزن من التسجيل فوراً.">
-                <?= \App\Csrf::field() ?>
-                <input type="hidden" name="campaign_id" value="<?= $cid ?>">
-                <input type="hidden" name="opens_at" value="">
-                <button type="submit" class="btn">بدء التسليم الآن</button>
-            </form>
-            <?php if (in_array($gateState, ['open', 'scheduled'], true)): ?>
-            <form method="post" action="<?= e(url('/campaigns/lock-delivery')) ?>" data-confirm="قفل التسليم مؤقتاً؟">
-                <?= \App\Csrf::field() ?>
-                <input type="hidden" name="campaign_id" value="<?= $cid ?>">
-                <button type="submit" class="btn btn-outline">قفل مؤقت</button>
-            </form>
-            <?php endif; ?>
-        </div>
-        <form method="post" action="<?= e(url('/campaigns/start-delivery')) ?>" class="actions-row" data-confirm="جدولة بدء التسليم لهذا الوقت؟">
+<details class="card" style="padding:1rem" <?= $gateState !== 'open' ? 'open' : '' ?>>
+    <summary style="cursor:pointer;font-weight:600">تشغيل التسليم (بدء / قفل / إنهاء)</summary>
+    <p class="text-muted" style="margin:0.75rem 0"><?= e((string) ($gate['detail'] ?? $gate['label'] ?? '')) ?></p>
+    <?php if (!empty($canStartDelivery) && $gateState !== 'closed'): ?>
+    <div class="actions-row" style="flex-wrap:wrap;gap:0.5rem;margin-bottom:0.75rem">
+        <form method="post" action="<?= e(url('/campaigns/start-delivery')) ?>" data-confirm="بدء التسليم الآن؟">
             <?= \App\Csrf::field() ?>
             <input type="hidden" name="campaign_id" value="<?= $cid ?>">
-            <label class="field-label" style="margin:0">جدولة ساعة البدء</label>
-            <input type="datetime-local" name="opens_at" class="form-control" style="max-width:240px" required value="<?= e($scheduleDefault) ?>">
-            <button type="submit" class="btn btn-outline">حفظ الجدولة</button>
+            <input type="hidden" name="opens_at" value="">
+            <button type="submit" class="btn">بدء الآن</button>
         </form>
-        <?php endif; ?>
-
-        <?php if (!empty($canCloseDelivery)): ?>
-        <hr style="border:0;border-top:1px solid #e5e8e8;margin:1.1rem 0">
-        <?php if ($gateState !== 'closed'): ?>
-        <form method="post" action="<?= e(url('/campaigns/close-delivery')) ?>" data-confirm="إنهاء عملية التسليم نهائياً؟ لن يستطيع أمين المخزن تسجيل تسليمات جديدة.">
+        <?php if (in_array($gateState, ['open', 'scheduled'], true)): ?>
+        <form method="post" action="<?= e(url('/campaigns/lock-delivery')) ?>" data-confirm="قفل التسليم مؤقتاً؟">
             <?= \App\Csrf::field() ?>
             <input type="hidden" name="campaign_id" value="<?= $cid ?>">
-            <button type="submit" class="btn btn-outline">إنهاء عملية التسليم</button>
+            <button type="submit" class="btn btn-outline">قفل مؤقت</button>
         </form>
-        <?php else: ?>
-        <form method="post" action="<?= e(url('/campaigns/reopen-delivery')) ?>">
-            <?= \App\Csrf::field() ?>
-            <input type="hidden" name="campaign_id" value="<?= $cid ?>">
-            <button type="submit" class="btn btn-outline">إعادة فتح التسليم</button>
-        </form>
-        <?php endif; ?>
         <?php endif; ?>
     </div>
-    </div>
+    <form method="post" action="<?= e(url('/campaigns/start-delivery')) ?>" class="actions-row" data-confirm="جدولة بدء التسليم؟">
+        <?= \App\Csrf::field() ?>
+        <input type="hidden" name="campaign_id" value="<?= $cid ?>">
+        <input type="datetime-local" name="opens_at" class="form-control" style="max-width:240px" required value="<?= e($scheduleDefault) ?>">
+        <button type="submit" class="btn btn-outline">حفظ الجدولة</button>
+    </form>
+    <?php endif; ?>
+    <?php if (!empty($canCloseDelivery)): ?>
+    <hr style="border:0;border-top:1px solid #e5e8e8;margin:1rem 0">
+    <?php if ($gateState !== 'closed'): ?>
+    <form method="post" action="<?= e(url('/campaigns/close-delivery')) ?>" data-confirm="إنهاء عملية التسليم نهائياً؟">
+        <?= \App\Csrf::field() ?>
+        <input type="hidden" name="campaign_id" value="<?= $cid ?>">
+        <button type="submit" class="btn btn-outline">إنهاء التسليم</button>
+    </form>
+    <?php else: ?>
+    <form method="post" action="<?= e(url('/campaigns/reopen-delivery')) ?>">
+        <?= \App\Csrf::field() ?>
+        <input type="hidden" name="campaign_id" value="<?= $cid ?>">
+        <button type="submit" class="btn btn-outline">إعادة فتح التسليم</button>
+    </form>
+    <?php endif; ?>
+    <?php endif; ?>
 </details>
 <?php endif; ?>
 
-<details class="op-section" id="wh-match" open>
-    <summary class="op-section-summary">
-        <span class="op-section-title">المطابقة اليومية</span>
-        <span class="op-section-hint">مُسلَّم <?= ar_digits($todayDelivered) ?> / مخطط <?= ar_digits($plannedToday) ?></span>
-    </summary>
-    <div class="op-section-body">
-    <div class="card" style="box-shadow:none;border:1px solid var(--border)">
-        <div class="grid-stats" style="margin-bottom:0.75rem">
-            <div class="stat-card">
-                <div class="stat-label">مُسلَّم اليوم (النظام)</div>
-                <div class="stat-value"><?= ar_digits($todayDelivered) ?></div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">مخطط لهذا التاريخ</div>
-                <div class="stat-value"><?= ar_digits($plannedToday) ?></div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">الفرق</div>
-                <div class="stat-value"><?= ar_digits($todayDelivered - $plannedToday) ?></div>
-            </div>
-        </div>
-        <div class="actions-row" style="flex-wrap:wrap;gap:0.5rem">
-            <a class="btn" href="<?= e(url('/campaigns/beneficiaries?id=' . $cid . '&filter=today')) ?>">قائمة مستلمي اليوم</a>
-            <?php if (!empty($canExport)): ?>
-            <a class="btn btn-outline" href="<?= e(url('/campaigns/export-deliveries?id=' . $cid)) ?>">تقرير Excel للتسليمات</a>
-            <?php endif; ?>
-        </div>
-        <?php if ($review !== null): ?>
-        <details style="margin-top:0.85rem">
-            <summary style="cursor:pointer;color:var(--muted);font-size:0.92rem">مراجعة استثنائية (عند الحاجة)</summary>
-            <div class="actions-row" style="margin-top:0.65rem;flex-wrap:wrap;gap:0.5rem">
-                <a class="btn btn-sm btn-outline" href="<?= e(url('/campaigns/beneficiaries?id=' . $cid . '&filter=anomaly')) ?>">
-                    تسليم بلا تعيين (<?= ar_digits((int) ($review['anomaly'] ?? 0)) ?>)
-                </a>
-                <a class="btn btn-sm btn-outline" href="<?= e(url('/campaigns/beneficiaries?id=' . $cid . '&filter=arabic_id')) ?>">
-                    هوية بأرقام عربية (<?= ar_digits((int) ($review['arabic_id'] ?? 0)) ?>)
-                </a>
-                <a class="btn btn-sm btn-outline" href="<?= e(url('/campaigns/beneficiaries?id=' . $cid . '&filter=delivered_no_mobile')) ?>">
-                    مستلم بلا جوال (<?= ar_digits((int) ($review['delivered_no_mobile'] ?? 0)) ?>)
-                </a>
-            </div>
-        </details>
+<?php if (!empty($canCloseDelivery) && !empty($keeperStats)): ?>
+<?php
+$keepers = $keeperStats['keepers'] ?? [];
+$bulkStats = $keeperStats['bulk'] ?? ['today' => 0, 'total' => 0];
+$hasBulk = ((int) ($bulkStats['total'] ?? 0)) > 0;
+?>
+<?php if (!empty($keepers) || $hasBulk): ?>
+<details class="card table-panel" style="padding:1rem">
+    <summary style="cursor:pointer;font-weight:600">التسليم حسب أمين المخزن</summary>
+    <div class="table-wrap" style="margin-top:0.75rem">
+    <table class="data-table">
+        <thead><tr><th>أمين المخزن</th><th>اليوم</th><th>الإجمالي</th></tr></thead>
+        <tbody>
+        <?php foreach ($keepers as $k): ?>
+            <tr>
+                <td><?= e($k['name'] ?? 'غير معروف') ?></td>
+                <td><?= ar_digits((int) ($k['today'] ?? 0)) ?></td>
+                <td><?= ar_digits((int) ($k['total'] ?? 0)) ?></td>
+            </tr>
+        <?php endforeach; ?>
+        <?php if ($hasBulk): ?>
+            <tr>
+                <td>تسليم جماعي</td>
+                <td><?= ar_digits((int) ($bulkStats['today'] ?? 0)) ?></td>
+                <td><?= ar_digits((int) ($bulkStats['total'] ?? 0)) ?></td>
+            </tr>
         <?php endif; ?>
-        <p class="text-muted" style="margin:0.75rem 0 0;font-size:0.9rem">
-            قارن قائمة مستلمي اليوم مع العدد الفعلي في المخزن. أي زيادة عن المخطط تحتاج مراجعة فورية.
-        </p>
-    </div>
-
-    <?php if (!empty($canCloseDelivery)): ?>
-    <?php
-    $keepers = $keeperStats['keepers'] ?? [];
-    $bulkStats = $keeperStats['bulk'] ?? ['today' => 0, 'total' => 0];
-    $hasBulk = ((int) ($bulkStats['total'] ?? 0)) > 0;
-    $keeperTodaySum = 0;
-    $keeperTotalSum = 0;
-    foreach ($keepers as $k) {
-        $keeperTodaySum += (int) ($k['today'] ?? 0);
-        $keeperTotalSum += (int) ($k['total'] ?? 0);
-    }
-    ?>
-    <div class="card table-panel" style="box-shadow:none;border:1px solid var(--border)">
-        <div class="panel-title">التسليم حسب أمين المخزن</div>
-        <?php if (empty($keepers) && !$hasBulk): ?>
-        <div class="empty-state" style="margin-top:0.75rem">
-            <strong>لا توجد تسليمات مسجّلة بعد</strong>
-        </div>
-        <?php else: ?>
-        <div class="table-wrap" style="margin-top:0.75rem">
-        <table class="data-table">
-            <thead>
-                <tr><th>أمين المخزن</th><th>اليوم</th><th>الإجمالي</th></tr>
-            </thead>
-            <tbody>
-            <?php foreach ($keepers as $k): ?>
-                <tr>
-                    <td><?= e($k['name'] ?? 'غير معروف') ?></td>
-                    <td><?= ar_digits((int) ($k['today'] ?? 0)) ?></td>
-                    <td><?= ar_digits((int) ($k['total'] ?? 0)) ?></td>
-                </tr>
-            <?php endforeach; ?>
-            <?php if ($hasBulk): ?>
-                <tr>
-                    <td>تسليم جماعي (مدير)</td>
-                    <td><?= ar_digits((int) ($bulkStats['today'] ?? 0)) ?></td>
-                    <td><?= ar_digits((int) ($bulkStats['total'] ?? 0)) ?></td>
-                </tr>
-            <?php endif; ?>
-            </tbody>
-            <?php if (count($keepers) > 1 || $hasBulk): ?>
-            <tfoot>
-                <tr>
-                    <th>المجموع</th>
-                    <th><?= ar_digits($keeperTodaySum + (int) ($bulkStats['today'] ?? 0)) ?></th>
-                    <th><?= ar_digits($keeperTotalSum + (int) ($bulkStats['total'] ?? 0)) ?></th>
-                </tr>
-            </tfoot>
-            <?php endif; ?>
-        </table>
-        </div>
-        <?php endif; ?>
-    </div>
-    <?php endif; ?>
+        </tbody>
+    </table>
     </div>
 </details>
+<?php endif; ?>
+<?php endif; ?>
 
-<details class="op-section" id="wh-admin">
-    <summary class="op-section-summary">
-        <span class="op-section-title">إدارة المخزن</span>
-        <span class="op-section-hint">جماعي، كمية، SMS، إلغاء</span>
-    </summary>
-    <div class="op-section-body">
-
-    <?php if (!empty($canBulkDeliver)): ?>
-    <div class="card" style="box-shadow:none;border:1px solid var(--border)">
-        <h2 class="panel-title" style="margin-top:0">تسليم جماعي وتصحيح</h2>
-        <p class="text-muted">مطابقة سريعة، تصحيح فردي، والتراجع عن دفعة.</p>
-        <a class="btn" href="<?= e(url('/campaigns/bulk-delivery?id=' . $cid)) ?>">فتح التسليم الجماعي</a>
-    </div>
-    <?php endif; ?>
-
-    <?php if (!empty($canEdit)): ?>
-    <div class="card" style="box-shadow:none;border:1px solid var(--border)">
-        <h2 class="panel-title" style="margin-top:0">الكمية الافتتاحية</h2>
+<details class="card" style="padding:1rem">
+    <summary style="cursor:pointer;color:var(--muted)">إعدادات إضافية (كمية، SMS، إلغاء تسليمات)</summary>
+    <div style="margin-top:0.85rem;display:grid;gap:0.85rem">
+        <?php if (!empty($canEdit)): ?>
         <form method="post" action="<?= e(url('/campaigns/opening-quantity')) ?>" class="actions-row">
             <?= \App\Csrf::field() ?>
             <input type="hidden" name="campaign_id" value="<?= $cid ?>">
-            <input type="number" name="opening_quantity" class="form-control" style="max-width:200px" min="0"
+            <label class="field-label" style="margin:0">الكمية الافتتاحية</label>
+            <input type="number" name="opening_quantity" class="form-control" style="max-width:160px" min="0"
                    value="<?= (int) ($campaign['opening_quantity'] ?? 0) ?: (int) ($stock['total_beneficiaries'] ?? 0) ?>" required>
             <button type="submit" class="btn btn-outline">حفظ</button>
         </form>
-    </div>
-    <?php endif; ?>
-
-    <?php if (!empty($canEdit) && !empty($smsEnabled) && ($smsPending ?? 0) > 0): ?>
-    <div class="card" style="box-shadow:none;border:1px solid var(--border)">
-        <h2 class="panel-title" style="margin-top:0">رسائل SMS</h2>
-        <form method="post" action="<?= e(url('/campaigns/sms-send')) ?>" data-confirm="إرسال <?= (int) $smsPending ?> رسالة SMS معلّقة؟">
+        <?php endif; ?>
+        <?php if (!empty($canEdit) && !empty($smsEnabled) && ($smsPending ?? 0) > 0): ?>
+        <form method="post" action="<?= e(url('/campaigns/sms-send')) ?>" data-confirm="إرسال <?= (int) $smsPending ?> رسالة؟">
             <?= \App\Csrf::field() ?>
             <input type="hidden" name="campaign_id" value="<?= $cid ?>">
             <button type="submit" class="btn btn-outline">إرسال SMS المعلّقة (<?= ar_digits((int) $smsPending) ?>)</button>
         </form>
-    </div>
-    <?php endif; ?>
-
-    <?php if (!empty($canCancelDeliveries) && $delivered > 0): ?>
-    <div class="danger-zone" style="margin-top:0">
-        <h2>إلغاء التسليمات</h2>
-        <p class="text-muted">يوجد <strong><?= ar_digits($delivered) ?></strong> تسليم مسجّل.</p>
-        <form method="post" action="<?= e(url('/campaigns/undo-deliveries')) ?>" data-confirm="إلغاء جميع التسليمات لهذه العملية؟" class="actions-row">
+        <?php endif; ?>
+        <?php if (!empty($canCancelDeliveries) && $delivered > 0): ?>
+        <form method="post" action="<?= e(url('/campaigns/undo-deliveries')) ?>" data-confirm="إلغاء جميع التسليمات؟">
             <?= \App\Csrf::field() ?>
             <input type="hidden" name="campaign_id" value="<?= $cid ?>">
-            <button type="submit" class="btn btn-outline">إلغاء جميع التسليمات</button>
-            <a href="<?= e(url('/campaigns/edit?id=' . $cid)) ?>" class="btn btn-ghost">تعديل / حذف العملية</a>
+            <button type="submit" class="btn btn-danger">إلغاء جميع التسليمات (<?= ar_digits($delivered) ?>)</button>
         </form>
-    </div>
-    <?php endif; ?>
-
+        <?php endif; ?>
     </div>
 </details>
 
 <?php if (!empty($lateList)): ?>
-<div class="card table-panel" data-table-filterable>
-    <div class="table-toolbar">
-        <div class="panel-title">متأخرون عن موعدهم (<?= ar_digits(count($lateList)) ?>+)</div>
-    </div>
-    <div class="table-wrap">
+<details class="card table-panel" style="padding:1rem">
+    <summary style="cursor:pointer;color:var(--muted)">متأخرون (<?= ar_digits(count($lateList)) ?>)</summary>
+    <div class="table-wrap" style="margin-top:0.75rem">
     <table class="data-table">
-        <thead>
-            <tr><th>الكود</th><th>الاسم</th><th>الموعد</th><th>الشباك</th></tr>
-        </thead>
+        <thead><tr><th>الكود</th><th>الاسم</th><th>الموعد</th><th>الشباك</th></tr></thead>
         <tbody>
         <?php foreach ($lateList as $row): ?>
         <tr>
@@ -328,12 +210,17 @@ $review = is_array($reviewCounts ?? null) ? $reviewCounts : null;
         </tbody>
     </table>
     </div>
-</div>
+</details>
 <?php endif; ?>
 
-<?php partial('partials/delivered-table', [
-    'deliveredList' => $deliveredList ?? [],
-    'totalDelivered' => $deliveredTotal ?? ($stock['delivered'] ?? 0),
-    'codePrefix' => $campaign['parcel_code'] ?? '',
-    'codeSuffix' => $campaign['parcel_code_suffix'] ?? '',
-]); ?>
+<details class="card" style="padding:1rem">
+    <summary style="cursor:pointer;color:var(--muted)">آخر المستلمين</summary>
+    <div style="margin-top:0.75rem">
+    <?php partial('partials/delivered-table', [
+        'deliveredList' => $deliveredList ?? [],
+        'totalDelivered' => $deliveredTotal ?? ($stock['delivered'] ?? 0),
+        'codePrefix' => $campaign['parcel_code'] ?? '',
+        'codeSuffix' => $campaign['parcel_code_suffix'] ?? '',
+    ]); ?>
+    </div>
+</details>
