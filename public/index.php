@@ -155,6 +155,7 @@ if (str_starts_with($uri, '/api/mobile')) {
         $clientId = isset($body['client_id']) ? (string) $body['client_id'] : null;
         $receivedByMode = isset($body['received_by_mode']) ? (string) $body['received_by_mode'] : null;
         $receivedByName = isset($body['received_by_name']) ? (string) $body['received_by_name'] : null;
+        $deliveredAt = isset($body['delivered_at']) ? (string) $body['delivered_at'] : null;
         try {
             $result = MobileSyncService::deliver(
                 $campaignId,
@@ -162,7 +163,8 @@ if (str_starts_with($uri, '/api/mobile')) {
                 MobileAuth::userId() ?? 0,
                 $clientId,
                 $receivedByMode,
-                $receivedByName
+                $receivedByName,
+                $deliveredAt
             );
             $status = (!empty($result['ok']) || !empty($result['already'])) ? 200 : 400;
             json_response($result, $status);
@@ -213,13 +215,16 @@ if (str_starts_with($uri, '/api/warehouse')) {
         $clientId = isset($body['client_id']) ? (string) $body['client_id'] : null;
         $receivedByMode = isset($body['received_by_mode']) ? (string) $body['received_by_mode'] : null;
         $receivedByName = isset($body['received_by_name']) ? (string) $body['received_by_name'] : null;
+        $deliveredAt = isset($body['delivered_at']) ? (string) $body['delivered_at'] : null;
         $result = DeliveryService::markDelivered(
             $campaignId,
             $beneficiaryId,
             Auth::id() ?? 0,
             $clientId,
             $receivedByMode,
-            $receivedByName
+            $receivedByName,
+            true,
+            $deliveredAt
         );
         if (!$result['ok']) {
             json_response($result, 400);

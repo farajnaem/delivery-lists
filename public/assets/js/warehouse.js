@@ -505,7 +505,8 @@
                 beneficiary_id: b.id,
                 client_id: clientId,
                 received_by_mode: mode,
-                received_by_name: mode === 'proxy' ? recvName : null
+                received_by_name: mode === 'proxy' ? recvName : null,
+                delivered_at: item.queued_at
             }
         }).then(function (data) {
             if (data.stock) updateStock(data.stock);

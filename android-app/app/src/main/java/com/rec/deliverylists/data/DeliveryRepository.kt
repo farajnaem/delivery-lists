@@ -161,6 +161,7 @@ class DeliveryRepository(
                     it.clientId,
                     it.receivedByMode,
                     it.receivedByName,
+                    it.deliveredAt,
                 )
             }
 
@@ -318,12 +319,14 @@ class DeliveryRepository(
                     it.clientId,
                     it.receivedByMode,
                     it.receivedByName,
+                    it.deliveredAt,
                 )
             } + PendingDeliveryItem(
                 beneficiary.id,
                 clientId,
                 receivedByMode,
                 receivedByName,
+                nowString(),
             )
 
             val res = api.sync(
@@ -392,6 +395,7 @@ class DeliveryRepository(
                     client_id = clientId,
                     received_by_mode = receivedByMode,
                     received_by_name = receivedByName,
+                    delivered_at = nowString(),
                 ),
             )
             if (res.ok) {
@@ -445,6 +449,7 @@ class DeliveryRepository(
                 queuedAt = System.currentTimeMillis(),
                 receivedByMode = receivedByMode,
                 receivedByName = receivedByName,
+                deliveredAt = now,
             ),
         )
         cacheDao.insertRecent(

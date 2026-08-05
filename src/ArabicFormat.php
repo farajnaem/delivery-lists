@@ -222,6 +222,10 @@ final class ArabicFormat
             'late',
             'today_delivered',
             'planned_today',
+            'planned_today_delivered',
+            'planned_today_pending',
+            'today_delivered_of_plan',
+            'today_delivered_late',
         ] as $key) {
             if (isset($stats[$key])) {
                 $stats[$key] = self::toWesternDigits((string) $stats[$key]);

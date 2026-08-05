@@ -139,6 +139,7 @@ final class MobileSyncService
         ?string $clientId,
         ?string $receivedByMode = null,
         ?string $receivedByName = null,
+        ?string $deliveredAt = null,
     ): array {
         $campaign = CampaignService::find($campaignId);
         if (!$campaign || ($campaign['status'] ?? '') !== 'generated') {
@@ -151,7 +152,9 @@ final class MobileSyncService
             $userId,
             $clientId,
             $receivedByMode,
-            $receivedByName
+            $receivedByName,
+            true,
+            $deliveredAt
         );
         $codeSuffix = (string) ($campaign['parcel_code_suffix'] ?? '');
         $codePrefix = (string) ($campaign['parcel_code'] ?? '');

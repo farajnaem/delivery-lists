@@ -105,6 +105,7 @@ data class PendingDeliveryItem(
     val client_id: String,
     val received_by_mode: String? = "self",
     val received_by_name: String? = null,
+    val delivered_at: String? = null,
 )
 
 data class SyncRequest(
@@ -139,6 +140,7 @@ data class DeliverRequest(
     val client_id: String,
     val received_by_mode: String? = "self",
     val received_by_name: String? = null,
+    val delivered_at: String? = null,
 )
 
 data class DeliverResponse(

@@ -151,18 +151,46 @@ final class DeliveryService
         ")->fetchColumn();
 
         $today = date('Y-m-d');
+        $deliveredQ = $pdo->quote(self::STATUS_DELIVERED);
+        $todayQ = $pdo->quote($today);
+
         $todayDelivered = (int) $pdo->query("
             SELECT COUNT(*) FROM beneficiaries
             WHERE campaign_id = {$campaignId}
-              AND receipt_status = " . $pdo->quote(self::STATUS_DELIVERED) . "
-              AND actual_delivery_date = " . $pdo->quote($today) . '
-        ')->fetchColumn();
+              AND receipt_status = {$deliveredQ}
+              AND actual_delivery_date = {$todayQ}
+        ")->fetchColumn();
 
         $plannedToday = (int) $pdo->query("
             SELECT COUNT(*) FROM beneficiaries
             WHERE campaign_id = {$campaignId}
-              AND delivery_date = " . $pdo->quote($today) . '
-        ')->fetchColumn();
+              AND delivery_date = {$todayQ}
+        ")->fetchColumn();
+
+        // من مخطط اليوم: كم استلم (مهم للمطابقة — لا تخلطه مع كل مستلمي اليوم)
+        $plannedTodayDelivered = (int) $pdo->query("
+            SELECT COUNT(*) FROM beneficiaries
+            WHERE campaign_id = {$campaignId}
+              AND delivery_date = {$todayQ}
+              AND receipt_status = {$deliveredQ}
+        ")->fetchColumn();
+
+        $todayDeliveredLate = (int) $pdo->query("
+            SELECT COUNT(*) FROM beneficiaries
+            WHERE campaign_id = {$campaignId}
+              AND receipt_status = {$deliveredQ}
+              AND actual_delivery_date = {$todayQ}
+              AND delivery_date IS NOT NULL AND delivery_date != ''
+              AND delivery_date < {$todayQ}
+        ")->fetchColumn();
+
+        $todayDeliveredOfPlan = (int) $pdo->query("
+            SELECT COUNT(*) FROM beneficiaries
+            WHERE campaign_id = {$campaignId}
+              AND receipt_status = {$deliveredQ}
+              AND actual_delivery_date = {$todayQ}
+              AND delivery_date = {$todayQ}
+        ")->fetchColumn();
 
         return [
             'campaign' => $campaign,
@@ -175,6 +203,10 @@ final class DeliveryService
             'late' => $late,
             'today_delivered' => $todayDelivered,
             'planned_today' => $plannedToday,
+            'planned_today_delivered' => $plannedTodayDelivered,
+            'planned_today_pending' => max(0, $plannedToday - $plannedTodayDelivered),
+            'today_delivered_of_plan' => $todayDeliveredOfPlan,
+            'today_delivered_late' => $todayDeliveredLate,
             'campaign_active' => self::isCampaignActive($campaign),
         ];
     }
@@ -367,6 +399,7 @@ final class DeliveryService
         ?string $receivedByMode = null,
         ?string $receivedByName = null,
         bool $requireAssigned = true,
+        ?string $clientDeliveredAt = null,
     ): array {
         $pdo = Database::getConnection();
 
@@ -415,13 +448,10 @@ final class DeliveryService
             return ['ok' => false, 'error' => 'لا يوجد رصيد كافٍ في المخزن.'];
         }
 
-        $today = date('Y-m-d');
-        $plannedDate = trim((string) ($beneficiary['delivery_date'] ?? ''));
-        if ($plannedDate === '') {
-            $plannedDate = $today;
-        }
-        $deliveryType = ($today <= $plannedDate) ? 'on_time' : 'late';
-        $now = date('Y-m-d H:i:s');
+        $timing = self::resolveDeliveryTiming($beneficiary, $campaign, $clientDeliveredAt);
+        $deliveryType = $timing['type'];
+        $now = $timing['at'];
+        $actualDate = $timing['date'];
 
         $pdo->beginTransaction();
         try {
@@ -442,10 +472,10 @@ final class DeliveryService
                 $now,
                 $userId,
                 $deliveryType,
-                $today,
+                $actualDate,
                 $recvMode,
                 $recvName,
-                $now,
+                db_now(),
                 $beneficiaryId,
                 self::STATUS_DELIVERED,
             ]);
@@ -476,21 +506,88 @@ final class DeliveryService
         $beneficiary['receipt_status'] = self::STATUS_DELIVERED;
         $beneficiary['delivered_at'] = $now;
         $beneficiary['delivery_type'] = $deliveryType;
-        $beneficiary['actual_delivery_date'] = $today;
+        $beneficiary['actual_delivery_date'] = $actualDate;
+        $beneficiary['delivered_by'] = $userId;
         $beneficiary['received_by_mode'] = $recvMode;
         $beneficiary['received_by_name'] = $recvName;
 
         try {
             SmsService::queueDeliveryConfirmation($campaignId, $beneficiary, $campaign);
         } catch (\Throwable) {
-            // لا نوقف التسليم إذا فشل تجهيز الرسالة
         }
 
-        return ['ok' => true, 'beneficiary' => self::enrichForDisplay(
-            $beneficiary,
-            (string) ($campaign['parcel_code_suffix'] ?? ''),
-            (string) ($campaign['parcel_code'] ?? '')
-        ), 'delivery_type' => $deliveryType];
+        return ['ok' => true, 'beneficiary' => self::enrichForDisplay($beneficiary)];
+    }
+
+    /**
+     * تحديد وقت/تاريخ/نوع التسليم.
+     * - متأخر عن الموعد: تاريخ الاستلام بعد تاريخ الموعد المخطط
+     * - بعد الشباك (نفس اليوم): بعد time_to أو نهاية دوام اليوم
+     *
+     * @return array{type:string,date:string,at:string}
+     */
+    public static function resolveDeliveryTiming(array $beneficiary, array $campaign, ?string $clientDeliveredAt = null): array
+    {
+        $at = self::normalizeClientDateTime($clientDeliveredAt) ?? db_now();
+        $actualDate = substr($at, 0, 10);
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $actualDate)) {
+            $actualDate = date('Y-m-d');
+            $at = db_now();
+        }
+
+        $plannedDate = trim((string) ($beneficiary['delivery_date'] ?? ''));
+        if ($plannedDate === '') {
+            $plannedDate = $actualDate;
+        }
+
+        if ($actualDate > $plannedDate) {
+            return ['type' => 'late', 'date' => $actualDate, 'at' => $at];
+        }
+
+        // نفس يوم الموعد: بعد نهاية الشباك أو دوام اليوم → متأخر (بعد الدوام)
+        if ($actualDate === $plannedDate) {
+            $slotEnd = substr(trim((string) ($beneficiary['time_to'] ?? '')), 0, 5);
+            if ($slotEnd === '' || !preg_match('/^\d{2}:\d{2}$/', $slotEnd)) {
+                $slotEnd = substr(trim((string) ($campaign['work_end'] ?? '')), 0, 5);
+            }
+            $atTime = substr($at, 11, 5);
+            if (
+                preg_match('/^\d{2}:\d{2}$/', $slotEnd)
+                && preg_match('/^\d{2}:\d{2}$/', $atTime)
+                && $atTime > $slotEnd
+            ) {
+                return ['type' => 'late', 'date' => $actualDate, 'at' => $at];
+            }
+        }
+
+        return ['type' => 'on_time', 'date' => $actualDate, 'at' => $at];
+    }
+
+    private static function normalizeClientDateTime(?string $raw): ?string
+    {
+        $raw = trim((string) $raw);
+        if ($raw === '') {
+            return null;
+        }
+        // Y-m-d H:i:s أو ISO-ish
+        $raw = str_replace('T', ' ', $raw);
+        $raw = preg_replace('/\.\d+/', '', $raw) ?? $raw;
+        $raw = preg_replace('/Z$|[+-]\d{2}:?\d{2}$/', '', $raw) ?? $raw;
+        $raw = trim($raw);
+        $ts = strtotime($raw);
+        if ($ts === false) {
+            return null;
+        }
+        // رفض أوقات مستقبلية بأكثر من ساعة (ساعة الجهاز الخاطئة)
+        if ($ts > time() + 3600) {
+            return null;
+        }
+        // رفض أقدم من 7 أيام عن الآن
+        if ($ts < time() - 7 * 86400) {
+            return null;
+        }
+
+        return date('Y-m-d H:i:s', $ts);
     }
 
     /**
@@ -621,7 +718,11 @@ final class DeliveryService
                 $userId,
                 $clientId,
                 isset($item['received_by_mode']) ? (string) $item['received_by_mode'] : self::RECEIVED_BY_SELF,
-                isset($item['received_by_name']) ? (string) $item['received_by_name'] : null
+                isset($item['received_by_name']) ? (string) $item['received_by_name'] : null,
+                true,
+                isset($item['delivered_at'])
+                    ? (string) $item['delivered_at']
+                    : (isset($item['queued_at']) ? (string) $item['queued_at'] : null)
             );
             if ($result['ok']) {
                 $synced++;
@@ -948,18 +1049,18 @@ final class DeliveryService
             $delivered = 0;
             foreach ($pending as $row) {
                 $bid = (int) $row['id'];
-                $planned = (string) ($row['delivery_date'] ?? $today);
-                $deliveryType = ($today <= $planned) ? 'on_time' : 'late';
+                $timing = self::resolveDeliveryTiming($row, $campaign, $now);
+                $deliveryType = $timing['type'];
                 $upd->execute([
                     self::STATUS_DELIVERED,
-                    $now,
+                    $timing['at'],
                     $userId,
                     $deliveryType,
-                    $today,
+                    $timing['date'],
                     self::RECEIVED_BY_SELF,
                     null,
                     $batchId,
-                    $now,
+                    $timing['at'],
                     $bid,
                     $campaignId,
                     self::STATUS_DELIVERED,
@@ -969,7 +1070,7 @@ final class DeliveryService
                     continue;
                 }
                 $clientId = substr('bulk-' . $batchId . '-' . $bid, 0, 64);
-                $evt->execute([$bid, $campaignId, $deliveryType, $now, $userId, $clientId]);
+                $evt->execute([$bid, $campaignId, $deliveryType, $timing['at'], $userId, $clientId]);
                 $delivered++;
             }
 

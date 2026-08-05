@@ -35,6 +35,10 @@ if ($opensRaw !== '') {
 }
 $todayDelivered = (int) ($stock['today_delivered'] ?? 0);
 $plannedToday = (int) ($stock['planned_today'] ?? 0);
+$plannedTodayDelivered = (int) ($stock['planned_today_delivered'] ?? 0);
+$plannedTodayPending = (int) ($stock['planned_today_pending'] ?? max(0, $plannedToday - $plannedTodayDelivered));
+$todayDeliveredLate = (int) ($stock['today_delivered_late'] ?? 0);
+$todayDeliveredOfPlan = (int) ($stock['today_delivered_of_plan'] ?? 0);
 ?>
 
 <div class="grid-stats">
@@ -52,9 +56,8 @@ $plannedToday = (int) ($stock['planned_today'] ?? 0);
         <div class="stat-value"><?= ar_digits((int) ($stock['pending'] ?? 0)) ?></div>
     </div>
     <div class="stat-card">
-        <div class="stat-label">اليوم (نظام / مخطط)</div>
-        <div class="stat-value"><?= ar_digits($todayDelivered) ?> / <?= ar_digits($plannedToday) ?></div>
-        <div class="stat-meta">
+        <div class="stat-label">الحالة</div>
+        <div class="stat-value" style="font-size:1.1rem">
             <?php if ($gateState === 'open'): ?>
             <span class="badge badge-ok"><?= e((string) ($gate['label'] ?? 'مفتوح')) ?></span>
             <?php else: ?>
@@ -65,9 +68,34 @@ $plannedToday = (int) ($stock['planned_today'] ?? 0);
 </div>
 
 <div class="card" style="border:2px solid var(--accent, #2563eb)">
-    <h2 class="panel-title" style="margin-top:0">المطابقة والكشوف النهائية</h2>
+    <h2 class="panel-title" style="margin-top:0">مطابقة مخطط اليوم</h2>
     <p class="text-muted" style="margin:0 0 0.75rem">
-        قارن مستلمي النظام مع الميدان، ثم اطبع الكشوف من هنا أو من تبويب الأيام.
+        قارن <strong>مخطط اليوم</strong> مع من استلم من هذا المخطط — لا تخلطه مع من استلم اليوم وهو متأخر من أيام سابقة.
+        التسليم بعد نهاية الشباك/الدوام يُسجَّل كـ «متأخر» لكنه يظهر في المستلمين.
+    </p>
+    <div class="grid-stats" style="margin-bottom:0.85rem">
+        <div class="stat-card">
+            <div class="stat-label">مخطط اليوم</div>
+            <div class="stat-value"><?= ar_digits($plannedToday) ?></div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">استلم من المخطط</div>
+            <div class="stat-value"><?= ar_digits($plannedTodayDelivered) ?></div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">متبقٍ من المخطط</div>
+            <div class="stat-value"><?= ar_digits($plannedTodayPending) ?></div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">متأخرون استلموا اليوم</div>
+            <div class="stat-value"><?= ar_digits($todayDeliveredLate) ?></div>
+            <div class="stat-meta">موعدهم يوم سابق</div>
+        </div>
+    </div>
+    <p class="text-muted" style="margin:0 0 0.75rem;font-size:0.92rem">
+        إجمالي مستلمي اليوم في النظام: <strong><?= ar_digits($todayDelivered) ?></strong>
+        (منهم <?= ar_digits($todayDeliveredOfPlan) ?> من مخطط اليوم
+        + <?= ar_digits($todayDeliveredLate) ?> متأخرين من أيام سابقة).
     </p>
     <div class="actions-row" style="flex-wrap:wrap;gap:0.5rem">
         <a class="btn" href="<?= e(url('/campaigns/beneficiaries?id=' . $cid . '&filter=today')) ?>">مستلمو اليوم</a>

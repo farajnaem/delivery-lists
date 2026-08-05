@@ -56,6 +56,7 @@ data class PendingDeliveryEntity(
     val syncStatus: String = "pending",
     val receivedByMode: String = "self",
     val receivedByName: String? = null,
+    val deliveredAt: String? = null,
 )
 
 @Entity(tableName = "recent_delivered_cache")
