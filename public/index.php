@@ -1101,8 +1101,14 @@ if ($uri === '/campaigns/view' && $method === 'GET') {
     }
     $stats = CampaignService::stats($id);
     $panel = strtolower(trim((string) ($_GET['panel'] ?? '')));
-    if (!in_array($panel, ['', 'days', 'candidates', 'downloads'], true)) {
+    if ($panel === 'downloads') {
+        $panel = 'days';
+    }
+    if (!in_array($panel, ['', 'search', 'days', 'candidates'], true)) {
         $panel = '';
+    }
+    if ($panel === '') {
+        $panel = 'search';
     }
     $plan = null;
     $suggestedDayDate = DistributionService::suggestNextDayDate($campaign);
