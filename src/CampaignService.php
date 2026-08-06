@@ -759,18 +759,50 @@ final class CampaignService
               AND day_index IS NOT NULL AND day_index > 0
               AND disbursement_code IS NOT NULL AND disbursement_code != ''
         ")->fetchColumn();
+        $deliveredStatus = DeliveryService::STATUS_DELIVERED;
+        $today = date('Y-m-d');
         $days = $pdo->prepare('
             SELECT day_index, delivery_date, COUNT(*) AS cnt,
                    COUNT(DISTINCT window_num) AS windows,
                    MIN(time_from) AS work_start,
-                   MAX(time_to) AS work_end
+                   MAX(time_to) AS work_end,
+                   SUM(CASE
+                         WHEN receipt_status = ?
+                          AND COALESCE(delivery_type, \'\') != \'late\'
+                         THEN 1 ELSE 0
+                       END) AS delivered,
+                   SUM(CASE
+                         WHEN (receipt_status IS NULL OR receipt_status != ?)
+                          AND delivery_date IS NOT NULL AND delivery_date != \'\'
+                          AND delivery_date >= ?
+                         THEN 1 ELSE 0
+                       END) AS pending,
+                   SUM(CASE
+                         WHEN (receipt_status IS NULL OR receipt_status != ?)
+                          AND delivery_date IS NOT NULL AND delivery_date != \'\'
+                          AND delivery_date < ?
+                         THEN 1 ELSE 0
+                       END) AS late_pending,
+                   SUM(CASE
+                         WHEN receipt_status = ?
+                          AND delivery_type = \'late\'
+                         THEN 1 ELSE 0
+                       END) AS delivered_late
             FROM beneficiaries
             WHERE campaign_id = ?
               AND day_index IS NOT NULL AND day_index > 0
             GROUP BY day_index, delivery_date
             ORDER BY day_index
         ');
-        $days->execute([$campaignId]);
+        $days->execute([
+            $deliveredStatus,
+            $deliveredStatus,
+            $today,
+            $deliveredStatus,
+            $today,
+            $deliveredStatus,
+            $campaignId,
+        ]);
         return [
             'total' => $total,
             'delivered' => $delivered,
