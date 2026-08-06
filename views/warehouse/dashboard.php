@@ -39,6 +39,8 @@ $plannedTodayDelivered = (int) ($stock['planned_today_delivered'] ?? 0);
 $plannedTodayPending = (int) ($stock['planned_today_pending'] ?? max(0, $plannedToday - $plannedTodayDelivered));
 $todayDeliveredLate = (int) ($stock['today_delivered_late'] ?? 0);
 $todayDeliveredOfPlan = (int) ($stock['today_delivered_of_plan'] ?? 0);
+$unassignedPending = (int) ($stock['unassigned_pending'] ?? 0);
+$latePending = (int) ($stock['late_pending'] ?? 0);
 ?>
 
 <div class="grid-stats">
@@ -97,8 +99,22 @@ $todayDeliveredOfPlan = (int) ($stock['today_delivered_of_plan'] ?? 0);
         (منهم <?= ar_digits($todayDeliveredOfPlan) ?> من مخطط اليوم
         + <?= ar_digits($todayDeliveredLate) ?> متأخرين من أيام سابقة).
     </p>
+    <div class="grid-stats" style="margin-bottom:0.85rem">
+        <div class="stat-card">
+            <div class="stat-label">غير معيّنين بانتظار الاستلام</div>
+            <div class="stat-value"><?= ar_digits($unassignedPending) ?></div>
+            <div class="stat-meta">بلا يوم/كود وما استلموا</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">متأخرون لم يستلموا</div>
+            <div class="stat-value"><?= ar_digits($latePending) ?></div>
+            <div class="stat-meta">موعدهم قبل اليوم وما حضروا</div>
+        </div>
+    </div>
     <div class="actions-row" style="flex-wrap:wrap;gap:0.5rem">
         <a class="btn" href="<?= e(url('/campaigns/beneficiaries?id=' . $cid . '&filter=today')) ?>">مستلمو اليوم</a>
+        <a class="btn btn-outline" href="<?= e(url('/campaigns/beneficiaries?id=' . $cid . '&filter=unassigned')) ?>">غير المعيّنين (<?= ar_digits($unassignedPending) ?>)</a>
+        <a class="btn btn-outline" href="<?= e(url('/campaigns/beneficiaries?id=' . $cid . '&filter=late')) ?>">متأخرون لم يستلموا (<?= ar_digits($latePending) ?>)</a>
         <?php if (!empty($canExport)): ?>
         <a class="btn" href="<?= e(url('/campaigns/export?id=' . $cid)) ?>">كشوف التسليم المعتمدة</a>
         <a class="btn btn-outline" href="<?= e(url('/campaigns/export-deliveries?id=' . $cid)) ?>">تقرير المستلمين Excel</a>
@@ -220,9 +236,15 @@ $hasBulk = ((int) ($bulkStats['total'] ?? 0)) > 0;
     </div>
 </details>
 
-<?php if (!empty($lateList)): ?>
+<?php if (!empty($lateList) || $latePending > 0): ?>
 <details class="card table-panel" style="padding:1rem">
-    <summary style="cursor:pointer;color:var(--muted)">متأخرون (<?= ar_digits(count($lateList)) ?>)</summary>
+    <summary style="cursor:pointer;color:var(--muted)">متأخرون لم يستلموا (<?= ar_digits($latePending) ?>)</summary>
+    <?php if ($latePending > count($lateList ?? [])): ?>
+    <p class="text-muted" style="margin:0.5rem 0 0">
+        عرض عيّنة — القائمة الكاملة:
+        <a href="<?= e(url('/campaigns/beneficiaries?id=' . $cid . '&filter=late')) ?>">كل المتأخرين (<?= ar_digits($latePending) ?>)</a>
+    </p>
+    <?php endif; ?>
     <div class="table-wrap" style="margin-top:0.75rem">
     <table class="data-table">
         <thead><tr><th>الكود</th><th>الاسم</th><th>الموعد</th><th>الشباك</th></tr></thead>

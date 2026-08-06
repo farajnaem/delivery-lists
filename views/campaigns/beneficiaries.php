@@ -20,7 +20,7 @@ $showBulkDelete = $canDeleteBeneficiary;
 $idListCount = (int) ($idListCount ?? 0);
 $useIdsFlag = !empty($useIdsFlag) || $idListCount >= 2;
 $autoCheckBulk = $showBulkDelete && ($filter === 'unassigned_today' || $filter === 'unassigned');
-$isSpecialFilter = in_array($filter, ['unassigned', 'unassigned_today', 'anomaly', 'duplicates', 'today'], true);
+$isSpecialFilter = in_array($filter, ['unassigned', 'unassigned_today', 'late', 'anomaly', 'duplicates', 'today'], true);
 
 $colspan = 6
     + ($showManualChecks ? 1 : 0)
@@ -77,6 +77,7 @@ page_header(
         <div class="actions-row" style="margin-top:0.65rem;gap:0.5rem;flex-wrap:wrap">
             <a class="btn btn-sm <?= $filter === 'unassigned' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('unassigned', $q)) ?>">غير معيّنين</a>
             <a class="btn btn-sm <?= $filter === 'unassigned_today' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('unassigned_today', $q)) ?>">آخر دفعة مضافة</a>
+            <a class="btn btn-sm <?= $filter === 'late' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('late', $q)) ?>">متأخرون لم يستلموا</a>
             <?php if ($canManualDeliver): ?>
             <a class="btn btn-sm <?= $filter === 'today' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('today', $q)) ?>">مستلمو اليوم</a>
             <a class="btn btn-sm <?= $filter === 'anomaly' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('anomaly', $q)) ?>">تسليم بلا تعيين</a>

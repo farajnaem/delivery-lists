@@ -41,6 +41,8 @@ data class StockDto(
     val late: Int = 0,
     val today_delivered: Int = 0,
     val planned_today: Int = 0,
+    val unassigned_pending: Int = 0,
+    val late_pending: Int = 0,
     val campaign_active: Boolean = true,
     val total_beneficiaries: Int = 0,
     val assigned_count: Int = 0,

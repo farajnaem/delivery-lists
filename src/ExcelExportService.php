@@ -436,7 +436,13 @@ final class ExcelExportService
             ['الرصيد المتبقي', self::ar((int) ($stats['balance'] ?? 0))],
             ['في الموعد', self::ar((int) ($stats['on_time'] ?? 0))],
             ['متأخر', self::ar((int) ($stats['late'] ?? 0))],
-            ['تسليم اليوم', self::ar((int) ($stats['today_delivered'] ?? 0)) . ' / ' . self::ar((int) ($stats['planned_today'] ?? 0))],
+            ['مخطط اليوم', self::ar((int) ($stats['planned_today'] ?? 0))],
+            ['استلم من مخطط اليوم', self::ar((int) ($stats['planned_today_delivered'] ?? 0))],
+            ['متبقٍ من مخطط اليوم', self::ar((int) ($stats['planned_today_pending'] ?? 0))],
+            ['مستلمو اليوم (الكل)', self::ar((int) ($stats['today_delivered'] ?? 0))],
+            ['متأخرون استلموا اليوم', self::ar((int) ($stats['today_delivered_late'] ?? 0))],
+            ['غير معيّنين بانتظار الاستلام', self::ar((int) ($stats['unassigned_pending'] ?? 0))],
+            ['متأخرون لم يستلموا', self::ar((int) ($stats['late_pending'] ?? 0))],
             ['رسائل SMS معلّقة', self::ar(SmsService::pendingCount((int) $campaign['id']))],
         ];
 

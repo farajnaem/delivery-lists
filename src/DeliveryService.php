@@ -192,6 +192,24 @@ final class DeliveryService
               AND delivery_date = {$todayQ}
         ")->fetchColumn();
 
+        // غير معيّنين وما زالوا بانتظار الاستلام (بلا يوم/كود)
+        $unassignedPending = (int) $pdo->query("
+            SELECT COUNT(*) FROM beneficiaries
+            WHERE campaign_id = {$campaignId}
+              AND receipt_status != {$deliveredQ}
+              AND (day_index IS NULL OR day_index = 0
+                   OR disbursement_code IS NULL OR disbursement_code = '')
+        ")->fetchColumn();
+
+        // متأخرون معيّنون: موعدهم قبل اليوم وما استلموا بعد
+        $latePending = (int) $pdo->query("
+            SELECT COUNT(*) FROM beneficiaries
+            WHERE campaign_id = {$campaignId}
+              AND receipt_status != {$deliveredQ}
+              AND delivery_date IS NOT NULL AND delivery_date != ''
+              AND delivery_date < {$todayQ}
+        ")->fetchColumn();
+
         return [
             'campaign' => $campaign,
             'total_beneficiaries' => $total,
@@ -207,6 +225,8 @@ final class DeliveryService
             'planned_today_pending' => max(0, $plannedToday - $plannedTodayDelivered),
             'today_delivered_of_plan' => $todayDeliveredOfPlan,
             'today_delivered_late' => $todayDeliveredLate,
+            'unassigned_pending' => $unassignedPending,
+            'late_pending' => $latePending,
             'campaign_active' => self::isCampaignActive($campaign),
         ];
     }

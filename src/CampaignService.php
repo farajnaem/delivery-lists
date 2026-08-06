@@ -423,6 +423,7 @@ final class CampaignService
      * - '' : الكل
      * - anomaly : غير معيّن لكن عليه أثر تسليم في السيرفر
      * - unassigned : غير معيّن وغير مستلم
+     * - late : معيّن موعده قبل اليوم وما استلم (متأخر لم يحضر)
      * - duplicates : هويات مكررة داخل العملية
      * - no_mobile : معيّن قيد التسليم بدون جوال (غالباً غائب عن كشف الرسائل)
      * - today : مُسلَّمون اليوم (للمطابقة الميدانية)
@@ -443,7 +444,7 @@ final class CampaignService
         $perPage = max(20, min(500, $perPage));
         $offset = ($page - 1) * $perPage;
         $filter = strtolower(trim($filter));
-        $allowed = ['', 'all', 'anomaly', 'unassigned', 'unassigned_today', 'no_mobile', 'today', 'delivered_no_mobile', 'arabic_id', 'duplicates'];
+        $allowed = ['', 'all', 'anomaly', 'unassigned', 'unassigned_today', 'late', 'no_mobile', 'today', 'delivered_no_mobile', 'arabic_id', 'duplicates'];
         if (!in_array($filter, $allowed, true)) {
             $filter = '';
         }
@@ -512,6 +513,11 @@ final class CampaignService
         } elseif ($filter === 'unassigned') {
             $where .= " AND {$unassignedExpr} AND (b.receipt_status IS NULL OR b.receipt_status != ?)";
             $params[] = $delivered;
+        } elseif ($filter === 'late') {
+            $where .= " AND (b.receipt_status IS NULL OR b.receipt_status != ?)
+              AND b.delivery_date IS NOT NULL AND b.delivery_date != ''
+              AND b.delivery_date < ?";
+            array_push($params, $delivered, $today);
         } elseif ($filter === 'unassigned_today') {
             // آخر يوم إضافة فعلي لغير المعيّنين (وليس فقط تقويم «اليوم» — يصلح اختلاف المنطقة/الـ migrate)
             self::appendUnassignedLatestBatchFilter($pdo, $campaignId, $unassignedExpr, $delivered, $where, $params, 'b');
@@ -550,6 +556,7 @@ final class CampaignService
 
         $orderBy = match ($filter) {
             'today' => 'b.delivered_at DESC, b.id DESC',
+            'late' => 'b.delivery_date ASC, b.sort_order ASC, b.id ASC',
             'unassigned_today' => 'b.created_at DESC, b.id DESC',
             'duplicates' => 'b.national_id ASC, b.id ASC',
             default => 'b.id DESC',

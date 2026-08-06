@@ -317,6 +317,8 @@ final class MobileSyncService
             'late' => (int) ($stats['late'] ?? 0),
             'today_delivered' => (int) ($stats['today_delivered'] ?? 0),
             'planned_today' => (int) ($stats['planned_today'] ?? 0),
+            'unassigned_pending' => (int) ($stats['unassigned_pending'] ?? 0),
+            'late_pending' => (int) ($stats['late_pending'] ?? 0),
             'campaign_active' => (bool) ($stats['campaign_active'] ?? false),
             'total_beneficiaries' => (int) ($stats['total_beneficiaries'] ?? 0),
             'assigned_count' => $assigned,
