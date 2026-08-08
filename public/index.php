@@ -739,6 +739,39 @@ if ($uri === '/admin/database/backup' && $method === 'POST') {
     redirect('/admin/database');
 }
 
+if ($uri === '/admin/database/duplicate' && $method === 'POST') {
+    Auth::requireRole(fn ($r) => RoleHelper::canManageDatabase($r));
+    if (!Csrf::verify($_POST['_csrf'] ?? null)) {
+        flash('error', Csrf::failureMessage());
+        redirect('/admin/database');
+    }
+    try {
+        $result = DatabaseBackupService::duplicate($_POST['filename'] ?? '');
+        flash(
+            'success',
+            'تم إنشاء نسخة احتياطية من «' . $result['source'] . '»: ' . $result['filename']
+        );
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+    }
+    redirect('/admin/database');
+}
+
+if ($uri === '/admin/database/import' && $method === 'POST') {
+    Auth::requireRole(fn ($r) => RoleHelper::canManageDatabase($r));
+    if (!Csrf::verify($_POST['_csrf'] ?? null)) {
+        flash('error', Csrf::failureMessage());
+        redirect('/admin/database');
+    }
+    try {
+        $result = DatabaseBackupService::importUploaded($_FILES['backup_file'] ?? []);
+        flash('success', 'تم حفظ النسخة المرفوعة: ' . $result['filename']);
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+    }
+    redirect('/admin/database');
+}
+
 if ($uri === '/admin/database/restore' && $method === 'POST') {
     Auth::requireRole(fn ($r) => RoleHelper::canManageDatabase($r));
     if (!Csrf::verify($_POST['_csrf'] ?? null)) {

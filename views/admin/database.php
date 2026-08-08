@@ -16,14 +16,29 @@ page_header(
             <button type="submit" class="btn">نسخ احتياطي الآن</button>
         </form>
     </div>
-    <div class="card" style="background:var(--warning-soft);border-color:#FDE68A">
-        <h2 class="panel-title" style="margin-bottom:0.5rem">تنبيهات</h2>
-        <ul class="text-muted" style="margin:0;padding-inline-start:1.2rem">
-            <li>قبل الاستعادة يُنشأ نسخ أمان تلقائياً.</li>
-            <li>على MySQL استخدم ملفات <code>.sql</code> فقط.</li>
-            <li>لا ترفع ملفات النسخ على GitHub.</li>
-        </ul>
+    <div class="card">
+        <h2 class="panel-title" style="margin-bottom:0.5rem">Backup من نسخة موجودة</h2>
+        <p class="text-muted" style="margin-bottom:1rem">
+            ارفع ملف نسخة احتياطية محفوظة مسبقاً (<?= \App\DatabaseBackupService::isSqlite() ? '.sqlite' : '.sql' ?>)
+            ليُحفظ ضمن النسخ دون استبدال قاعدة البيانات الحالية.
+        </p>
+        <form method="post" action="<?= e(url('/admin/database/import')) ?>" enctype="multipart/form-data" class="actions-row" style="flex-wrap:wrap;gap:0.5rem">
+            <?= \App\Csrf::field() ?>
+            <input type="file" name="backup_file" class="form-control" style="max-width:320px"
+                   accept="<?= \App\DatabaseBackupService::isSqlite() ? '.sqlite,application/x-sqlite3' : '.sql,text/plain' ?>" required>
+            <button type="submit" class="btn">حفظ كنسخة احتياطية</button>
+        </form>
     </div>
+</div>
+
+<div class="card" style="background:var(--warning-soft);border-color:#FDE68A;margin-top:1rem">
+    <h2 class="panel-title" style="margin-bottom:0.5rem">تنبيهات</h2>
+    <ul class="text-muted" style="margin:0;padding-inline-start:1.2rem">
+        <li>قبل الاستعادة يُنشأ نسخ أمان تلقائياً.</li>
+        <li>زر «نسخ كنسخة جديدة» يكرّر ملفاً موجوداً في القائمة دون لمس قاعدة البيانات.</li>
+        <li>على MySQL استخدم ملفات <code>.sql</code> فقط، وعلى SQLite <code>.sqlite</code>.</li>
+        <li>لا ترفع ملفات النسخ على GitHub.</li>
+    </ul>
 </div>
 
 <div class="card table-panel" data-table-filterable>
@@ -57,6 +72,11 @@ page_header(
             <td><?= e($b['created_at']) ?></td>
             <td>
                 <div class="row-actions">
+                    <form method="post" action="<?= e(url('/admin/database/duplicate')) ?>">
+                        <?= \App\Csrf::field() ?>
+                        <input type="hidden" name="filename" value="<?= e($b['filename']) ?>">
+                        <button type="submit" class="btn btn-sm" title="إنشاء backup جديد من هذه النسخة">نسخ كنسخة جديدة</button>
+                    </form>
                     <form method="post" action="<?= e(url('/admin/database/restore')) ?>"
                           data-confirm="استعادة هذه النسخة؟ سيتم استبدال البيانات الحالية (يُنشأ نسخ أمان تلقائياً).">
                         <?= \App\Csrf::field() ?>

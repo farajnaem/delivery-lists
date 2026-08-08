@@ -114,6 +114,83 @@ final class DatabaseBackupService
         }
     }
 
+    /**
+     * إنشاء نسخة احتياطية جديدة بمحتوى نسخة موجودة (تكرار الملف).
+     *
+     * @return array{filename:string,size:int,source:string}
+     */
+    public static function duplicate(string $filename): array
+    {
+        $filename = basename($filename);
+        $src = self::backupDir() . '/' . $filename;
+        if (!is_file($src)) {
+            throw new \RuntimeException('النسخة المصدر غير موجودة.');
+        }
+
+        $ext = str_ends_with(strtolower($filename), '.sql') ? 'sql' : 'sqlite';
+        if (self::isSqlite() && $ext !== 'sqlite') {
+            throw new \RuntimeException('لا يمكن نسخ ملف MySQL (.sql) بينما النظام يستخدم SQLite.');
+        }
+        if (!self::isSqlite() && $ext !== 'sql') {
+            throw new \RuntimeException('لا يمكن نسخ ملف SQLite بينما النظام يستخدم MySQL.');
+        }
+
+        $ts = date('Y-m-d_His');
+        $destName = "backup_from_{$ts}.{$ext}";
+        $dest = self::backupDir() . '/' . $destName;
+        if (!copy($src, $dest)) {
+            throw new \RuntimeException('فشل إنشاء نسخة من الملف الموجود.');
+        }
+
+        return [
+            'filename' => $destName,
+            'size' => filesize($dest) ?: 0,
+            'source' => $filename,
+        ];
+    }
+
+    /**
+     * حفظ ملف نسخة موجودة (مرفوع) ضمن مجلد النسخ الاحتياطية.
+     *
+     * @param array{name?:string,tmp_name?:string,error?:int,size?:int} $file من $_FILES
+     * @return array{filename:string,size:int}
+     */
+    public static function importUploaded(array $file): array
+    {
+        $error = (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE);
+        if ($error !== UPLOAD_ERR_OK) {
+            throw new \RuntimeException('فشل رفع الملف — تأكد من اختيار ملف صالح.');
+        }
+
+        $tmp = (string) ($file['tmp_name'] ?? '');
+        $original = basename((string) ($file['name'] ?? ''));
+        if ($tmp === '' || !is_uploaded_file($tmp)) {
+            throw new \RuntimeException('ملف الرفع غير صالح.');
+        }
+
+        $lower = strtolower($original);
+        $ext = str_ends_with($lower, '.sql') ? 'sql' : (str_ends_with($lower, '.sqlite') ? 'sqlite' : '');
+        if ($ext === '') {
+            throw new \RuntimeException('الصيغة المدعومة: .sqlite أو .sql فقط.');
+        }
+        if (self::isSqlite() && $ext !== 'sqlite') {
+            throw new \RuntimeException('النظام يستخدم SQLite — ارفع ملف .sqlite.');
+        }
+        if (!self::isSqlite() && $ext !== 'sql') {
+            throw new \RuntimeException('النظام يستخدم MySQL — ارفع ملف .sql.');
+        }
+
+        $ts = date('Y-m-d_His');
+        $safeBase = preg_replace('/[^A-Za-z0-9._-]+/', '_', pathinfo($original, PATHINFO_FILENAME)) ?: 'import';
+        $destName = "backup_import_{$safeBase}_{$ts}.{$ext}";
+        $dest = self::backupDir() . '/' . $destName;
+        if (!move_uploaded_file($tmp, $dest)) {
+            throw new \RuntimeException('تعذّر حفظ الملف المرفوع.');
+        }
+
+        return ['filename' => $destName, 'size' => filesize($dest) ?: 0];
+    }
+
     private static function exportMysqlToFile(string $dest): void
     {
         $pdo = Database::getConnection();
