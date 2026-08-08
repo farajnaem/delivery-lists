@@ -115,42 +115,38 @@ final class DatabaseBackupService
     }
 
     /**
-     * إنشاء نسخة احتياطية جديدة بمحتوى نسخة موجودة (تكرار الملف).
+     * مسار ملف نسخة احتياطية صالح للتنزيل.
      *
-     * @return array{filename:string,size:int,source:string}
+     * @return array{path:string,filename:string,mime:string,size:int}
      */
-    public static function duplicate(string $filename): array
+    public static function resolveDownload(string $filename): array
     {
         $filename = basename($filename);
-        $src = self::backupDir() . '/' . $filename;
-        if (!is_file($src)) {
-            throw new \RuntimeException('النسخة المصدر غير موجودة.');
+        if ($filename === '' || $filename === '.gitkeep' || str_contains($filename, '..')) {
+            throw new \RuntimeException('اسم الملف غير صالح.');
         }
 
-        $ext = str_ends_with(strtolower($filename), '.sql') ? 'sql' : 'sqlite';
-        if (self::isSqlite() && $ext !== 'sqlite') {
-            throw new \RuntimeException('لا يمكن نسخ ملف MySQL (.sql) بينما النظام يستخدم SQLite.');
-        }
-        if (!self::isSqlite() && $ext !== 'sql') {
-            throw new \RuntimeException('لا يمكن نسخ ملف SQLite بينما النظام يستخدم MySQL.');
+        $path = self::backupDir() . '/' . $filename;
+        $realBackup = realpath(self::backupDir());
+        $realFile = realpath($path);
+        if ($realBackup === false || $realFile === false || !str_starts_with($realFile, $realBackup) || !is_file($realFile)) {
+            throw new \RuntimeException('النسخة الاحتياطية غير موجودة.');
         }
 
-        $ts = date('Y-m-d_His');
-        $destName = "backup_from_{$ts}.{$ext}";
-        $dest = self::backupDir() . '/' . $destName;
-        if (!copy($src, $dest)) {
-            throw new \RuntimeException('فشل إنشاء نسخة من الملف الموجود.');
-        }
+        $mime = str_ends_with(strtolower($filename), '.sql')
+            ? 'application/sql'
+            : 'application/octet-stream';
 
         return [
-            'filename' => $destName,
-            'size' => filesize($dest) ?: 0,
-            'source' => $filename,
+            'path' => $realFile,
+            'filename' => $filename,
+            'mime' => $mime,
+            'size' => filesize($realFile) ?: 0,
         ];
     }
 
     /**
-     * حفظ ملف نسخة موجودة (مرفوع) ضمن مجلد النسخ الاحتياطية.
+     * رفع ملف نسخة من جهاز آخر إلى مجلد النسخ (للاستعادة لاحقاً).
      *
      * @param array{name?:string,tmp_name?:string,error?:int,size?:int} $file من $_FILES
      * @return array{filename:string,size:int}

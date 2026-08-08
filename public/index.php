@@ -739,22 +739,20 @@ if ($uri === '/admin/database/backup' && $method === 'POST') {
     redirect('/admin/database');
 }
 
-if ($uri === '/admin/database/duplicate' && $method === 'POST') {
+if ($uri === '/admin/database/download' && $method === 'GET') {
     Auth::requireRole(fn ($r) => RoleHelper::canManageDatabase($r));
-    if (!Csrf::verify($_POST['_csrf'] ?? null)) {
-        flash('error', Csrf::failureMessage());
-        redirect('/admin/database');
-    }
     try {
-        $result = DatabaseBackupService::duplicate($_POST['filename'] ?? '');
-        flash(
-            'success',
-            'تم إنشاء نسخة احتياطية من «' . $result['source'] . '»: ' . $result['filename']
-        );
+        $file = DatabaseBackupService::resolveDownload($_GET['filename'] ?? '');
+        header('Content-Type: ' . $file['mime']);
+        header('Content-Length: ' . (string) $file['size']);
+        header('Content-Disposition: attachment; filename="' . $file['filename'] . '"');
+        header('X-Content-Type-Options: nosniff');
+        readfile($file['path']);
+        exit;
     } catch (Throwable $e) {
         flash('error', $e->getMessage());
+        redirect('/admin/database');
     }
-    redirect('/admin/database');
 }
 
 if ($uri === '/admin/database/import' && $method === 'POST') {
@@ -765,7 +763,7 @@ if ($uri === '/admin/database/import' && $method === 'POST') {
     }
     try {
         $result = DatabaseBackupService::importUploaded($_FILES['backup_file'] ?? []);
-        flash('success', 'تم حفظ النسخة المرفوعة: ' . $result['filename']);
+        flash('success', 'تم استيراد الملف: ' . $result['filename'] . ' — يمكنك الآن الضغط على «استعادة».');
     } catch (Throwable $e) {
         flash('error', $e->getMessage());
     }
