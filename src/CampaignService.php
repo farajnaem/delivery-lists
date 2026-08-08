@@ -760,49 +760,49 @@ final class CampaignService
               AND disbursement_code IS NOT NULL AND disbursement_code != ''
         ")->fetchColumn();
         $deliveredStatus = DeliveryService::STATUS_DELIVERED;
-        $today = date('Y-m-d');
+        // لكل يوم مخطط:
+        // - مستلم: من مخطط هذا اليوم واستلم في الموعد
+        // - غير مستلم: من مخطط هذا اليوم وما استلم بعد
+        // - مستلم من المتأخرين: استلم في تاريخ هذا اليوم وموعده كان يوماً سابقاً
         $days = $pdo->prepare('
-            SELECT day_index, delivery_date, COUNT(*) AS cnt,
-                   COUNT(DISTINCT window_num) AS windows,
-                   MIN(time_from) AS work_start,
-                   MAX(time_to) AS work_end,
+            SELECT b.day_index, b.delivery_date, COUNT(*) AS cnt,
+                   COUNT(DISTINCT b.window_num) AS windows,
+                   MIN(b.time_from) AS work_start,
+                   MAX(b.time_to) AS work_end,
                    SUM(CASE
-                         WHEN receipt_status = ?
-                          AND COALESCE(delivery_type, \'\') != \'late\'
+                         WHEN b.receipt_status = ?
+                          AND COALESCE(b.delivery_type, \'\') != \'late\'
                          THEN 1 ELSE 0
                        END) AS delivered,
                    SUM(CASE
-                         WHEN (receipt_status IS NULL OR receipt_status != ?)
-                          AND delivery_date IS NOT NULL AND delivery_date != \'\'
-                          AND delivery_date >= ?
+                         WHEN b.receipt_status IS NULL OR b.receipt_status != ?
                          THEN 1 ELSE 0
                        END) AS pending,
-                   SUM(CASE
-                         WHEN (receipt_status IS NULL OR receipt_status != ?)
-                          AND delivery_date IS NOT NULL AND delivery_date != \'\'
-                          AND delivery_date < ?
-                         THEN 1 ELSE 0
-                       END) AS late_pending,
-                   SUM(CASE
-                         WHEN receipt_status = ?
-                          AND delivery_type = \'late\'
-                         THEN 1 ELSE 0
-                       END) AS delivered_late
-            FROM beneficiaries
-            WHERE campaign_id = ?
-              AND day_index IS NOT NULL AND day_index > 0
-            GROUP BY day_index, delivery_date
-            ORDER BY day_index
+                   (
+                     SELECT COUNT(*)
+                     FROM beneficiaries late_b
+                     WHERE late_b.campaign_id = b.campaign_id
+                       AND late_b.receipt_status = ?
+                       AND late_b.actual_delivery_date IS NOT NULL
+                       AND late_b.actual_delivery_date != \'\'
+                       AND late_b.actual_delivery_date = b.delivery_date
+                       AND late_b.delivery_date IS NOT NULL
+                       AND late_b.delivery_date != \'\'
+                       AND late_b.delivery_date < b.delivery_date
+                   ) AS delivered_late
+            FROM beneficiaries b
+            WHERE b.campaign_id = ?
+              AND b.day_index IS NOT NULL AND b.day_index > 0
+            GROUP BY b.campaign_id, b.day_index, b.delivery_date
+            ORDER BY b.day_index
         ');
         $days->execute([
             $deliveredStatus,
             $deliveredStatus,
-            $today,
-            $deliveredStatus,
-            $today,
             $deliveredStatus,
             $campaignId,
         ]);
+
         return [
             'total' => $total,
             'delivered' => $delivered,

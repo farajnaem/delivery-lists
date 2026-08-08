@@ -160,7 +160,7 @@ $panelUrl = static function (string $p) use ($cid): string {
         <div class="table-toolbar">
             <div>
                 <div class="panel-title">الأيام المعتمدة</div>
-                <div class="panel-subtitle">لكل يوم: مستلم / غير مستلم / متأخر / مستلم من المتأخرين — وإلغاء آخر يوم فقط.</div>
+                <div class="panel-subtitle">مستلم / غير مستلم من مخطط اليوم — ومستلم من المتأخرين = استلموا في هذا التاريخ وموعدهم يوم سابق. إلغاء آخر يوم فقط.</div>
             </div>
             <?php if (!empty($canEdit) && $lastDayIndex > 0): ?>
             <form method="post" action="<?= e(url('/campaigns/cancel-last-day')) ?>"
@@ -180,7 +180,6 @@ $panelUrl = static function (string $p) use ($cid): string {
                     <th>العدد</th>
                     <th>مستلم</th>
                     <th>غير مستلم</th>
-                    <th>متأخر</th>
                     <th>مستلم من المتأخرين</th>
                     <th>الشبابيك</th>
                     <th>كشف التسليم</th>
@@ -201,7 +200,6 @@ $panelUrl = static function (string $p) use ($cid): string {
                 <td><?= ar_digits((int) ($day['cnt'] ?? 0)) ?></td>
                 <td><?= ar_digits((int) ($day['delivered'] ?? 0)) ?></td>
                 <td><?= ar_digits((int) ($day['pending'] ?? 0)) ?></td>
-                <td><?= ar_digits((int) ($day['late_pending'] ?? 0)) ?></td>
                 <td><?= ar_digits((int) ($day['delivered_late'] ?? 0)) ?></td>
                 <td><?= ar_digits((int) ($day['windows'] ?? 0)) ?></td>
                 <td>
