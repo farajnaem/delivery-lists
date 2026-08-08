@@ -83,4 +83,5 @@ window.WH_CONFIG = {
     campaignActive: <?= $campaignActive ? 'true' : 'false' ?>
 };
 </script>
+<script src="<?= e(asset('/assets/js/arabic-format.js')) ?>"></script>
 <script src="<?= e(asset('/assets/js/warehouse.js')) ?>"></script>

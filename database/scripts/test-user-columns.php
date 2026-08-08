@@ -1,5 +1,5 @@
 <?php
-require dirname(__DIR__) . '/src/bootstrap.php';
+require dirname(__DIR__, 2) . '/src/bootstrap.php';
 
 use App\ExcelImportService;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -10,7 +10,7 @@ $s->getActiveSheet()->fromArray([
     ['اسم رب الأسرة', 'رقم الهوية', 'رقم التواصل', 'مركز الإيواء', 'حالة الاستلام', 'تاريخ الترشيح'],
     ['أحمد علي', '401111111', '0599111111', 'مركز 1', 'قيد التسليم', '2026-01-01'],
 ], null, 'A1');
-$path = dirname(__DIR__) . '/storage/test-user-columns.xlsx';
+$path = dirname(__DIR__, 2) . '/storage/test-user-columns.xlsx';
 (new Xlsx($s))->save($path);
 
 $items = ExcelImportService::parse($path);

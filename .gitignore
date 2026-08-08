@@ -9,6 +9,7 @@
 !storage/exports/.gitkeep
 .env
 composer-setup.php
+composer.phar
 test1.csv
 
 # ملفات بيانات المستفيدين — لا تُرفع
@@ -16,6 +17,16 @@ test1.csv
 *.xls
 *.csv
 !storage/sample-beneficiaries.xlsx
+
+# مخرجات بناء / APK — لا تُرفع
+/dist/
+/android-app/dist/
+*.apk
+
+# أرشيف محلي كبير (اختياري — التقارير تُرفع إن رغبت)
+_archive/reports/*.pdf
+_archive/reports/*.docx
+_archive/reports/_digit_test.txt
 
 # Android
 android-app/.gradle/

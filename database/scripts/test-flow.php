@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-require_once dirname(__DIR__) . '/src/bootstrap.php';
+require_once dirname(__DIR__, 2) . '/src/bootstrap.php';
 
 use App\CampaignService;
 use App\DistributionService;
 use App\ExcelExportService;
 use App\ExcelImportService;
 
-$items = ExcelImportService::parse(dirname(__DIR__) . '/storage/sample-beneficiaries.xlsx');
+$items = ExcelImportService::parse(dirname(__DIR__, 2) . '/storage/sample-beneficiaries.xlsx');
 echo 'Imported: ' . count($items) . PHP_EOL;
 
 $id = CampaignService::create([

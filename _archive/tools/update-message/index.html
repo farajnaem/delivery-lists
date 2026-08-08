@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>مولّد رسائل تحديث البيانات</title>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <style>
+    :root {
+      --ink: #1a2e28;
+      --muted: #5a7268;
+      --line: #d5e0db;
+      --paper: #f3f7f4;
+      --card: #ffffff;
+      --accent: #0d6b56;
+      --accent-soft: #e6f3ef;
+      --warn: #9a4d00;
+      --danger: #9b1c1c;
+      --shadow: 0 12px 40px rgba(26, 46, 40, 0.08);
+      --radius: 18px;
+      --font: "IBM Plex Sans Arabic", "Segoe UI", Tahoma, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: var(--font);
+      color: var(--ink);
+      background:
+        radial-gradient(1200px 500px at 100% -10%, #cfe8df 0%, transparent 55%),
+        radial-gradient(900px 400px at 0% 100%, #e8f0ea 0%, transparent 50%),
+        var(--paper);
+    }
+
+    .wrap {
+      width: min(1100px, calc(100% - 2rem));
+      margin: 0 auto;
+      padding: 2rem 0 3rem;
+    }
+
+    header {
+      margin-bottom: 1.5rem;
+    }
+    header h1 {
+      margin: 0 0 0.35rem;
+      font-size: clamp(1.5rem, 3vw, 2rem);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    header p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.7;
+      max-width: 46rem;
+    }
+
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 1.25rem;
+      margin-bottom: 1rem;
+    }
+
+    .drop {
+      border: 2px dashed #9fbfb3;
+      border-radius: calc(var(--radius) - 4px);
+      background: linear-gradient(180deg, #f8fcfa, #eef7f3);
+      padding: 2rem 1rem;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .2s, background .2s, transform .2s;
+    }
+    .drop:hover, .drop.dragover {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      transform: translateY(-1px);
+    }
+    .drop strong { display: block; font-size: 1.1rem; margin-bottom: 0.35rem; }
+    .drop span { color: var(--muted); font-size: 0.95rem; }
+    .drop input { display: none; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.85rem;
+    }
+    @media (max-width: 800px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+
+    label.field {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      font-size: 0.92rem;
+      font-weight: 600;
+    }
+    label.field select,
+    label.field textarea,
+    label.field input {
+      font: inherit;
+      font-weight: 400;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 0.7rem 0.85rem;
+      background: #fff;
+      color: var(--ink);
+    }
+    label.field textarea {
+      min-height: 96px;
+      resize: vertical;
+      line-height: 1.7;
+    }
+
+    .hint {
+      margin: 0.75rem 0 0;
+      color: var(--muted);
+      font-size: 0.88rem;
+      line-height: 1.6;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.65rem;
+      align-items: center;
+      margin-top: 1rem;
+    }
+    button {
+      font: inherit;
+      border: 0;
+      border-radius: 12px;
+      padding: 0.75rem 1.15rem;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+    .btn-primary:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    .btn-ghost {
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+
+    .stats {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.6rem;
+      margin-bottom: 0.85rem;
+    }
+    .chip {
+      background: var(--accent-soft);
+      color: var(--accent);
+      border-radius: 999px;
+      padding: 0.35rem 0.8rem;
+      font-size: 0.88rem;
+      font-weight: 600;
+    }
+    .chip.warn { background: #fff3e6; color: var(--warn); }
+    .chip.danger { background: #fdecec; color: var(--danger); }
+
+    .table-wrap {
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      max-height: 420px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 720px;
+      font-size: 0.9rem;
+    }
+    th, td {
+      padding: 0.7rem 0.8rem;
+      border-bottom: 1px solid var(--line);
+      text-align: right;
+      vertical-align: top;
+    }
+    th {
+      position: sticky;
+      top: 0;
+      background: #f7faf8;
+      z-index: 1;
+      font-weight: 700;
+    }
+    td.msg {
+      line-height: 1.7;
+      color: #23453c;
+      max-width: 420px;
+    }
+    .empty {
+      color: var(--muted);
+      text-align: center;
+      padding: 2rem 1rem;
+    }
+    .error {
+      background: #fdecec;
+      color: var(--danger);
+      border: 1px solid #f3c1c1;
+      border-radius: 12px;
+      padding: 0.8rem 1rem;
+      margin-bottom: 1rem;
+      display: none;
+    }
+    .error.show { display: block; }
+  </style>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;600;700&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>مولّد رسائل تحديث البيانات</h1>
+      <p>
+        ارفع ملف Excel يحتوي على رقم الهوية ورقم الجوال وكود الوصول،
+        ليُنشأ عمود جديد برسالة جاهزة للإرسال.
+      </p>
+    </header>
+
+    <div id="error" class="error"></div>
+
+    <section class="panel">
+      <div id="drop" class="drop" role="button" tabindex="0">
+        <strong>اسحب ملف Excel هنا أو انقر للاختيار</strong>
+        <span>يدعم xlsx / xls / csv</span>
+        <input id="file" type="file" accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv" />
+      </div>
+    </section>
+
+    <section class="panel" id="mappingPanel" hidden>
+      <div class="grid">
+        <label class="field">
+          رقم الهوية
+          <select id="colId"></select>
+        </label>
+        <label class="field">
+          رقم الجوال
+          <select id="colMobile"></select>
+        </label>
+        <label class="field">
+          كود الوصول
+          <select id="colCode"></select>
+        </label>
+      </div>
+
+      <label class="field" style="margin-top: 0.9rem;">
+        قالب الرسالة
+        <textarea id="template">يرجى تحديث بياناتك على الرابط https://so-rec.org اسم المستخدم "{رقم_الهوية}" ، كلمة المرور "{كود_الوصول}".</textarea>
+      </label>
+      <p class="hint">
+        المتغيرات المتاحة: <code>{رقم_الهوية}</code> و <code>{كود_الوصول}</code> و <code>{رقم_الجوال}</code>
+      </p>
+
+      <div class="actions">
+        <button id="btnGenerate" class="btn-primary" type="button">توليد الرسائل</button>
+        <button id="btnDownload" class="btn-ghost" type="button" disabled>تنزيل Excel بالنتيجة</button>
+      </div>
+    </section>
+
+    <section class="panel" id="previewPanel" hidden>
+      <div class="stats" id="stats"></div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>رقم الهوية</th>
+              <th>رقم الجوال</th>
+              <th>كود الوصول</th>
+              <th>الرسالة</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const DEFAULT_TEMPLATE =
+      'يرجى تحديث بياناتك على الرابط https://so-rec.org اسم المستخدم "{رقم_الهوية}" ، كلمة المرور "{كود_الوصول}".';
+
+    const state = {
+      headers: [],
+      rows: [],
+      fileName: '',
+      result: [],
+    };
+
+    const el = {
+      drop: document.getElementById('drop'),
+      file: document.getElementById('file'),
+      error: document.getElementById('error'),
+      mappingPanel: document.getElementById('mappingPanel'),
+      previewPanel: document.getElementById('previewPanel'),
+      colId: document.getElementById('colId'),
+      colMobile: document.getElementById('colMobile'),
+      colCode: document.getElementById('colCode'),
+      template: document.getElementById('template'),
+      btnGenerate: document.getElementById('btnGenerate'),
+      btnDownload: document.getElementById('btnDownload'),
+      stats: document.getElementById('stats'),
+      tbody: document.getElementById('tbody'),
+    };
+
+    function showError(msg) {
+      el.error.textContent = msg;
+      el.error.classList.toggle('show', Boolean(msg));
+    }
+
+    function normalizeHeader(value) {
+      return String(value ?? '')
+        .replace(/\u200f|\u200e/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toLowerCase();
+    }
+
+    function guessColumn(headers, aliases) {
+      const norms = headers.map(normalizeHeader);
+      for (const alias of aliases) {
+        const i = norms.findIndex((h) => h === alias || h.includes(alias));
+        if (i >= 0) return i;
+      }
+      return -1;
+    }
+
+    function fillSelects() {
+      for (const select of [el.colId, el.colMobile, el.colCode]) {
+        select.innerHTML = state.headers
+          .map((h, i) => `<option value="${i}">${escapeHtml(h || ('عمود ' + (i + 1)))}</option>`)
+          .join('');
+      }
+
+      const idIdx = guessColumn(state.headers, ['رقم الهوية', 'الهوية', 'national id', 'id']);
+      const mobileIdx = guessColumn(state.headers, ['رقم الجوال', 'رقم التواصل', 'الجوال', 'mobile', 'phone']);
+      const codeIdx = guessColumn(state.headers, ['كود الوصول', 'رمز الوصول', 'كلمة المرور', 'access code', 'password', 'كود']);
+
+      if (idIdx >= 0) el.colId.value = String(idIdx);
+      if (mobileIdx >= 0) el.colMobile.value = String(mobileIdx);
+      if (codeIdx >= 0) el.colCode.value = String(codeIdx);
+    }
+
+    function cellText(value) {
+      if (value == null) return '';
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        if (Number.isInteger(value)) return String(value);
+        return String(value);
+      }
+      return String(value).trim();
+    }
+
+    function buildMessage(template, id, code, mobile) {
+      return template
+        .replaceAll('{رقم_الهوية}', id)
+        .replaceAll('{كود_الوصول}', code)
+        .replaceAll('{رقم_الجوال}', mobile);
+    }
+
+    function escapeHtml(s) {
+      return String(s)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;');
+    }
+
+    async function readFile(file) {
+      showError('');
+      state.fileName = file.name.replace(/\.(xlsx|xls|csv)$/i, '');
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: 'array', cellDates: false, raw: false });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
+
+      if (!data.length) throw new Error('الملف فارغ.');
+
+      const headers = (data[0] || []).map((h) => cellText(h));
+      if (!headers.some(Boolean)) throw new Error('لم يُعثر على صف عناوين في الملف.');
+
+      const rows = data.slice(1).filter((row) =>
+        Array.isArray(row) && row.some((c) => cellText(c) !== '')
+      );
+
+      if (!rows.length) throw new Error('لا توجد صفوف بيانات في الملف.');
+
+      state.headers = headers;
+      state.rows = rows;
+      state.result = [];
+      el.btnDownload.disabled = true;
+      el.previewPanel.hidden = true;
+      el.mappingPanel.hidden = false;
+      fillSelects();
+      if (!el.template.value.trim()) el.template.value = DEFAULT_TEMPLATE;
+    }
+
+    function generate() {
+      showError('');
+      const idCol = Number(el.colId.value);
+      const mobileCol = Number(el.colMobile.value);
+      const codeCol = Number(el.colCode.value);
+      const template = el.template.value.trim() || DEFAULT_TEMPLATE;
+
+      if (new Set([idCol, mobileCol, codeCol]).size < 3) {
+        showError('يجب اختيار ثلاثة أعمدة مختلفة للهوية والجوال وكود الوصول.');
+        return;
+      }
+
+      let missing = 0;
+      const result = state.rows.map((row, index) => {
+        const id = cellText(row[idCol]);
+        const mobile = cellText(row[mobileCol]);
+        const code = cellText(row[codeCol]);
+        if (!id || !code) missing += 1;
+        const message = buildMessage(template, id, code, mobile);
+        return { index: index + 1, id, mobile, code, message, sourceRow: row };
+      });
+
+      state.result = result;
+      el.btnDownload.disabled = result.length === 0;
+      el.previewPanel.hidden = false;
+
+      el.stats.innerHTML = `
+        <span class="chip">الصفوف: ${result.length}</span>
+        <span class="chip">الملف: ${escapeHtml(state.fileName || 'بدون اسم')}</span>
+        ${missing ? `<span class="chip warn">صفوف ناقصة هوية/كود: ${missing}</span>` : '<span class="chip">كل الصفوف مكتملة</span>'}
+      `;
+
+      el.tbody.innerHTML = result.slice(0, 200).map((r) => `
+        <tr>
+          <td>${r.index}</td>
+          <td>${escapeHtml(r.id)}</td>
+          <td>${escapeHtml(r.mobile)}</td>
+          <td>${escapeHtml(r.code)}</td>
+          <td class="msg">${escapeHtml(r.message)}</td>
+        </tr>
+      `).join('') || `<tr><td colspan="5" class="empty">لا توجد نتائج</td></tr>`;
+
+      if (result.length > 200) {
+        el.stats.innerHTML += `<span class="chip warn">العرض يقتصر على أول 200 صف — التنزيل يشمل الكل</span>`;
+      }
+    }
+
+    function download() {
+      if (!state.result.length) return;
+
+      const outHeaders = [...state.headers, 'الرسالة'];
+      const outRows = state.result.map((r) => {
+        const row = state.headers.map((_, i) => cellText(r.sourceRow[i]));
+        row.push(r.message);
+        return row;
+      });
+
+      // ملف مختصر للرسائل فقط
+      const slim = [
+        ['رقم الهوية', 'رقم الجوال', 'كود الوصول', 'الرسالة'],
+        ...state.result.map((r) => [r.id, r.mobile, r.code, r.message]),
+      ];
+
+      const wb = XLSX.utils.book_new();
+      const fullSheet = XLSX.utils.aoa_to_sheet([outHeaders, ...outRows]);
+      const slimSheet = XLSX.utils.aoa_to_sheet(slim);
+      XLSX.utils.book_append_sheet(wb, slimSheet, 'الرسائل');
+      XLSX.utils.book_append_sheet(wb, fullSheet, 'كامل البيانات');
+      XLSX.writeFile(wb, `${state.fileName || 'messages'}-رسائل.xlsx`);
+    }
+
+    el.drop.addEventListener('click', () => el.file.click());
+    el.drop.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        el.file.click();
+      }
+    });
+    el.drop.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      el.drop.classList.add('dragover');
+    });
+    el.drop.addEventListener('dragleave', () => el.drop.classList.remove('dragover'));
+    el.drop.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      el.drop.classList.remove('dragover');
+      const file = e.dataTransfer.files?.[0];
+      if (!file) return;
+      try { await readFile(file); } catch (err) { showError(err.message || String(err)); }
+    });
+    el.file.addEventListener('change', async () => {
+      const file = el.file.files?.[0];
+      if (!file) return;
+      try { await readFile(file); } catch (err) { showError(err.message || String(err)); }
+    });
+    el.btnGenerate.addEventListener('click', generate);
+    el.btnDownload.addEventListener('click', download);
+  </script>
+</body>
+</html>

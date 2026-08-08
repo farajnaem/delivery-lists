@@ -79,8 +79,9 @@ $defaultWindows = ((int) ($c['num_windows'] ?? 0) > 0) ? (string) (int) $c['num_
             <input type="time" name="work_end" class="form-control" value="<?= e(old('work_end', substr($c['work_end'] ?? '15:00', 0, 5))) ?>">
         </div>
         <div class="form-group">
-            <label class="field-label">الكمية الافتتاحية (اختياري)</label>
-            <input type="number" name="opening_quantity" class="form-control" min="0" placeholder="0 = عدد المستفيدين عند التوليد" value="<?= e(old('opening_quantity', $c['opening_quantity'] ?? '0')) ?>">
+            <label class="field-label">الكمية الافتتاحية — مخزون الطرود</label>
+            <input type="number" name="opening_quantity" class="form-control" min="0" placeholder="عدد الطرود في المخزن" value="<?= e(old('opening_quantity', $c['opening_quantity'] ?? '0')) ?>">
+            <span class="field-hint">رصيد المخزون = هذه الكمية − المُسلَّم. مستقلة عن عدد أسماء الكشف.</span>
         </div>
     </div>
 </div>

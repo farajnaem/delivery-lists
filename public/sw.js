@@ -1,6 +1,7 @@
-const CACHE = 'wh-v2';
+const CACHE = 'wh-v3';
 const ASSETS = [
     '/assets/css/warehouse.css',
+    '/assets/js/arabic-format.js',
     '/assets/js/warehouse.js',
     '/manifest.json',
     '/warehouse',

@@ -14,6 +14,15 @@ php -S localhost:8090 -t public public/router.php
 
 أو: `start-local.bat`
 
+## هيكل مفيد
+
+| المسار | الغرض |
+|--------|--------|
+| `src/` `views/` `public/` | منطق وتشغيل النظام |
+| `database/scripts/` | سكربتات اختبار CLI (ليست للإنتاج) |
+| `_archive/` | أدوات وتقارير خارج منطق التشغيل |
+| `android-app/` | تطبيق أمين المخزن |
+
 افتح: http://localhost:8090/setup — أنشئ حساب المدير.
 
 ## سير العمل

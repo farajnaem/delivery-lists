@@ -761,7 +761,7 @@ final class CampaignService
         ")->fetchColumn();
         $deliveredStatus = DeliveryService::STATUS_DELIVERED;
         // لكل يوم مخطط:
-        // - مستلم: من مخطط هذا اليوم واستلم في الموعد
+        // - مستلم: من مخطط هذا اليوم واستلم (سواء في الشباك أو بعده بنفس اليوم)
         // - غير مستلم: من مخطط هذا اليوم وما استلم بعد
         // - مستلم من المتأخرين: استلم في تاريخ هذا اليوم وموعده كان يوماً سابقاً
         $days = $pdo->prepare('
@@ -771,7 +771,6 @@ final class CampaignService
                    MAX(b.time_to) AS work_end,
                    SUM(CASE
                          WHEN b.receipt_status = ?
-                          AND COALESCE(b.delivery_type, \'\') != \'late\'
                          THEN 1 ELSE 0
                        END) AS delivered,
                    SUM(CASE

@@ -45,17 +45,20 @@ $latePending = (int) ($stock['late_pending'] ?? 0);
 
 <div class="grid-stats">
     <div class="stat-card">
-        <div class="stat-label">مُسلَّم / افتتاحي</div>
+        <div class="stat-label">مُسلَّم / كمية افتتاحية</div>
         <div class="stat-value"><?= ar_digits($delivered) ?> / <?= ar_digits($opening) ?></div>
         <div class="progress"><span style="width:<?= min(100, $delPct) ?>%"></span></div>
+        <div class="stat-meta">الافتتاحي = مخزون الطرود الذي أدخلته</div>
     </div>
     <div class="stat-card">
-        <div class="stat-label">الرصيد المتبقي</div>
+        <div class="stat-label">رصيد المخزون</div>
         <div class="stat-value"><?= ar_digits((int) ($stock['balance'] ?? 0)) ?></div>
+        <div class="stat-meta">افتتاحي − مُسلَّم</div>
     </div>
     <div class="stat-card">
-        <div class="stat-label">بانتظار التسليم</div>
+        <div class="stat-label">بانتظار التسليم (كشف)</div>
         <div class="stat-value"><?= ar_digits((int) ($stock['pending'] ?? 0)) ?></div>
+        <div class="stat-meta">أسماء لم تستلم بعد — منفصل عن رصيد المخزون</div>
     </div>
     <div class="stat-card">
         <div class="stat-label">الحالة</div>
@@ -213,10 +216,11 @@ $hasBulk = ((int) ($bulkStats['total'] ?? 0)) > 0;
         <form method="post" action="<?= e(url('/campaigns/opening-quantity')) ?>" class="actions-row">
             <?= \App\Csrf::field() ?>
             <input type="hidden" name="campaign_id" value="<?= $cid ?>">
-            <label class="field-label" style="margin:0">الكمية الافتتاحية</label>
+            <label class="field-label" style="margin:0">الكمية الافتتاحية (مخزون الطرود)</label>
             <input type="number" name="opening_quantity" class="form-control" style="max-width:160px" min="0"
-                   value="<?= (int) ($campaign['opening_quantity'] ?? 0) ?: (int) ($stock['total_beneficiaries'] ?? 0) ?>" required>
+                   value="<?= (int) ($campaign['opening_quantity'] ?? 0) ?>" required>
             <button type="submit" class="btn btn-outline">حفظ</button>
+            <span class="text-muted" style="font-size:0.85rem">رصيد المخزون = الافتتاحي − المُسلَّم</span>
         </form>
         <?php endif; ?>
         <?php if (!empty($canEdit) && !empty($smsEnabled) && ($smsPending ?? 0) > 0): ?>

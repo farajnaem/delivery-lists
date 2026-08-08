@@ -42,4 +42,10 @@ final class Database
 
         return self::$pdo;
     }
+
+    /** أغلق الاتصال الحالي (مفيد قبل استبدال ملف SQLite). */
+    public static function resetConnection(): void
+    {
+        self::$pdo = null;
+    }
 }

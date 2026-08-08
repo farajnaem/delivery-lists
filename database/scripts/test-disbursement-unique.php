@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-require_once dirname(__DIR__) . '/src/bootstrap.php';
+require_once dirname(__DIR__, 2) . '/src/bootstrap.php';
 
 use App\CampaignService;
 use App\DistributionService;
@@ -37,7 +37,7 @@ $id = CampaignService::create([
     'num_windows' => 2,
 ], 1);
 
-$items = ExcelImportService::parse(dirname(__DIR__) . '/storage/sample-beneficiaries.xlsx');
+$items = ExcelImportService::parse(dirname(__DIR__, 2) . '/storage/sample-beneficiaries.xlsx');
 ExcelImportService::saveBeneficiaries($id, $items);
 DistributionService::generate($id);
 

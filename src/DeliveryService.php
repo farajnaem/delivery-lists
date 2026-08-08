@@ -127,6 +127,8 @@ final class DeliveryService
             SELECT COUNT(*) FROM beneficiaries
             WHERE campaign_id = {$campaignId} AND receipt_status = " . $pdo->quote(self::STATUS_DELIVERED) . '
         ')->fetchColumn();
+        // بانتظار التسليم (أشخاص من الكشف) — منفصل عن رصيد المخزون
+        $pending = max(0, $total - $delivered);
         $assignedPending = (int) $pdo->query("
             SELECT COUNT(*) FROM beneficiaries
             WHERE campaign_id = {$campaignId}
@@ -134,8 +136,8 @@ final class DeliveryService
               AND day_index IS NOT NULL AND day_index > 0
               AND disbursement_code IS NOT NULL AND disbursement_code != ''
         ")->fetchColumn();
-        $pending = $assignedPending;
 
+        // الكمية الافتتاحية = مخزون الطرود الذي أدخله المستخدم (ليس عدد أسماء الكشف)
         $opening = (int) ($campaign['opening_quantity'] ?? 0);
         if ($opening <= 0) {
             $opening = $total;
@@ -216,6 +218,8 @@ final class DeliveryService
             'opening_quantity' => $opening,
             'delivered' => $delivered,
             'pending' => $pending,
+            'assigned_pending' => $assignedPending,
+            // رصيد المخزون = الكمية الافتتاحية − المُسلَّم (وليس عدد المتبقين في الكشف)
             'balance' => max(0, $opening - $delivered),
             'on_time' => $onTime,
             'late' => $late,
