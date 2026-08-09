@@ -226,6 +226,7 @@ final class ArabicFormat
             'planned_today_pending',
             'today_delivered_of_plan',
             'today_delivered_late',
+            'today_delivered_other',
             'unassigned_pending',
             'late_pending',
         ] as $key) {

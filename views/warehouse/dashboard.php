@@ -39,6 +39,7 @@ $plannedTodayDelivered = (int) ($stock['planned_today_delivered'] ?? 0);
 $plannedTodayPending = (int) ($stock['planned_today_pending'] ?? max(0, $plannedToday - $plannedTodayDelivered));
 $todayDeliveredLate = (int) ($stock['today_delivered_late'] ?? 0);
 $todayDeliveredOfPlan = (int) ($stock['today_delivered_of_plan'] ?? 0);
+$todayDeliveredOther = (int) ($stock['today_delivered_other'] ?? max(0, $todayDelivered - $todayDeliveredOfPlan - $todayDeliveredLate));
 $unassignedPending = (int) ($stock['unassigned_pending'] ?? 0);
 $latePending = (int) ($stock['late_pending'] ?? 0);
 ?>
@@ -73,10 +74,48 @@ $latePending = (int) ($stock['late_pending'] ?? 0);
 </div>
 
 <div class="card" style="border:2px solid var(--accent, #2563eb)">
-    <h2 class="panel-title" style="margin-top:0">مطابقة مخطط اليوم</h2>
+    <h2 class="panel-title" style="margin-top:0">ما خرج من المخزن اليوم</h2>
     <p class="text-muted" style="margin:0 0 0.75rem">
-        قارن <strong>مخطط اليوم</strong> مع من استلم من هذا المخطط — لا تخلطه مع من استلم اليوم وهو متأخر من أيام سابقة.
-        التسليم بعد نهاية الشباك/الدوام يُسجَّل كـ «متأخر» لكنه يظهر في المستلمين.
+        الرقم الصحيح لمطابقة أمناء المخزن هو <strong>إجمالي مستلمي اليوم</strong>
+        (حسب تاريخ الاستلام الفعلي) — وليس «استلم من المخطط» وحده.
+    </p>
+    <div class="grid-stats" style="margin-bottom:0.85rem">
+        <div class="stat-card" style="outline:2px solid var(--accent, #2563eb)">
+            <div class="stat-label">إجمالي مستلمي اليوم</div>
+            <div class="stat-value"><?= ar_digits($todayDelivered) ?></div>
+            <div class="stat-meta">= مجموع أمناء المخزن اليوم</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">من مخطط اليوم</div>
+            <div class="stat-value"><?= ar_digits($todayDeliveredOfPlan) ?></div>
+            <div class="stat-meta">موعدهم اليوم واستلموا اليوم</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">متأخرون من أيام سابقة</div>
+            <div class="stat-value"><?= ar_digits($todayDeliveredLate) ?></div>
+            <div class="stat-meta">موعدهم يوم سابق واستلموا اليوم</div>
+        </div>
+        <?php if ($todayDeliveredOther > 0): ?>
+        <div class="stat-card">
+            <div class="stat-label">أخرى (بلا موعد / موعد لاحق)</div>
+            <div class="stat-value"><?= ar_digits($todayDeliveredOther) ?></div>
+        </div>
+        <?php endif; ?>
+    </div>
+    <p style="margin:0 0 1rem;font-size:0.95rem;font-weight:600">
+        <?= ar_digits($todayDelivered) ?>
+        =
+        <?= ar_digits($todayDeliveredOfPlan) ?> من المخطط
+        +
+        <?= ar_digits($todayDeliveredLate) ?> متأخرين<?php if ($todayDeliveredOther > 0): ?>
+        +
+        <?= ar_digits($todayDeliveredOther) ?> أخرى<?php endif; ?>
+    </p>
+
+    <h3 class="panel-title" style="font-size:1rem;margin:0 0 0.5rem">مطابقة كشف اليوم (أسماء المخطط)</h3>
+    <p class="text-muted" style="margin:0 0 0.75rem;font-size:0.9rem">
+        هذا يقيس تقدّم <em>كشف اليوم</em> فقط — لا يساوي ما خرج من المخزن إذا حضر متأخرون من أيام سابقة.
+        التسليم بعد نهاية الشباك/الدوام يُسجَّل كـ «متأخر» لكنه يبقى ضمن المستلمين.
     </p>
     <div class="grid-stats" style="margin-bottom:0.85rem">
         <div class="stat-card">
@@ -86,22 +125,13 @@ $latePending = (int) ($stock['late_pending'] ?? 0);
         <div class="stat-card">
             <div class="stat-label">استلم من المخطط</div>
             <div class="stat-value"><?= ar_digits($plannedTodayDelivered) ?></div>
+            <div class="stat-meta">من أسماء الكشف (أي تاريخ استلام)</div>
         </div>
         <div class="stat-card">
             <div class="stat-label">متبقٍ من المخطط</div>
             <div class="stat-value"><?= ar_digits($plannedTodayPending) ?></div>
         </div>
-        <div class="stat-card">
-            <div class="stat-label">متأخرون استلموا اليوم</div>
-            <div class="stat-value"><?= ar_digits($todayDeliveredLate) ?></div>
-            <div class="stat-meta">موعدهم يوم سابق</div>
-        </div>
     </div>
-    <p class="text-muted" style="margin:0 0 0.75rem;font-size:0.92rem">
-        إجمالي مستلمي اليوم في النظام: <strong><?= ar_digits($todayDelivered) ?></strong>
-        (منهم <?= ar_digits($todayDeliveredOfPlan) ?> من مخطط اليوم
-        + <?= ar_digits($todayDeliveredLate) ?> متأخرين من أيام سابقة).
-    </p>
     <div class="grid-stats" style="margin-bottom:0.85rem">
         <div class="stat-card">
             <div class="stat-label">غير معيّنين بانتظار الاستلام</div>
@@ -180,10 +210,21 @@ $latePending = (int) ($stock['late_pending'] ?? 0);
 $keepers = $keeperStats['keepers'] ?? [];
 $bulkStats = $keeperStats['bulk'] ?? ['today' => 0, 'total' => 0];
 $hasBulk = ((int) ($bulkStats['total'] ?? 0)) > 0;
+$keepersTodaySum = 0;
+$keepersTotalSum = 0;
+foreach ($keepers as $kRow) {
+    $keepersTodaySum += (int) ($kRow['today'] ?? 0);
+    $keepersTotalSum += (int) ($kRow['total'] ?? 0);
+}
+$keepersTodaySum += (int) ($bulkStats['today'] ?? 0);
+$keepersTotalSum += (int) ($bulkStats['total'] ?? 0);
 ?>
 <?php if (!empty($keepers) || $hasBulk): ?>
-<details class="card table-panel" style="padding:1rem">
+<details class="card table-panel" style="padding:1rem" open>
     <summary style="cursor:pointer;font-weight:600">التسليم حسب أمين المخزن</summary>
+    <p class="text-muted" style="margin:0.5rem 0 0.75rem;font-size:0.9rem">
+        مجموع عمود «اليوم» يجب أن يساوي <strong>إجمالي مستلمي اليوم</strong> (<?= ar_digits($todayDelivered) ?>).
+    </p>
     <div class="table-wrap" style="margin-top:0.75rem">
     <table class="data-table">
         <thead><tr><th>أمين المخزن</th><th>اليوم</th><th>الإجمالي</th></tr></thead>
@@ -202,6 +243,11 @@ $hasBulk = ((int) ($bulkStats['total'] ?? 0)) > 0;
                 <td><?= ar_digits((int) ($bulkStats['total'] ?? 0)) ?></td>
             </tr>
         <?php endif; ?>
+            <tr style="font-weight:600;background:var(--surface-2, #f8fafc)">
+                <td>المجموع</td>
+                <td><?= ar_digits($keepersTodaySum) ?></td>
+                <td><?= ar_digits($keepersTotalSum) ?></td>
+            </tr>
         </tbody>
     </table>
     </div>

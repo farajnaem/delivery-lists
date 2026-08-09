@@ -194,6 +194,9 @@ final class DeliveryService
               AND delivery_date = {$todayQ}
         ")->fetchColumn();
 
+        // استلموا اليوم لكن ليسوا من مخطط اليوم ولا من أيام سابقة (بلا موعد / موعد لاحق)
+        $todayDeliveredOther = max(0, $todayDelivered - $todayDeliveredOfPlan - $todayDeliveredLate);
+
         // غير معيّنين وما زالوا بانتظار الاستلام (بلا يوم/كود)
         $unassignedPending = (int) $pdo->query("
             SELECT COUNT(*) FROM beneficiaries
@@ -223,12 +226,16 @@ final class DeliveryService
             'balance' => max(0, $opening - $delivered),
             'on_time' => $onTime,
             'late' => $late,
+            // المرجع الصحيح لما خرج من المخزن اليوم (= مجموع أمناء المخزن + الجماعي)
             'today_delivered' => $todayDelivered,
             'planned_today' => $plannedToday,
+            // تقدّم كشف اليوم: كم من أسماء مخطط اليوم صاروا مستلمين (أي يوم استلام)
             'planned_today_delivered' => $plannedTodayDelivered,
             'planned_today_pending' => max(0, $plannedToday - $plannedTodayDelivered),
+            // تفكيك مستلمي اليوم حسب المخطط
             'today_delivered_of_plan' => $todayDeliveredOfPlan,
             'today_delivered_late' => $todayDeliveredLate,
+            'today_delivered_other' => $todayDeliveredOther,
             'unassigned_pending' => $unassignedPending,
             'late_pending' => $latePending,
             'campaign_active' => self::isCampaignActive($campaign),

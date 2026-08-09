@@ -160,7 +160,7 @@ $panelUrl = static function (string $p) use ($cid): string {
         <div class="table-toolbar">
             <div>
                 <div class="panel-title">الأيام المعتمدة</div>
-                <div class="panel-subtitle">مستلم = من مخطط اليوم واستلموا في تاريخه. متأخرون = استلموا في هذا التاريخ وموعدهم يوم سابق. مجموعها = ما سُلِّم فعلياً ذلك اليوم. غير مستلم = من كشف اليوم وما استلموا (للمطابقة). إلغاء آخر يوم فقط.</div>
+                <div class="panel-subtitle">مستلم هذا اليوم = من مخطط ذلك اليوم واستلموا في تاريخه. مستلم من المتأخرين = استلموا في هذا التاريخ وموعدهم يوم سابق. <strong>إجمالي التسليم</strong> = ما خرج من المخزن ذلك اليوم (= مجموع أمناء المخزن). غير مستلم = من كشف اليوم وما استلموا (للمطابقة). إلغاء آخر يوم فقط.</div>
             </div>
             <?php if (!empty($canEdit) && $lastDayIndex > 0): ?>
             <form method="post" action="<?= e(url('/campaigns/cancel-last-day')) ?>"
