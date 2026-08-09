@@ -391,7 +391,14 @@ final class ExcelExportService
 
         $delivered = array_values(array_filter($all, fn ($b) => ($b['receipt_status'] ?? '') === DeliveryService::STATUS_DELIVERED));
         $pending = array_values(array_filter($all, fn ($b) => ($b['receipt_status'] ?? '') !== DeliveryService::STATUS_DELIVERED));
-        $latePending = array_values(array_filter($pending, fn ($b) => ($b['delivery_date'] ?? '') < $today));
+        // متأخرون لم يستلموا: موعدهم قبل اليوم وما زالوا بانتظار التسليم (ليسوا مستلمين)
+        $latePending = array_values(array_filter(
+            $pending,
+            static function (array $b) use ($today): bool {
+                $planned = trim((string) ($b['delivery_date'] ?? ''));
+                return $planned !== '' && $planned < $today;
+            }
+        ));
 
         $spreadsheet = new Spreadsheet();
         $spreadsheet->getDefaultStyle()->getFont()->setName('Arial')->setSize(10);
@@ -400,7 +407,7 @@ final class ExcelExportService
         self::buildDeliveryDetailSheet($spreadsheet, 'كشف_التسليمات', $all, $campaign);
         self::buildDeliveryDetailSheet($spreadsheet, 'مستلم', $delivered, $campaign);
         self::buildDeliveryDetailSheet($spreadsheet, 'بانتظار_التسليم', $pending, $campaign);
-        self::buildDeliveryDetailSheet($spreadsheet, 'متأخر_عن_الموعد', $latePending, $campaign);
+        self::buildDeliveryDetailSheet($spreadsheet, 'متأخر_لم_يستلم', $latePending, $campaign);
         self::buildSmsOutboxSheet(
             $spreadsheet,
             SmsService::outbox($campaignId),
@@ -435,7 +442,7 @@ final class ExcelExportService
             ['بانتظار التسليم (كشف)', self::ar((int) ($stats['pending'] ?? 0))],
             ['رصيد المخزون المتبقي', self::ar((int) ($stats['balance'] ?? 0))],
             ['في الموعد', self::ar((int) ($stats['on_time'] ?? 0))],
-            ['متأخر (بعد الشباك/اليوم)', self::ar((int) ($stats['late'] ?? 0))],
+            ['متأخر (استلم بعد الموعد/الشباك)', self::ar((int) ($stats['late'] ?? 0))],
             ['مخطط اليوم', self::ar((int) ($stats['planned_today'] ?? 0))],
             ['استلم من مخطط اليوم', self::ar((int) ($stats['planned_today_delivered'] ?? 0))],
             ['متبقٍ من مخطط اليوم', self::ar((int) ($stats['planned_today_pending'] ?? 0))],
@@ -443,7 +450,7 @@ final class ExcelExportService
             ['منهم من مخطط اليوم', self::ar((int) ($stats['today_delivered_of_plan'] ?? 0))],
             ['متأخرون من أيام سابقة استلموا اليوم', self::ar((int) ($stats['today_delivered_late'] ?? 0))],
             ['غير معيّنين بانتظار الاستلام', self::ar((int) ($stats['unassigned_pending'] ?? 0))],
-            ['متأخرون لم يستلموا', self::ar((int) ($stats['late_pending'] ?? 0))],
+            ['متأخرون لم يستلموا (بانتظار)', self::ar((int) ($stats['late_pending'] ?? 0))],
             ['رسائل SMS معلّقة', self::ar(SmsService::pendingCount((int) $campaign['id']))],
         ];
 
@@ -457,59 +464,92 @@ final class ExcelExportService
         self::borderAll($sheet, 'A3:B' . $summaryEnd);
 
         // ── ملخص يومي ──
+        // مُسلَّم فعلياً = من استلموا في تاريخ اليوم (من مخطط اليوم + متأخرون من أيام سابقة)
+        // بانتظار التسليم = من مخطط اليوم وما استلموا (للمطابقة، لا يدخل في عدد التسليم الفعلي)
         $dailyStart = $summaryEnd + 2;
-        $sheet->setCellValue('A' . $dailyStart, 'ملخص يومي لعمليات التسليم');
-        $sheet->mergeCells('A' . $dailyStart . ':G' . $dailyStart);
-        self::styleSectionTitle($sheet, 'A' . $dailyStart . ':G' . $dailyStart);
+        $sheet->setCellValue('A' . $dailyStart, 'ملخص يومي لعمليات التسليم (العدد الفعلي حسب تاريخ الاستلام)');
+        $sheet->mergeCells('A' . $dailyStart . ':H' . $dailyStart);
+        self::styleSectionTitle($sheet, 'A' . $dailyStart . ':H' . $dailyStart);
 
         $headerRow = $dailyStart + 1;
-        $dailyHeaders = ['اليوم', 'تاريخ التسليم', 'المخطط', 'مُسلَّم', 'بانتظار التسليم', 'في الموعد', 'متأخر'];
+        $dailyHeaders = [
+            'اليوم',
+            'تاريخ التسليم',
+            'المخطط',
+            'مُسلَّم من المخطط',
+            'متأخرون استلموا',
+            'مُسلَّم فعلياً',
+            'بانتظار التسليم',
+            'في الموعد',
+        ];
         self::writeHeaderRow($sheet, $headerRow, $dailyHeaders);
 
         $daily = self::buildDailyDeliverySummary($all);
         $row = $headerRow + 1;
+        $sumPending = 0;
+        $sumDeliveredTotal = 0;
         foreach ($daily as $day) {
+            $sumPending += (int) $day['pending'];
+            $sumDeliveredTotal += (int) $day['delivered'];
             $sheet->fromArray([
                 self::ar($day['day_index']),
                 self::arDate($day['date']),
                 self::ar($day['planned']),
+                self::ar($day['delivered_of_plan']),
+                self::ar($day['delivered_late']),
                 self::ar($day['delivered']),
                 self::ar($day['pending']),
                 self::ar($day['on_time']),
-                self::ar($day['late']),
             ], null, 'A' . $row);
             $row++;
         }
 
         $dailyLastRow = max($headerRow, $row - 1);
         if ($row > $headerRow + 1) {
-            self::borderAll($sheet, 'A' . $headerRow . ':G' . $dailyLastRow);
-            self::styleDataRows($sheet, 'A' . ($headerRow + 1) . ':G' . $dailyLastRow);
+            $sheet->fromArray([
+                'المجموع',
+                '',
+                '',
+                '',
+                '',
+                self::ar($sumDeliveredTotal),
+                self::ar($sumPending),
+                '',
+            ], null, 'A' . $row);
+            $sheet->getStyle('A' . $row . ':H' . $row)->getFont()->setBold(true);
+            $dailyLastRow = $row;
+            self::borderAll($sheet, 'A' . $headerRow . ':H' . $dailyLastRow);
+            self::styleDataRows($sheet, 'A' . ($headerRow + 1) . ':H' . $dailyLastRow);
         } else {
             $sheet->setCellValue('A' . $row, 'لا توجد بيانات يومية — يجب توليد الكشوف أولاً.');
-            $sheet->mergeCells('A' . $row . ':G' . $row);
+            $sheet->mergeCells('A' . $row . ':H' . $row);
             $dailyLastRow = $row;
         }
 
         $sheet->getColumnDimension('A')->setWidth(8);
         $sheet->getColumnDimension('B')->setWidth(14);
         $sheet->getColumnDimension('C')->setWidth(10);
-        $sheet->getColumnDimension('D')->setWidth(10);
+        $sheet->getColumnDimension('D')->setWidth(16);
         $sheet->getColumnDimension('E')->setWidth(16);
-        $sheet->getColumnDimension('F')->setWidth(10);
-        $sheet->getColumnDimension('G')->setWidth(10);
-        self::applyPortraitPrint($sheet, $headerRow, $dailyLastRow, 'G');
+        $sheet->getColumnDimension('F')->setWidth(14);
+        $sheet->getColumnDimension('G')->setWidth(16);
+        $sheet->getColumnDimension('H')->setWidth(10);
+        self::applyPortraitPrint($sheet, $headerRow, $dailyLastRow, 'H');
     }
 
     /**
+     * ملخص يومي حسب تاريخ الاستلام الفعلي.
+     * delivered = ما سُلِّم فعلياً في ذلك اليوم (من المخطط + متأخرون من أيام سابقة).
+     * pending = من مخطط ذلك اليوم وما استلموا بعد (للمطابقة فقط).
+     *
      * @param list<array<string,mixed>> $all
-     * @return list<array{day_index:int,date:string,planned:int,delivered:int,pending:int,on_time:int,late:int}>
+     * @return list<array{day_index:int,date:string,planned:int,delivered:int,delivered_of_plan:int,delivered_late:int,pending:int,on_time:int}>
      */
     private static function buildDailyDeliverySummary(array $all): array
     {
         $byDate = [];
         foreach ($all as $b) {
-            $date = (string) ($b['delivery_date'] ?? '');
+            $date = trim((string) ($b['delivery_date'] ?? ''));
             if ($date === '') {
                 continue;
             }
@@ -519,23 +559,60 @@ final class ExcelExportService
                     'date' => $date,
                     'planned' => 0,
                     'delivered' => 0,
+                    'delivered_of_plan' => 0,
+                    'delivered_late' => 0,
                     'pending' => 0,
                     'on_time' => 0,
-                    'late' => 0,
                 ];
             }
             $byDate[$date]['planned']++;
-            if (($b['receipt_status'] ?? '') === DeliveryService::STATUS_DELIVERED) {
-                $byDate[$date]['delivered']++;
-                if (($b['delivery_type'] ?? '') === 'late') {
-                    $byDate[$date]['late']++;
-                } elseif (($b['delivery_type'] ?? '') === 'on_time') {
-                    $byDate[$date]['on_time']++;
-                }
-            } else {
+            if (($b['receipt_status'] ?? '') !== DeliveryService::STATUS_DELIVERED) {
                 $byDate[$date]['pending']++;
             }
         }
+
+        foreach ($all as $b) {
+            if (($b['receipt_status'] ?? '') !== DeliveryService::STATUS_DELIVERED) {
+                continue;
+            }
+
+            $planned = trim((string) ($b['delivery_date'] ?? ''));
+            $actual = trim((string) ($b['actual_delivery_date'] ?? ''));
+            if ($actual === '') {
+                // بيانات قديمة بلا تاريخ استلام فعلي: نعدّها في يوم الموعد إن وُجد
+                $actual = $planned;
+            }
+            if ($actual === '') {
+                continue;
+            }
+
+            if (!isset($byDate[$actual])) {
+                $byDate[$actual] = [
+                    'day_index' => (int) ($b['day_index'] ?? 0),
+                    'date' => $actual,
+                    'planned' => 0,
+                    'delivered' => 0,
+                    'delivered_of_plan' => 0,
+                    'delivered_late' => 0,
+                    'pending' => 0,
+                    'on_time' => 0,
+                ];
+            }
+
+            $byDate[$actual]['delivered']++;
+
+            $type = (string) ($b['delivery_type'] ?? '');
+            $isLateFromPrevious = $planned !== '' && $actual > $planned;
+            if ($isLateFromPrevious) {
+                $byDate[$actual]['delivered_late']++;
+            } else {
+                $byDate[$actual]['delivered_of_plan']++;
+                if ($type === 'on_time' || $type === '') {
+                    $byDate[$actual]['on_time']++;
+                }
+            }
+        }
+
         ksort($byDate);
         return array_values($byDate);
     }

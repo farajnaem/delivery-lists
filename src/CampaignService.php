@@ -761,9 +761,10 @@ final class CampaignService
         ")->fetchColumn();
         $deliveredStatus = DeliveryService::STATUS_DELIVERED;
         // لكل يوم مخطط:
-        // - مستلم: من مخطط هذا اليوم واستلم (سواء في الشباك أو بعده بنفس اليوم)
-        // - غير مستلم: من مخطط هذا اليوم وما استلم بعد
+        // - مستلم: من مخطط هذا اليوم واستلم فعلياً في تاريخ هذا اليوم
+        // - غير مستلم: من مخطط هذا اليوم وما استلم بعد (للمطابقة فقط)
         // - مستلم من المتأخرين: استلم في تاريخ هذا اليوم وموعده كان يوماً سابقاً
+        // إجمالي ما سُلِّم في اليوم = مستلم + مستلم من المتأخرين
         $days = $pdo->prepare('
             SELECT b.day_index, b.delivery_date, COUNT(*) AS cnt,
                    COUNT(DISTINCT b.window_num) AS windows,
@@ -771,6 +772,17 @@ final class CampaignService
                    MAX(b.time_to) AS work_end,
                    SUM(CASE
                          WHEN b.receipt_status = ?
+                          AND (
+                                (
+                                  b.actual_delivery_date IS NOT NULL
+                                  AND b.actual_delivery_date != \'\'
+                                  AND b.actual_delivery_date = b.delivery_date
+                                )
+                                OR (
+                                  (b.actual_delivery_date IS NULL OR b.actual_delivery_date = \'\')
+                                  AND (b.delivery_type IS NULL OR b.delivery_type = \'\' OR b.delivery_type = \'on_time\')
+                                )
+                              )
                          THEN 1 ELSE 0
                        END) AS delivered,
                    SUM(CASE
@@ -802,13 +814,22 @@ final class CampaignService
             $campaignId,
         ]);
 
+        $dayRows = $days->fetchAll();
+        foreach ($dayRows as &$dayRow) {
+            $dayRow['delivered'] = (int) ($dayRow['delivered'] ?? 0);
+            $dayRow['pending'] = (int) ($dayRow['pending'] ?? 0);
+            $dayRow['delivered_late'] = (int) ($dayRow['delivered_late'] ?? 0);
+            $dayRow['delivered_total'] = $dayRow['delivered'] + $dayRow['delivered_late'];
+        }
+        unset($dayRow);
+
         return [
             'total' => $total,
             'delivered' => $delivered,
             'pending' => $total - $delivered,
             'assigned' => $assigned,
             'unassigned' => max(0, $total - $assigned),
-            'days' => $days->fetchAll(),
+            'days' => $dayRows,
         ];
     }
 

@@ -160,7 +160,7 @@ $panelUrl = static function (string $p) use ($cid): string {
         <div class="table-toolbar">
             <div>
                 <div class="panel-title">الأيام المعتمدة</div>
-                <div class="panel-subtitle">مستلم = كل من استلم من مخطط هذا اليوم (حتى بعد ساعته). متأخرون = استلموا في هذا التاريخ وموعدهم يوم سابق. إلغاء آخر يوم فقط.</div>
+                <div class="panel-subtitle">مستلم = من مخطط اليوم واستلموا في تاريخه. متأخرون = استلموا في هذا التاريخ وموعدهم يوم سابق. مجموعها = ما سُلِّم فعلياً ذلك اليوم. غير مستلم = من كشف اليوم وما استلموا (للمطابقة). إلغاء آخر يوم فقط.</div>
             </div>
             <?php if (!empty($canEdit) && $lastDayIndex > 0): ?>
             <form method="post" action="<?= e(url('/campaigns/cancel-last-day')) ?>"
@@ -178,17 +178,28 @@ $panelUrl = static function (string $p) use ($cid): string {
                     <th>اليوم</th>
                     <th>التاريخ</th>
                     <th>العدد</th>
-                    <th>مستلم</th>
-                    <th>غير مستلم</th>
+                    <th>مستلم هذا اليوم</th>
                     <th>مستلم من المتأخرين</th>
+                    <th>إجمالي التسليم</th>
+                    <th>غير مستلم</th>
                     <th>الشبابيك</th>
                     <th>كشف التسليم</th>
                     <th>رسائل</th>
                 </tr>
             </thead>
             <tbody>
-            <?php foreach ($dayStats as $day): ?>
-            <?php $di = (int) ($day['day_index'] ?? 0); ?>
+            <?php
+            $sumPending = 0;
+            $sumDeliveredTotal = 0;
+            foreach ($dayStats as $day):
+                $di = (int) ($day['day_index'] ?? 0);
+                $deliveredDay = (int) ($day['delivered'] ?? 0);
+                $deliveredLate = (int) ($day['delivered_late'] ?? 0);
+                $deliveredTotal = (int) ($day['delivered_total'] ?? ($deliveredDay + $deliveredLate));
+                $pendingDay = (int) ($day['pending'] ?? 0);
+                $sumPending += $pendingDay;
+                $sumDeliveredTotal += $deliveredTotal;
+            ?>
             <tr>
                 <td>
                     <?= ar_digits($di) ?>
@@ -198,9 +209,10 @@ $panelUrl = static function (string $p) use ($cid): string {
                 </td>
                 <td><?= e((string) ($day['delivery_date'] ?? '')) ?></td>
                 <td><?= ar_digits((int) ($day['cnt'] ?? 0)) ?></td>
-                <td><?= ar_digits((int) ($day['delivered'] ?? 0)) ?></td>
-                <td><?= ar_digits((int) ($day['pending'] ?? 0)) ?></td>
-                <td><?= ar_digits((int) ($day['delivered_late'] ?? 0)) ?></td>
+                <td><?= ar_digits($deliveredDay) ?></td>
+                <td><?= ar_digits($deliveredLate) ?></td>
+                <td><?= ar_digits($deliveredTotal) ?></td>
+                <td><?= ar_digits($pendingDay) ?></td>
                 <td><?= ar_digits((int) ($day['windows'] ?? 0)) ?></td>
                 <td>
                     <?php if (!empty($canExport) && $isGenerated): ?>
@@ -221,6 +233,14 @@ $panelUrl = static function (string $p) use ($cid): string {
                 </td>
             </tr>
             <?php endforeach; ?>
+            <?php if ($dayStats !== []): ?>
+            <tr style="font-weight:600;background:var(--surface-2, #f8fafc)">
+                <td colspan="5">المجموع</td>
+                <td><?= ar_digits($sumDeliveredTotal) ?></td>
+                <td><?= ar_digits($sumPending) ?></td>
+                <td colspan="3" class="text-muted" style="font-weight:400">غير المستلمين للمطابقة مرة واحدة</td>
+            </tr>
+            <?php endif; ?>
             </tbody>
         </table>
         </div>
