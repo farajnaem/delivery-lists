@@ -15,11 +15,14 @@ $canDeleteBeneficiary = !empty($canDeleteBeneficiary);
 $canEditRow = $canDeleteBeneficiary;
 $searched = !empty($searched);
 $cid = (int) $campaign['id'];
-$showManualChecks = $canManualDeliver && $filter === 'anomaly';
+// استلام يدوي: يظهر مع نتائج البحث (هوية / اسم / مجموعة) وليس فقط فلتر «تسليم بلا تعيين»
+$showManualChecks = $canManualDeliver && $searched;
 $showBulkDelete = $canDeleteBeneficiary;
 $idListCount = (int) ($idListCount ?? 0);
 $useIdsFlag = !empty($useIdsFlag) || $idListCount >= 2;
 $autoCheckBulk = $showBulkDelete && ($filter === 'unassigned_today' || $filter === 'unassigned');
+// تحديد تلقائي: فلتر الشذوذ أو لصق مجموعة هويات
+$autoCheckManual = $showManualChecks && ($filter === 'anomaly' || $idListCount >= 2);
 $isSpecialFilter = in_array($filter, ['unassigned', 'unassigned_today', 'late', 'anomaly', 'duplicates', 'today'], true);
 
 $colspan = 6
@@ -50,7 +53,7 @@ page_header(
     [
         ['label' => 'عودة للعملية', 'url' => '/campaigns/view?id=' . $cid],
     ],
-    'ابحث عن شخص أو مجموعة — تظهر الحالة وإمكانية الحذف أو تسجيل الاستلام.'
+    'ابحث بهوية أو جزء من الاسم أو الصق مجموعة هويات، ثم حدّد من تريد واستلمهم دفعة واحدة.'
 );
 ?>
 
@@ -117,13 +120,19 @@ page_header(
     <input type="hidden" name="q" value="<?= e($q) ?>">
     <input type="hidden" name="page" value="<?= (int) $page ?>">
     <input type="hidden" name="filter" value="<?= e($filter) ?>">
+    <?php if ($useIdsFlag): ?>
+    <input type="hidden" name="use_ids" value="1">
+    <?php endif; ?>
     <div class="card actions-row" style="align-items:flex-end;gap:0.75rem;flex-wrap:wrap">
         <div style="flex:1;min-width:240px">
             <label class="field-label">سبب الاستلام اليدوي *</label>
-            <input type="text" name="reason" class="form-control" required placeholder="سبب التثبيت">
+            <input type="text" name="reason" class="form-control" required placeholder="مثال: استلموا من الجهاز ولم يظهروا بالكشوف">
         </div>
         <button type="submit" class="btn" data-confirm="تأكيد تسجيل الاستلام للمحددين؟">تسجيل استلام المحددين</button>
     </div>
+    <p class="text-muted" style="margin:0.35rem 0 0;font-size:0.9rem">
+        حدّد صفوفاً أو استخدم «تحديد الكل»، ثم سجّل الاستلام مرة واحدة. المستلمون مسبقاً لا يظهر لهم خيار تحديد.
+    </p>
 </form>
 <?php endif; ?>
 
@@ -196,7 +205,8 @@ page_header(
             $assigned = (int) ($b['day_index'] ?? 0) > 0 && trim((string) ($b['disbursement_code'] ?? '')) !== '';
             $delivered = DeliveryService::isDeliveredStatus($b['receipt_status'] ?? '');
             $canDeleteRow = $canDeleteBeneficiary && !$delivered;
-            $canMarkDelivered = $canManualDeliver && !$delivered && $assigned;
+            // المدير يستطيع الاستلام اليدوي حتى لغير المعيّنين
+            $canMarkDelivered = $canManualDeliver && !$delivered;
             $rowId = (int) $b['id'];
             $shelter = trim((string) ($b['shelter_name'] ?? ''));
         ?>
@@ -211,7 +221,7 @@ page_header(
             <?php if ($showManualChecks): ?>
             <td>
                 <?php if (!$delivered): ?>
-                <input type="checkbox" form="manual-deliver-form" name="beneficiary_ids[]" value="<?= $rowId ?>" class="manual-check" checked>
+                <input type="checkbox" form="manual-deliver-form" name="beneficiary_ids[]" value="<?= $rowId ?>" class="manual-check"<?= $autoCheckManual ? ' checked' : '' ?>>
                 <?php endif; ?>
             </td>
             <?php endif; ?>
@@ -244,6 +254,9 @@ page_header(
                         <input type="hidden" name="q" value="<?= e($q) ?>">
                         <input type="hidden" name="page" value="<?= (int) $page ?>">
                         <input type="hidden" name="filter" value="<?= e($filter) ?>">
+                        <?php if ($useIdsFlag): ?>
+                        <input type="hidden" name="use_ids" value="1">
+                        <?php endif; ?>
                         <button type="submit" class="btn btn-sm">مستلم</button>
                     </form>
                     <?php endif; ?>
@@ -343,6 +356,17 @@ page_header(
                 el.checked = all.checked;
             });
         });
+    }
+    var manualForm = document.getElementById('manual-deliver-form');
+    if (manualForm) {
+        manualForm.addEventListener('submit', function (e) {
+            var checked = document.querySelectorAll('.manual-check:checked').length;
+            if (checked < 1) {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                alert('حدّد مستفيداً واحداً على الأقل للاستلام.');
+            }
+        }, true);
     }
     var bulkAll = document.getElementById('bulk-check-all');
     if (bulkAll) {

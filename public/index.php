@@ -1106,16 +1106,32 @@ if ($uri === '/campaigns/beneficiaries/mark-delivered' && $method === 'POST') {
     $q = trim((string) ($_POST['q'] ?? ''));
     $page = max(1, (int) ($_POST['page'] ?? 1));
     $filter = trim((string) ($_POST['filter'] ?? ''));
+    $useIds = !empty($_POST['use_ids']) || strlen($q) > 180 || substr_count($q, "\n") >= 1;
+    if ($useIds && $q !== '') {
+        $_SESSION['ben_search'][$id] = [
+            'q' => $q,
+            'filter' => $filter,
+            'at' => time(),
+        ];
+    }
     $result = DeliveryService::adminMarkDeliveredMany(
         $id,
         (int) (Auth::id() ?? 0),
         $ids,
         (string) ($_POST['reason'] ?? '')
     );
-    $back = '/campaigns/beneficiaries?id=' . $id
-        . ($q !== '' ? '&q=' . rawurlencode($q) : '')
-        . ($filter !== '' ? '&filter=' . rawurlencode($filter) : '')
-        . ($page > 1 ? '&page=' . $page : '');
+    $back = '/campaigns/beneficiaries?id=' . $id;
+    if ($useIds && $q !== '') {
+        $back .= '&ids=1';
+    } elseif ($q !== '') {
+        $back .= '&q=' . rawurlencode($q);
+    }
+    if ($filter !== '') {
+        $back .= '&filter=' . rawurlencode($filter);
+    }
+    if ($page > 1) {
+        $back .= '&page=' . $page;
+    }
     if (!$result['ok']) {
         flash('error', $result['error'] ?? 'فشل الاستلام اليدوي.');
         redirect($back);
