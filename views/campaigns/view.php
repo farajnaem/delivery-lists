@@ -276,6 +276,13 @@ $panelUrl = static function (string $p) use ($cid): string {
                 <label class="field-label">نهاية الدوام *</label>
                 <input type="time" name="day_work_end" class="form-control" required value="<?= e($defaultDayWorkEnd) ?>">
             </div>
+            <div>
+                <label class="field-label">طريقة اختيار الأسماء *</label>
+                <select name="day_selection_mode" class="form-control" required>
+                    <option value="registration">حسب ترتيب التسجيل (الأقدم أولاً)</option>
+                    <option value="random">اختيار عشوائي من غير المعيّنين</option>
+                </select>
+            </div>
             <div style="display:flex;align-items:flex-end">
                 <button type="submit" class="btn">اعتماد اليوم</button>
             </div>

@@ -262,6 +262,10 @@ final class DistributionService
      * لا يمس الأيام السابقة (أكواد / رسائل / مواعيد).
      * يمكن تمرير ساعات عمل خاصة بهذا اليوم؛ وإلا تُستخدم ساعات العملية.
      *
+     * $selectionMode:
+     * - registration: أول غير المعيّنين حسب ترتيب التسجيل (id ASC)
+     * - random: سحب عشوائي من غير المعيّنين
+     *
      * @return array{
      *   day_index:int,
      *   date:string,
@@ -270,7 +274,8 @@ final class DistributionService
      *   per_window:list<int>,
      *   work_start:string,
      *   work_end:string,
-     *   unassigned_remaining:int
+     *   unassigned_remaining:int,
+     *   selection_mode:string
      * }
      */
     public static function generateDay(
@@ -280,6 +285,7 @@ final class DistributionService
         ?string $deliveryDate = null,
         ?string $workStart = null,
         ?string $workEnd = null,
+        string $selectionMode = 'registration',
     ): array {
         extend_runtime(600);
         @ignore_user_abort(true);
@@ -294,6 +300,7 @@ final class DistributionService
 
         $beneficiaryCount = max(1, $beneficiaryCount);
         $numWindows = max(1, $numWindows);
+        $selectionMode = self::normalizeSelectionMode($selectionMode);
         [$dayWorkStart, $dayWorkEnd] = self::resolveDayWorkHours($campaign, $workStart, $workEnd);
 
         $unassigned = CampaignService::unassignedBeneficiaries($campaignId);
@@ -305,6 +312,9 @@ final class DistributionService
             throw new \RuntimeException("المتبقي غير المعيّن {$available} فقط — لا يمكن اعتماد {$beneficiaryCount}.");
         }
 
+        if ($selectionMode === 'random') {
+            shuffle($unassigned);
+        }
         $dayRows = array_slice($unassigned, 0, $beneficiaryCount);
         $dayIndex = CampaignService::maxDayIndex($campaignId) + 1;
         $date = self::resolveNextDayDate($campaign, $deliveryDate);
@@ -442,7 +452,15 @@ final class DistributionService
             'work_start' => $dayWorkStart,
             'work_end' => $dayWorkEnd,
             'unassigned_remaining' => $remaining,
+            'selection_mode' => $selectionMode,
         ];
+    }
+
+    /** @return 'registration'|'random' */
+    public static function normalizeSelectionMode(string $mode): string
+    {
+        $mode = strtolower(trim($mode));
+        return $mode === 'random' ? 'random' : 'registration';
     }
 
     /**

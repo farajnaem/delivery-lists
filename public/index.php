@@ -1293,19 +1293,27 @@ if ($uri === '/campaigns/generate-day' && $method === 'POST') {
         $date = trim((string) ($_POST['day_date'] ?? ''));
         $workStart = trim((string) ($_POST['day_work_start'] ?? ''));
         $workEnd = trim((string) ($_POST['day_work_end'] ?? ''));
+        $selectionMode = DistributionService::normalizeSelectionMode(
+            (string) ($_POST['day_selection_mode'] ?? 'registration')
+        );
         $summary = DistributionService::generateDay(
             $id,
             $count,
             $windows,
             $date !== '' ? $date : null,
             $workStart !== '' ? $workStart : null,
-            $workEnd !== '' ? $workEnd : null
+            $workEnd !== '' ? $workEnd : null,
+            $selectionMode
         );
         $perWin = implode('، ', array_map('strval', $summary['per_window'] ?? []));
+        $selectionLabel = ($summary['selection_mode'] ?? '') === 'random'
+            ? 'اختيار عشوائي'
+            : 'حسب ترتيب التسجيل';
         flash(
             'success',
             "تم اعتماد اليوم {$summary['day_index']} ({$summary['date']}): {$summary['beneficiaries']} مستفيد على {$summary['windows']} شباك ({$perWin})"
             . " — دوام {$summary['work_start']}–{$summary['work_end']}."
+            . " ({$selectionLabel})"
             . " المتبقي غير معيّن: {$summary['unassigned_remaining']}."
         );
     } catch (Throwable $e) {
