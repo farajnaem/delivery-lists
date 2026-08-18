@@ -833,6 +833,47 @@ final class CampaignService
         ];
     }
 
+    /**
+     * غير المعيّنين غير المستلمين — للطباعة/التصدير، مرتّبون حسب مركز الإيواء ثم الاسم.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public static function unassignedPendingDetailed(int $campaignId): array
+    {
+        $pdo = Database::getConnection();
+        $delivered = DeliveryService::STATUS_DELIVERED;
+        $stmt = $pdo->prepare('
+            SELECT *
+            FROM beneficiaries
+            WHERE campaign_id = ?
+              AND (receipt_status IS NULL OR receipt_status != ?)
+              AND (
+                    day_index IS NULL OR day_index = 0
+                    OR disbursement_code IS NULL OR disbursement_code = \'\'
+                  )
+        ');
+        $stmt->execute([$campaignId, $delivered]);
+        $rows = $stmt->fetchAll();
+        usort($rows, static function (array $a, array $b): int {
+            $sa = trim((string) ($a['shelter_name'] ?? ''));
+            $sb = trim((string) ($b['shelter_name'] ?? ''));
+            if ($sa === '' && $sb !== '') {
+                return 1;
+            }
+            if ($sa !== '' && $sb === '') {
+                return -1;
+            }
+            $cmp = DistributionService::compareNames($sa, $sb);
+            if ($cmp !== 0) {
+                return $cmp;
+            }
+
+            return DistributionService::compareNames((string) ($a['name'] ?? ''), (string) ($b['name'] ?? ''));
+        });
+
+        return $rows;
+    }
+
     public static function unassignedBeneficiaries(int $campaignId, ?int $limit = null): array
     {
         $pdo = Database::getConnection();

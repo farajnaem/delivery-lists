@@ -91,11 +91,11 @@ final class ExcelExportService
         $sheet->setRightToLeft(true);
 
         $sheet->setCellValue('A1', 'كشف المرشحين بالكامل — ' . $campaign['name']);
-        $sheet->mergeCells('A1:J1');
-        self::styleSectionTitle($sheet, 'A1:J1');
+        $sheet->mergeCells('A1:K1');
+        self::styleSectionTitle($sheet, 'A1:K1');
 
         $headers = [
-            '#', 'الاسم', 'رقم الهوية', 'رقم الجوال', 'الحالة',
+            '#', 'الاسم', 'رقم الهوية', 'رقم الجوال', 'مركز الإيواء', 'الحالة',
             'كود الصرف', 'يوم التوزيع', 'تاريخ الموعد', 'شباك', 'تاريخ الاستلام الفعلي',
         ];
         self::writeHeaderRow($sheet, 3, $headers);
@@ -119,22 +119,79 @@ final class ExcelExportService
             $sheet->setCellValueExplicit('B' . $row, (string) ($b['name'] ?? ''), DataType::TYPE_STRING);
             $sheet->setCellValueExplicit('C' . $row, ArabicFormat::toWesternDigits((string) ($b['national_id'] ?? '')), DataType::TYPE_STRING);
             $sheet->setCellValueExplicit('D' . $row, ArabicFormat::toWesternDigits((string) ($b['mobile'] ?? '')), DataType::TYPE_STRING);
-            $sheet->setCellValueExplicit('E' . $row, $status, DataType::TYPE_STRING);
-            $sheet->setCellValueExplicit('F' . $row, $code !== '' ? $code : '—', DataType::TYPE_STRING);
-            $sheet->setCellValueExplicit('G' . $row, $assigned ? (string) (int) ($b['day_index'] ?? 0) : '—', DataType::TYPE_STRING);
-            $sheet->setCellValueExplicit('H' . $row, (string) ($b['delivery_date'] ?? '—'), DataType::TYPE_STRING);
-            $sheet->setCellValueExplicit('I' . $row, $assigned ? (string) (int) ($b['window_num'] ?? 0) : '—', DataType::TYPE_STRING);
-            $sheet->setCellValueExplicit('J' . $row, (string) ($b['actual_delivery_date'] ?? $b['delivered_at'] ?? '—'), DataType::TYPE_STRING);
+            $sheet->setCellValueExplicit('E' . $row, trim((string) ($b['shelter_name'] ?? '')) !== '' ? (string) $b['shelter_name'] : '—', DataType::TYPE_STRING);
+            $sheet->setCellValueExplicit('F' . $row, $status, DataType::TYPE_STRING);
+            $sheet->setCellValueExplicit('G' . $row, $code !== '' ? $code : '—', DataType::TYPE_STRING);
+            $sheet->setCellValueExplicit('H' . $row, $assigned ? (string) (int) ($b['day_index'] ?? 0) : '—', DataType::TYPE_STRING);
+            $sheet->setCellValueExplicit('I' . $row, (string) ($b['delivery_date'] ?? '—'), DataType::TYPE_STRING);
+            $sheet->setCellValueExplicit('J' . $row, $assigned ? (string) (int) ($b['window_num'] ?? 0) : '—', DataType::TYPE_STRING);
+            $sheet->setCellValueExplicit('K' . $row, (string) ($b['actual_delivery_date'] ?? $b['delivered_at'] ?? '—'), DataType::TYPE_STRING);
             $row++;
         }
 
         $last = max(3, $row - 1);
-        self::borderAll($sheet, 'A3:J' . $last);
-        foreach (['A' => 5, 'B' => 28, 'C' => 16, 'D' => 14, 'E' => 12, 'F' => 14, 'G' => 10, 'H' => 12, 'I' => 8, 'J' => 16] as $col => $w) {
+        self::borderAll($sheet, 'A3:K' . $last);
+        foreach (['A' => 5, 'B' => 28, 'C' => 16, 'D' => 14, 'E' => 22, 'F' => 12, 'G' => 14, 'H' => 10, 'I' => 12, 'J' => 8, 'K' => 16] as $col => $w) {
             $sheet->getColumnDimension($col)->setWidth($w);
         }
 
         return self::saveSpreadsheet($spreadsheet, $campaign, 'مرشحين_كامل');
+    }
+
+    /**
+     * كشف غير المعيّنين فقط — للطباعة/المراجعة، مع مركز الإيواء.
+     */
+    public static function exportUnassigned(int $campaignId): string
+    {
+        extend_runtime();
+
+        $campaign = CampaignService::find($campaignId);
+        if (!$campaign) {
+            throw new \RuntimeException('العملية غير موجودة.');
+        }
+
+        $rows = CampaignService::unassignedPendingDetailed($campaignId);
+        if ($rows === []) {
+            throw new \RuntimeException('لا يوجد غير معيّنين في هذه العملية.');
+        }
+
+        $spreadsheet = new Spreadsheet();
+        $spreadsheet->getDefaultStyle()->getFont()->setName('Arial')->setSize(11);
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('غير_المعيّنين');
+        $sheet->setRightToLeft(true);
+
+        $sheet->setCellValue('A1', 'كشف غير المعيّنين — ' . $campaign['name']);
+        $sheet->mergeCells('A1:F1');
+        self::styleSectionTitle($sheet, 'A1:F1');
+        $sheet->setCellValue('A2', 'العدد: ' . count($rows) . ' — مرتّب حسب مركز الإيواء ثم الاسم');
+        $sheet->mergeCells('A2:F2');
+
+        $headers = ['#', 'الاسم', 'رقم الهوية', 'رقم الجوال', 'مركز الإيواء', 'الحالة'];
+        self::writeHeaderRow($sheet, 4, $headers);
+
+        $row = 5;
+        $n = 0;
+        foreach ($rows as $b) {
+            $n++;
+            $shelter = trim((string) ($b['shelter_name'] ?? ''));
+            $sheet->setCellValueExplicit('A' . $row, (string) $n, DataType::TYPE_STRING);
+            $sheet->setCellValueExplicit('B' . $row, (string) ($b['name'] ?? ''), DataType::TYPE_STRING);
+            $sheet->setCellValueExplicit('C' . $row, ArabicFormat::toWesternDigits((string) ($b['national_id'] ?? '')), DataType::TYPE_STRING);
+            $sheet->setCellValueExplicit('D' . $row, ArabicFormat::toWesternDigits((string) ($b['mobile'] ?? '')), DataType::TYPE_STRING);
+            $sheet->setCellValueExplicit('E' . $row, $shelter !== '' ? $shelter : '—', DataType::TYPE_STRING);
+            $sheet->setCellValueExplicit('F' . $row, 'غير معيّن', DataType::TYPE_STRING);
+            $row++;
+        }
+
+        $last = max(4, $row - 1);
+        self::borderAll($sheet, 'A4:F' . $last);
+        foreach (['A' => 6, 'B' => 30, 'C' => 16, 'D' => 14, 'E' => 28, 'F' => 12] as $col => $w) {
+            $sheet->getColumnDimension($col)->setWidth($w);
+        }
+        self::applyPortraitPrint($sheet, 4, $last, 'F');
+
+        return self::saveSpreadsheet($spreadsheet, $campaign, 'غير_المعينين');
     }
 
     /** تصدير كشوف التسليم ليوم واحد فقط (شبابيك ذلك اليوم). */

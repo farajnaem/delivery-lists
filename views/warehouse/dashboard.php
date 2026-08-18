@@ -147,6 +147,10 @@ $latePending = (int) ($stock['late_pending'] ?? 0);
     <div class="actions-row" style="flex-wrap:wrap;gap:0.5rem">
         <a class="btn" href="<?= e(url('/campaigns/beneficiaries?id=' . $cid . '&filter=today')) ?>">مستلمو اليوم</a>
         <a class="btn btn-outline" href="<?= e(url('/campaigns/beneficiaries?id=' . $cid . '&filter=unassigned')) ?>">غير المعيّنين (<?= ar_digits($unassignedPending) ?>)</a>
+        <?php if (!empty($canExport) && $unassignedPending > 0): ?>
+        <a class="btn btn-outline" href="<?= e(url('/campaigns/export-unassigned?id=' . $cid)) ?>">غير المعيّنين Excel</a>
+        <a class="btn btn-outline" href="<?= e(url('/campaigns/print-unassigned?id=' . $cid)) ?>" target="_blank">طباعة غير المعيّنين</a>
+        <?php endif; ?>
         <a class="btn btn-outline" href="<?= e(url('/campaigns/beneficiaries?id=' . $cid . '&filter=late')) ?>">متأخرون لم يستلموا (<?= ar_digits($latePending) ?>)</a>
         <?php if (!empty($canExport)): ?>
         <a class="btn" href="<?= e(url('/campaigns/export?id=' . $cid)) ?>">كشوف التسليم المعتمدة</a>

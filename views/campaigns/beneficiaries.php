@@ -79,6 +79,10 @@ page_header(
         <summary style="cursor:pointer;color:var(--muted);font-size:0.9rem">أدوات خاصة (عند الحاجة فقط)</summary>
         <div class="actions-row" style="margin-top:0.65rem;gap:0.5rem;flex-wrap:wrap">
             <a class="btn btn-sm <?= $filter === 'unassigned' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('unassigned', $q)) ?>">غير معيّنين</a>
+            <?php if (!empty($canExport)): ?>
+            <a class="btn btn-sm btn-outline" href="<?= e(url('/campaigns/export-unassigned?id=' . $cid)) ?>">Excel غير المعيّنين</a>
+            <a class="btn btn-sm btn-outline" href="<?= e(url('/campaigns/print-unassigned?id=' . $cid)) ?>" target="_blank">طباعة غير المعيّنين</a>
+            <?php endif; ?>
             <a class="btn btn-sm <?= $filter === 'unassigned_today' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('unassigned_today', $q)) ?>">آخر دفعة مضافة</a>
             <a class="btn btn-sm <?= $filter === 'late' ? '' : 'btn-outline' ?>" href="<?= e($filterUrl('late', $q)) ?>">متأخرون لم يستلموا</a>
             <?php if ($canManualDeliver): ?>

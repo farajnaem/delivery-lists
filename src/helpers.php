@@ -50,6 +50,14 @@ function warehouse_view(string $template, array $data = []): void
     require dirname(__DIR__) . '/views/partials/warehouse-layout.php';
 }
 
+function print_view(string $template, array $data = []): void
+{
+    $data['template'] = $template;
+    extract($data, EXTR_SKIP);
+    $title = $title ?? config('app_name');
+    require dirname(__DIR__) . '/views/partials/print-layout.php';
+}
+
 function partial(string $template, array $data = []): void
 {
     extract($data, EXTR_SKIP);

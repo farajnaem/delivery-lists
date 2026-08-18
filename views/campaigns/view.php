@@ -140,17 +140,25 @@ $panelUrl = static function (string $p) use ($cid): string {
 <?php if ($panel === 'days'): ?>
 <section class="op-panel">
 
-    <?php if ($isGenerated && !empty($canExport)): ?>
+    <?php if (!empty($canExport) && ($isGenerated || $unassigned > 0)): ?>
     <div class="card" style="border:2px solid var(--accent, #2563eb)">
         <h2 class="panel-title" style="margin-top:0">الكشوف النهائية / المطابقة</h2>
-        <p class="text-muted" style="margin:0 0 0.75rem">بعد اعتماد الأيام أو انتهاء الطرد — من هنا تطبع أو تنزّل الكشوف.</p>
+        <p class="text-muted" style="margin:0 0 0.75rem">من هنا تطبع أو تنزّل الكشوف. كشوف التسليم المعتمدة تظهر بعد اعتماد الأيام.</p>
         <div class="actions-row" style="flex-wrap:wrap;gap:0.5rem">
+            <?php if ($isGenerated): ?>
             <a href="<?= e(url('/campaigns/export?id=' . $cid)) ?>" class="btn">كشوف التسليم المعتمدة (الكل)</a>
             <?php if (!empty($canViewStock)): ?>
             <a href="<?= e(url('/campaigns/stock?id=' . $cid)) ?>" class="btn btn-outline">مطابقة التسليم والمخزن</a>
             <?php endif; ?>
             <a href="<?= e(url('/campaigns/export-candidates?id=' . $cid)) ?>" class="btn btn-outline">كشف المرشحين Excel</a>
+            <?php endif; ?>
+            <?php if ($unassigned > 0): ?>
+            <a href="<?= e(url('/campaigns/export-unassigned?id=' . $cid)) ?>" class="btn <?= $isGenerated ? 'btn-outline' : '' ?>">غير المعيّنين Excel</a>
+            <a href="<?= e(url('/campaigns/print-unassigned?id=' . $cid)) ?>" class="btn btn-outline" target="_blank">طباعة غير المعيّنين</a>
+            <?php endif; ?>
+            <?php if ($isGenerated): ?>
             <a href="<?= e(url('/campaigns/export-deliveries?id=' . $cid)) ?>" class="btn btn-outline">تقرير المستلمين</a>
+            <?php endif; ?>
         </div>
     </div>
     <?php endif; ?>
@@ -252,6 +260,10 @@ $panelUrl = static function (string $p) use ($cid): string {
         <h2 class="panel-title" style="margin-bottom:0.35rem">اعتماد يوم توزيع جديد</h2>
         <p class="text-muted" style="margin-bottom:1rem">
             المتبقي غير المعيّن: <strong><?= ar_digits($unassigned) ?></strong>
+            <?php if (!empty($canExport)): ?>
+            — <a href="<?= e(url('/campaigns/export-unassigned?id=' . $cid)) ?>">Excel</a>
+            · <a href="<?= e(url('/campaigns/print-unassigned?id=' . $cid)) ?>" target="_blank">طباعة</a>
+            <?php endif; ?>
         </p>
         <form method="post" action="<?= e(url('/campaigns/generate-day')) ?>" class="grid-2" data-confirm="اعتماد هذا اليوم؟ لن يُمسّ أي يوم سابق.">
             <?= \App\Csrf::field() ?>

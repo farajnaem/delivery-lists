@@ -176,6 +176,167 @@ if (str_starts_with($uri, '/api/mobile')) {
     json_response(['ok' => false, 'error' => 'غير موجود'], 404);
 }
 
+// ——— API: تكامل نظام التوزيع المتكامل (Bearer token) ———
+if (str_starts_with($uri, '/api/integration')) {
+    $expected = trim((string) env('INTEGRATION_API_TOKEN', ''));
+    $header = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
+    $token = '';
+    if (preg_match('/^Bearer\s+(\S+)$/i', $header, $m)) {
+        $token = $m[1];
+    }
+    if ($expected === '' || $token === '' || !hash_equals($expected, $token)) {
+        json_response(['ok' => false, 'error' => 'غير مصرّح'], 401);
+    }
+
+    if ($uri === '/api/integration/health' && $method === 'GET') {
+        json_response(['ok' => true, 'service' => 'delivery-lists-integration', 'time' => db_now()]);
+    }
+
+    if ($uri === '/api/integration/campaigns/from-plan' && $method === 'POST') {
+        $body = read_json_body();
+        $campaignData = is_array($body['campaign'] ?? null) ? $body['campaign'] : [];
+        $beneficiaries = is_array($body['beneficiaries'] ?? null) ? $body['beneficiaries'] : [];
+        $existingId = (int) ($body['existing_campaign_id'] ?? 0);
+        $replace = (bool) ($body['replace_beneficiaries'] ?? true);
+
+        if (($campaignData['name'] ?? '') === '' || $beneficiaries === []) {
+            json_response(['ok' => false, 'error' => 'اسم العملية والمستفيدون مطلوبان'], 422);
+        }
+
+        $adminId = (int) (UserService::all()[0]['id'] ?? Auth::id() ?? 1);
+        // Prefer admin role if available
+        foreach (UserService::all() as $u) {
+            if (($u['role'] ?? '') === 'admin') {
+                $adminId = (int) $u['id'];
+                break;
+            }
+        }
+
+        $created = false;
+        $campaignId = $existingId;
+        if ($campaignId > 0 && !CampaignService::find($campaignId)) {
+            $campaignId = 0;
+        }
+
+        // ابحث بالرابط الخارجي
+        if ($campaignId <= 0 && !empty($campaignData['pipeline_name'])) {
+            $pdo = \App\Database::getConnection();
+            $stmt = $pdo->prepare('SELECT id FROM campaigns WHERE pipeline_name = ? ORDER BY id DESC LIMIT 1');
+            $stmt->execute([(string) $campaignData['pipeline_name']]);
+            $campaignId = (int) ($stmt->fetchColumn() ?: 0);
+        }
+
+        $fields = [
+            'name' => (string) $campaignData['name'],
+            'pipeline_name' => (string) ($campaignData['pipeline_name'] ?? ''),
+            'parcel_name' => (string) ($campaignData['parcel_name'] ?? 'طرد'),
+            'parcel_code' => (string) ($campaignData['parcel_code'] ?? 'PKG'),
+            'parcel_code_suffix' => (string) ($campaignData['parcel_code_suffix'] ?? ''),
+            'delivery_start' => (string) ($campaignData['delivery_start'] ?? date('Y-m-d')),
+            'delivery_end' => (string) ($campaignData['delivery_end'] ?? date('Y-m-d')),
+            'warehouse_name' => (string) ($campaignData['warehouse_name'] ?? 'مخزن'),
+            'warehouse_location' => (string) ($campaignData['warehouse_location'] ?? ''),
+            'num_days' => max(1, (int) ($campaignData['num_days'] ?? 1)),
+            'work_start' => (string) ($campaignData['work_start'] ?? '08:00'),
+            'work_end' => (string) ($campaignData['work_end'] ?? '16:00'),
+            'per_window_capacity' => max(1, (int) ($campaignData['per_window_capacity'] ?? 50)),
+            'num_windows' => max(1, (int) ($campaignData['num_windows'] ?? 4)),
+            'opening_quantity' => max(0, (int) ($campaignData['opening_quantity'] ?? count($beneficiaries))),
+        ];
+
+        try {
+            if ($campaignId > 0) {
+                CampaignService::update($campaignId, $fields);
+            } else {
+                $campaignId = CampaignService::create($fields, $adminId);
+                $created = true;
+            }
+
+            $normalized = [];
+            foreach ($beneficiaries as $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $nid = ArabicFormat::normalizeNationalId((string) ($row['national_id'] ?? ''));
+                $name = trim((string) ($row['name'] ?? ''));
+                if ($nid === '' || $name === '') {
+                    continue;
+                }
+                $normalized[] = [
+                    'name' => $name,
+                    'national_id' => $nid,
+                    'mobile' => (string) ($row['mobile'] ?? ''),
+                    'shelter_name' => trim((string) ($row['shelter_name'] ?? '')),
+                    'receipt_status' => (string) ($row['receipt_status'] ?? DeliveryService::STATUS_PENDING),
+                ];
+            }
+
+            if ($replace) {
+                $count = ExcelImportService::saveBeneficiaries($campaignId, $normalized);
+            } else {
+                $result = ExcelImportService::appendBeneficiaries($campaignId, $normalized);
+                $count = (int) ($result['added'] ?? 0);
+            }
+
+            json_response([
+                'ok' => true,
+                'campaign_id' => $campaignId,
+                'beneficiaries' => $count,
+                'created' => $created,
+            ]);
+        } catch (\Throwable $e) {
+            json_response(['ok' => false, 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    if (preg_match('#^/api/integration/campaigns/(\d+)/receipts$#', $uri, $m) && $method === 'GET') {
+        $campaignId = (int) $m[1];
+        $campaign = CampaignService::find($campaignId);
+        if (! $campaign) {
+            json_response(['ok' => false, 'error' => 'العملية غير موجودة'], 404);
+        }
+
+        $pdo = \App\Database::getConnection();
+        $stmt = $pdo->prepare(
+            'SELECT national_id, name, receipt_status, delivered_at, actual_delivery_date
+             FROM beneficiaries WHERE campaign_id = ?'
+        );
+        $stmt->execute([$campaignId]);
+
+        $receipts = [];
+        $deliveredCount = 0;
+        $pendingCount = 0;
+        $total = 0;
+        while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
+            $total++;
+            if (DeliveryService::isDeliveredStatus($row['receipt_status'] ?? '')) {
+                $deliveredCount++;
+                $receipts[] = [
+                    'national_id' => ArabicFormat::normalizeNationalId($row['national_id'] ?? ''),
+                    'name' => (string) ($row['name'] ?? ''),
+                    'status' => 'received',
+                    'receipt_status' => DeliveryService::STATUS_DELIVERED,
+                    'delivered_at' => $row['delivered_at'] ?: ($row['actual_delivery_date'] ?: null),
+                ];
+            } else {
+                $pendingCount++;
+            }
+        }
+
+        json_response([
+            'ok' => true,
+            'campaign_id' => $campaignId,
+            'campaign_name' => (string) ($campaign['name'] ?? ''),
+            'total' => $total,
+            'delivered' => $deliveredCount,
+            'pending' => $pendingCount,
+            'receipts' => $receipts,
+        ]);
+    }
+
+    json_response(['ok' => false, 'error' => 'غير موجود'], 404);
+}
+
 Auth::requireLogin();
 
 $role = Auth::role() ?? '';
@@ -900,6 +1061,7 @@ if ($uri === '/campaigns/beneficiaries' && $method === 'GET') {
         'searched' => $shouldList,
         'idListCount' => $idListCount,
         'useIdsFlag' => $useIdsFlag,
+        'canExport' => RoleHelper::canExport(Auth::role() ?? ''),
     ]);
     exit;
 }
@@ -1379,6 +1541,45 @@ if ($uri === '/campaigns/export-candidates' && $method === 'GET') {
         flash('error', $e->getMessage());
         redirect('/campaigns/view?id=' . $id);
     }
+}
+
+if ($uri === '/campaigns/export-unassigned' && $method === 'GET') {
+    Auth::requireRole(fn ($r) => RoleHelper::canExport($r));
+    $id = (int) ($_GET['id'] ?? 0);
+    try {
+        $path = ExcelExportService::exportUnassigned($id);
+        $campaign = CampaignService::find($id);
+        $filename = ($campaign['name'] ?? 'unassigned') . '_غير_المعينين.xlsx';
+        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        header('Content-Disposition: attachment; filename="' . rawurlencode($filename) . '"');
+        header('Content-Length: ' . filesize($path));
+        readfile($path);
+        exit;
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+        redirect('/campaigns/view?id=' . $id . '&panel=days');
+    }
+}
+
+if ($uri === '/campaigns/print-unassigned' && $method === 'GET') {
+    Auth::requireRole(fn ($r) => RoleHelper::canExport($r));
+    $id = (int) ($_GET['id'] ?? 0);
+    $campaign = CampaignService::find($id);
+    if (!$campaign) {
+        flash('error', 'العملية غير موجودة.');
+        redirect('/');
+    }
+    $rows = CampaignService::unassignedPendingDetailed($id);
+    if ($rows === []) {
+        flash('error', 'لا يوجد غير معيّنين في هذه العملية.');
+        redirect('/campaigns/view?id=' . $id . '&panel=days');
+    }
+    print_view('campaigns/print-unassigned', [
+        'title' => 'كشف غير المعيّنين — ' . (string) $campaign['name'],
+        'campaign' => $campaign,
+        'rows' => $rows,
+    ]);
+    exit;
 }
 
 if ($uri === '/campaigns/export-messages' && $method === 'GET') {
