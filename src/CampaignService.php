@@ -760,6 +760,30 @@ final class CampaignService
               AND disbursement_code IS NOT NULL AND disbursement_code != ''
         ")->fetchColumn();
         $deliveredStatus = DeliveryService::STATUS_DELIVERED;
+        // غير معيّن = بلا يوم/كود وما استلم بعد — نفس منطق اعتماد يوم جديد.
+        // مستلم بلا تعيين (يدوي/شذوذ) لا يدخل يوم توزيع جديد، فلا يُحسب هنا.
+        $unassignedStmt = $pdo->prepare('
+            SELECT COUNT(*) FROM beneficiaries
+            WHERE campaign_id = ?
+              AND (receipt_status IS NULL OR receipt_status != ?)
+              AND (
+                    day_index IS NULL OR day_index = 0
+                    OR disbursement_code IS NULL OR disbursement_code = \'\'
+                  )
+        ');
+        $unassignedStmt->execute([$campaignId, $deliveredStatus]);
+        $unassigned = (int) $unassignedStmt->fetchColumn();
+        $deliveredUnassignedStmt = $pdo->prepare('
+            SELECT COUNT(*) FROM beneficiaries
+            WHERE campaign_id = ?
+              AND receipt_status = ?
+              AND (
+                    day_index IS NULL OR day_index = 0
+                    OR disbursement_code IS NULL OR disbursement_code = \'\'
+                  )
+        ');
+        $deliveredUnassignedStmt->execute([$campaignId, $deliveredStatus]);
+        $deliveredUnassigned = (int) $deliveredUnassignedStmt->fetchColumn();
         // لكل يوم مخطط:
         // - مستلم: من مخطط هذا اليوم واستلم فعلياً في تاريخ هذا اليوم
         // - غير مستلم: من مخطط هذا اليوم وما استلم بعد (للمطابقة فقط)
@@ -828,7 +852,8 @@ final class CampaignService
             'delivered' => $delivered,
             'pending' => $total - $delivered,
             'assigned' => $assigned,
-            'unassigned' => max(0, $total - $assigned),
+            'unassigned' => $unassigned,
+            'delivered_unassigned' => $deliveredUnassigned,
             'days' => $dayRows,
         ];
     }

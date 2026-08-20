@@ -8,7 +8,8 @@ $perWindow = max(1, (int) ($campaign['per_window_capacity'] ?? 400));
 $planSafe = is_array($plan ?? null) ? $plan : [];
 $numWindows = max(1, (int) ($planSafe['num_windows'] ?? $campaign['num_windows'] ?? 4));
 $dailyCapacity = (int) ($planSafe['daily_capacity'] ?? ($numWindows * $perWindow));
-$unassigned = (int) ($stats['unassigned'] ?? max(0, (int) ($stats['total'] ?? 0) - (int) ($stats['assigned'] ?? 0)));
+$unassigned = (int) ($stats['unassigned'] ?? 0);
+$deliveredUnassigned = (int) ($stats['delivered_unassigned'] ?? 0);
 $assigned = (int) ($stats['assigned'] ?? 0);
 $defaultDayCount = min($unassigned, max(1, $numWindows * $perWindow));
 if ($unassigned > 0 && $defaultDayCount < 1) {
@@ -259,10 +260,16 @@ $panelUrl = static function (string $p) use ($cid): string {
     <div class="card">
         <h2 class="panel-title" style="margin-bottom:0.35rem">اعتماد يوم توزيع جديد</h2>
         <p class="text-muted" style="margin-bottom:1rem">
-            المتبقي غير المعيّن: <strong><?= ar_digits($unassigned) ?></strong>
+            المتبقي غير المعيّن (قابل للاعتماد): <strong><?= ar_digits($unassigned) ?></strong>
             <?php if (!empty($canExport)): ?>
             — <a href="<?= e(url('/campaigns/export-unassigned?id=' . $cid)) ?>">Excel</a>
             · <a href="<?= e(url('/campaigns/print-unassigned?id=' . $cid)) ?>" target="_blank">طباعة</a>
+            <?php endif; ?>
+            <?php if ($deliveredUnassigned > 0): ?>
+            <br>
+            مستلمون بلا يوم توزيع: <strong><?= ar_digits($deliveredUnassigned) ?></strong>
+            — لا يدخلون اعتماد يوم جديد
+            (<a href="<?= e(url('/campaigns/beneficiaries?id=' . $cid . '&filter=anomaly')) ?>">عرضهم</a>).
             <?php endif; ?>
         </p>
         <form method="post" action="<?= e(url('/campaigns/generate-day')) ?>" class="grid-2" data-confirm="اعتماد هذا اليوم؟ لن يُمسّ أي يوم سابق.">
