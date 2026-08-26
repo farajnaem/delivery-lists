@@ -34,6 +34,17 @@ $defaultWindows = ((int) ($c['num_windows'] ?? 0) > 0) ? (string) (int) $c['num_
 </div>
 
 <div class="form-section">
+    <div class="form-section-title">رسائل SMS</div>
+    <div class="form-section-desc">جملة اختيارية تُضاف في نهاية رسالة الموعد (قبل الاستلام). عند تنزيل كشوف الرسائل يُعاد بناء النص تلقائياً.</div>
+    <div class="form-group">
+        <label class="field-label">جملة إضافية للرسائل</label>
+        <textarea name="message_extra" class="form-control" rows="2" maxlength="500"
+                  placeholder="مثال: يرجى إحضار الهوية الأصلية"><?= e(old('message_extra', $c['message_extra'] ?? '')) ?></textarea>
+        <span class="field-hint">اختياري — حتى 500 حرف. تُضاف بعد كود الصرف في رسالة الموعد.</span>
+    </div>
+</div>
+
+<div class="form-section">
     <div class="form-section-title">خطة التوزيع</div>
     <div class="form-section-desc">الشبابيك والطاقة والتواريخ. الجمعة لا تُحسب يوم عمل.</div>
     <div class="grid-2">

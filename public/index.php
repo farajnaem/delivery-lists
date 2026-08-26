@@ -242,6 +242,7 @@ if (str_starts_with($uri, '/api/integration')) {
             'per_window_capacity' => max(1, (int) ($campaignData['per_window_capacity'] ?? 50)),
             'num_windows' => max(1, (int) ($campaignData['num_windows'] ?? 4)),
             'opening_quantity' => max(0, (int) ($campaignData['opening_quantity'] ?? count($beneficiaries))),
+            'message_extra' => CampaignService::normalizeMessageExtra((string) ($campaignData['message_extra'] ?? '')),
         ];
 
         try {

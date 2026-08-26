@@ -44,8 +44,7 @@ final class MessageTemplates
             )
         );
 
-        // أرقام لاتينية نظيفة (بدون علامات اتجاه خفية تكسر الإرسال)
-        return ArabicFormat::toWesternDigits($message);
+        return ArabicFormat::toWesternDigits(self::appendExtra($campaign, $message));
     }
 
     /** إعادة بناء رسالة الموعد من صف مستفيد (للتصدير حتى لو النص القديم قديم). */
@@ -98,5 +97,19 @@ final class MessageTemplates
         }
 
         return $warehouse;
+    }
+
+    /** جملة اختيارية تُضاف في نهاية رسالة الموعد. */
+    private static function appendExtra(array $campaign, string $message): string
+    {
+        $extra = trim((string) ($campaign['message_extra'] ?? ''));
+        if ($extra === '') {
+            return $message;
+        }
+        if (preg_match('/^[\s،,.!\-—]/u', $extra)) {
+            return $message . ' ' . $extra;
+        }
+
+        return $message . ' ، ' . $extra;
     }
 }

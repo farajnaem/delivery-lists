@@ -170,6 +170,7 @@ function parse_campaign_post(array $post): array
         'work_end' => $post['work_end'] ?? '15:00',
         'per_window_capacity' => max(1, (int) ($post['per_window_capacity'] ?? 400)),
         'opening_quantity' => max(0, (int) ($post['opening_quantity'] ?? 0)),
+        'message_extra' => \App\CampaignService::normalizeMessageExtra((string) ($post['message_extra'] ?? '')),
     ];
 }
 

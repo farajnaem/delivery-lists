@@ -39,8 +39,8 @@ final class CampaignService
             INSERT INTO campaigns (
                 name, pipeline_name, parcel_name, parcel_code, parcel_code_suffix, delivery_start, delivery_end,
                 warehouse_name, warehouse_location, num_days, work_start, work_end,
-                per_window_capacity, num_windows, opening_quantity, status, created_by
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                per_window_capacity, num_windows, opening_quantity, message_extra, status, created_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ');
         $stmt->execute([
             $data['name'],
@@ -58,6 +58,7 @@ final class CampaignService
             (int) $data['per_window_capacity'],
             max(1, (int) ($data['num_windows'] ?? 4)),
             max(0, (int) ($data['opening_quantity'] ?? 0)),
+            self::normalizeMessageExtra($data['message_extra'] ?? ''),
             'draft',
             $userId,
         ]);
@@ -74,7 +75,8 @@ final class CampaignService
                 name = ?, pipeline_name = ?, parcel_name = ?, parcel_code = ?, parcel_code_suffix = ?,
                 delivery_start = ?, delivery_end = ?,
                 warehouse_name = ?, warehouse_location = ?, num_days = ?,
-                work_start = ?, work_end = ?, per_window_capacity = ?, num_windows = ?, opening_quantity = ?
+                work_start = ?, work_end = ?, per_window_capacity = ?, num_windows = ?, opening_quantity = ?,
+                message_extra = ?
             WHERE id = ?
         ');
         $stmt->execute([
@@ -93,8 +95,22 @@ final class CampaignService
             (int) $data['per_window_capacity'],
             max(1, (int) ($data['num_windows'] ?? 4)),
             max(0, (int) ($data['opening_quantity'] ?? 0)),
+            self::normalizeMessageExtra($data['message_extra'] ?? ''),
             $id,
         ]);
+    }
+
+    public static function normalizeMessageExtra(string $value): string
+    {
+        $value = trim(preg_replace('/\s+/u', ' ', $value) ?? $value);
+        if ($value === '') {
+            return '';
+        }
+        if (function_exists('mb_substr')) {
+            return mb_substr($value, 0, 500);
+        }
+
+        return substr($value, 0, 500);
     }
 
     /** يحدّث أيام التسليم وتاريخ النهاية بعد التوليد (أيام عمل فعلية). */
