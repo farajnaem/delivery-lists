@@ -44,6 +44,14 @@ page_header(
     <h2>منطقة الخطر</h2>
     <p class="text-muted" style="margin-bottom:1rem">إجراءات لا يمكن التراجع عنها بسهولة — استخدمها بحذر.</p>
 
+<?php if (!empty($canMerge)): ?>
+    <form method="get" action="<?= e(url('/campaigns/merge')) ?>" style="margin-bottom:1rem">
+        <input type="hidden" name="from" value="<?= (int) $campaign['id'] ?>">
+        <button type="submit" class="btn btn-outline">دمج هذه العملية في عملية أخرى</button>
+        <span class="field-hint">لمرة واحدة: ينقل التسليمات والكشوف إلى عملية الوجهة بعد إنشاء نسخة احتياط.</span>
+    </form>
+<?php endif; ?>
+
     <?php if (!empty($canCancelDeliveries) && $delivered > 0): ?>
     <form method="post" action="<?= e(url('/campaigns/undo-deliveries')) ?>" style="margin-bottom:1rem"
           data-confirm="إلغاء جميع التسليمات (<?= $delivered ?>) وإعادة المستفيدين لـ «قيد التسليم»؟ يتيح ذلك حذف العملية.">

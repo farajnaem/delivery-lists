@@ -8,6 +8,7 @@ use App\ArabicFormat;
 use App\MobileAuth;
 use App\MobileSyncService;
 use App\Auth;
+use App\CampaignMergeService;
 use App\CampaignService;
 use App\Csrf;
 use App\DatabaseBackupService;
@@ -786,6 +787,7 @@ if ($uri === '/campaigns/edit' && $method === 'GET') {
         'stats' => CampaignService::stats($id),
         'canEdit' => true,
         'canCancelDeliveries' => RoleHelper::canCancelDeliveries(Auth::role() ?? ''),
+        'canMerge' => RoleHelper::canMergeCampaigns(Auth::role() ?? ''),
     ]);
     exit;
 }
@@ -812,6 +814,87 @@ if ($uri === '/campaigns/edit' && $method === 'POST') {
     CampaignService::update($id, $data);
     flash('success', 'تم حفظ التعديلات.');
     redirect('/campaigns/view?id=' . $id);
+}
+
+if ($uri === '/campaigns/merge' && $method === 'GET') {
+    Auth::requireRole(fn ($r) => RoleHelper::canMergeCampaigns($r));
+    $fromId = (int) ($_GET['from'] ?? 0);
+    $toId = (int) ($_GET['to'] ?? 0);
+    $source = CampaignService::find($fromId);
+    if (!$source) {
+        flash('error', 'العملية المصدر غير موجودة.');
+        redirect('/');
+    }
+    $preview = null;
+    $target = null;
+    if ($toId > 0) {
+        $target = CampaignService::find($toId);
+        $preview = CampaignMergeService::preview($fromId, $toId);
+        unset($preview['decisions']);
+    }
+    $others = array_values(array_filter(
+        CampaignService::all(),
+        static function (array $c) use ($fromId): bool {
+            if ((int) $c['id'] === $fromId) {
+                return false;
+            }
+            $name = (string) ($c['name'] ?? '');
+            if (str_starts_with($name, 'نسخة احتياط')) {
+                return false;
+            }
+            if (str_contains($name, 'فارغة بعد الدمج')) {
+                return false;
+            }
+            return true;
+        }
+    ));
+    view('campaigns/merge', [
+        'title' => 'دمج عملية',
+        'source' => $source,
+        'target' => $target,
+        'toId' => $toId,
+        'preview' => $preview,
+        'campaigns' => $others,
+    ]);
+    exit;
+}
+
+if ($uri === '/campaigns/merge' && $method === 'POST') {
+    Auth::requireRole(fn ($r) => RoleHelper::canMergeCampaigns($r));
+    $fromId = (int) ($_POST['from'] ?? 0);
+    $toId = (int) ($_POST['to'] ?? 0);
+    if (!Csrf::verify($_POST['_csrf'] ?? null)) {
+        flash('error', Csrf::failureMessage());
+        redirect('/campaigns/merge?from=' . $fromId . ($toId > 0 ? '&to=' . $toId : ''));
+    }
+    $source = CampaignService::find($fromId);
+    if (!$source) {
+        flash('error', 'العملية المصدر غير موجودة.');
+        redirect('/');
+    }
+    $confirm = trim((string) ($_POST['confirm_name_input'] ?? ''));
+    if ($confirm !== (string) ($source['name'] ?? '')) {
+        flash('error', 'اسم التأكيد غير مطابق — لم يُدمج شيء.');
+        redirect('/campaigns/merge?from=' . $fromId . '&to=' . $toId);
+    }
+    $result = CampaignMergeService::merge($fromId, $toId, (int) (Auth::id() ?? 0));
+    if (empty($result['ok'])) {
+        flash('error', (string) ($result['error'] ?? 'فشل الدمج.'));
+        redirect('/campaigns/merge?from=' . $fromId . '&to=' . $toId);
+    }
+    $moved = (int) ($result['moved'] ?? 0);
+    $dups = (int) ($result['duplicates'] ?? 0);
+    $backupName = (string) ($result['backup_name'] ?? '');
+    $msg = 'تم الدمج: نُقل ' . $moved . ' مستفيد، وعُولج ' . $dups . ' تكرار هوية.';
+    if ($backupName !== '') {
+        $msg .= ' النسخة الاحتياط: «' . $backupName . '».';
+    }
+    if (!empty($result['db_backup'])) {
+        $msg .= ' ونسخة قاعدة بيانات: ' . $result['db_backup'] . '.';
+    }
+    $msg .= ' العملية المصدر أصبحت فارغة ويمكن حذفها بعد المراجعة.';
+    flash('success', $msg);
+    redirect('/campaigns/view?id=' . $toId);
 }
 
 if ($uri === '/campaigns/delete' && $method === 'POST') {

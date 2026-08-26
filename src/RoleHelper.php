@@ -25,6 +25,7 @@ final class RoleHelper
             'تسليم من المخزن (ويب + تطبيق)',
             'تسليم جماعي يدوي وتصحيح الحالات والتراجع عن الدفعات',
             'إلغاء التسليمات',
+            'دمج عمليتين (مرة واحدة مع نسخة احتياط)',
             'نسخ احتياطي لقاعدة البيانات',
         ],
         'coordinator' => [
@@ -105,6 +106,12 @@ final class RoleHelper
 
     /** إلغاء التسليمات — مدير النظام فقط */
     public static function canCancelDeliveries(string $role): bool
+    {
+        return $role === 'admin';
+    }
+
+    /** دمج عمليتين مع نسخة احتياط — مدير النظام فقط */
+    public static function canMergeCampaigns(string $role): bool
     {
         return $role === 'admin';
     }
