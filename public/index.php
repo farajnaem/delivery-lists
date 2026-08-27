@@ -280,15 +280,62 @@ if (str_starts_with($uri, '/api/integration')) {
                 $count = (int) ($result['added'] ?? 0);
             }
 
-            json_response([
-                'ok' => true,
-                'campaign_id' => $campaignId,
-                'beneficiaries' => $count,
-                'created' => $created,
-            ]);
+        json_response([
+            'ok' => true,
+            'campaign_id' => $campaignId,
+            'beneficiaries' => $count,
+            'created' => $created,
+        ]);
         } catch (\Throwable $e) {
             json_response(['ok' => false, 'error' => $e->getMessage()], 500);
         }
+    }
+
+    if (preg_match('#^/api/integration/campaigns/(\d+)/beneficiaries$#', $uri, $m) && $method === 'GET') {
+        $campaignId = (int) $m[1];
+        $campaign = CampaignService::find($campaignId);
+        if (! $campaign) {
+            json_response(['ok' => false, 'error' => 'العملية غير موجودة'], 404);
+        }
+
+        $pdo = \App\Database::getConnection();
+        $stmt = $pdo->prepare(
+            'SELECT national_id, name, receipt_status, delivered_at, actual_delivery_date, day_index, disbursement_code
+             FROM beneficiaries WHERE campaign_id = ?'
+        );
+        $stmt->execute([$campaignId]);
+
+        $rows = [];
+        $deliveredCount = 0;
+        $pendingCount = 0;
+        $total = 0;
+        while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
+            $total++;
+            $delivered = DeliveryService::isDeliveredStatus($row['receipt_status'] ?? '');
+            if ($delivered) {
+                $deliveredCount++;
+            } else {
+                $pendingCount++;
+            }
+            $rows[] = [
+                'national_id' => ArabicFormat::normalizeNationalId($row['national_id'] ?? ''),
+                'name' => (string) ($row['name'] ?? ''),
+                'status' => $delivered ? 'received' : 'pending',
+                'receipt_status' => (string) ($row['receipt_status'] ?? ''),
+                'delivered_at' => $row['delivered_at'] ?: ($row['actual_delivery_date'] ?: null),
+            ];
+        }
+
+        json_response([
+            'ok' => true,
+            'campaign_id' => $campaignId,
+            'campaign_name' => (string) ($campaign['name'] ?? ''),
+            'total' => $total,
+            'delivered' => $deliveredCount,
+            'pending' => $pendingCount,
+            'beneficiaries' => $rows,
+            'rows' => $rows,
+        ]);
     }
 
     if (preg_match('#^/api/integration/campaigns/(\d+)/receipts$#', $uri, $m) && $method === 'GET') {
@@ -306,22 +353,40 @@ if (str_starts_with($uri, '/api/integration')) {
         $stmt->execute([$campaignId]);
 
         $receipts = [];
+        $allRows = [];
         $deliveredCount = 0;
         $pendingCount = 0;
         $total = 0;
         while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
             $total++;
+            $nid = ArabicFormat::normalizeNationalId($row['national_id'] ?? '');
+            $name = (string) ($row['name'] ?? '');
+            $deliveredAt = $row['delivered_at'] ?: ($row['actual_delivery_date'] ?: null);
             if (DeliveryService::isDeliveredStatus($row['receipt_status'] ?? '')) {
                 $deliveredCount++;
                 $receipts[] = [
-                    'national_id' => ArabicFormat::normalizeNationalId($row['national_id'] ?? ''),
-                    'name' => (string) ($row['name'] ?? ''),
+                    'national_id' => $nid,
+                    'name' => $name,
                     'status' => 'received',
                     'receipt_status' => DeliveryService::STATUS_DELIVERED,
-                    'delivered_at' => $row['delivered_at'] ?: ($row['actual_delivery_date'] ?: null),
+                    'delivered_at' => $deliveredAt,
+                ];
+                $allRows[] = [
+                    'national_id' => $nid,
+                    'name' => $name,
+                    'status' => 'received',
+                    'receipt_status' => DeliveryService::STATUS_DELIVERED,
+                    'delivered_at' => $deliveredAt,
                 ];
             } else {
                 $pendingCount++;
+                $allRows[] = [
+                    'national_id' => $nid,
+                    'name' => $name,
+                    'status' => 'pending',
+                    'receipt_status' => (string) ($row['receipt_status'] ?? DeliveryService::STATUS_PENDING),
+                    'delivered_at' => $deliveredAt,
+                ];
             }
         }
 
@@ -333,6 +398,8 @@ if (str_starts_with($uri, '/api/integration')) {
             'delivered' => $deliveredCount,
             'pending' => $pendingCount,
             'receipts' => $receipts,
+            'beneficiaries' => $allRows,
+            'rows' => $allRows,
         ]);
     }
 
