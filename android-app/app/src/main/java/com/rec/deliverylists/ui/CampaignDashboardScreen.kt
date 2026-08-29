@@ -27,6 +27,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -80,6 +81,8 @@ fun CampaignDashboardScreen(
     val snackbar = remember { SnackbarHostState() }
     val recent by repo.observeRecent(campaignId).collectAsState(initial = emptyList())
     val late by repo.observeLate(campaignId).collectAsState(initial = emptyList())
+    val pendingLocal by repo.observePendingCount(campaignId).collectAsState(initial = 0)
+    val pendingQueue by repo.observePendingQueue(campaignId).collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
     val focus = LocalFocusManager.current
 
@@ -255,10 +258,19 @@ fun CampaignDashboardScreen(
                             scope.launch {
                                 syncing = true
                                 repo.syncCampaign(campaignId)
-                                    .onSuccess {
+                                    .onSuccess { result ->
                                         campaign = repo.getCampaign(campaignId) ?: campaign
                                         refreshSelectedFromDb()
-                                        toast("تمت المزامنة بنجاح")
+                                        toast(
+                                            when {
+                                                result.remaining > 0 ->
+                                                    "بقي ${result.remaining} تسليم بانتظار الرفع" +
+                                                        (result.firstError?.let { " — $it" } ?: "")
+                                                result.cleared > 0 ->
+                                                    "تمت مزامنة ${result.cleared} تسليم — الطابور فارغ"
+                                                else -> "تمت المزامنة بنجاح"
+                                            },
+                                        )
                                     }
                                     .onFailure { toast(it.message ?: "فشلت المزامنة") }
                                 syncing = false
@@ -277,6 +289,21 @@ fun CampaignDashboardScreen(
 
             Spacer(Modifier.height(8.dp))
             Text(c.parcelName, style = MaterialTheme.typography.headlineSmall)
+            if (pendingLocal > 0) {
+                Spacer(Modifier.height(8.dp))
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        "بانتظار الرفع للسيرفر: $pendingLocal تسليم — اضغط «مزامنة»",
+                        modifier = Modifier.padding(12.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
+                }
+            }
             Text(
                 "${c.name} — ${c.warehouseName}",
                 style = MaterialTheme.typography.bodyMedium,
@@ -332,6 +359,26 @@ fun CampaignDashboardScreen(
             }
 
             Spacer(Modifier.height(20.dp))
+            if (pendingQueue.isNotEmpty()) {
+                Text(
+                    "لم تُرفع للسيرفر (${pendingQueue.size})",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                Text(
+                    "صوّري هذه القائمة أو انسخوها — هؤلاء الـ ${pendingQueue.size} على الجهاز فقط حتى تنجح المزامنة.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(6.dp))
+                pendingQueue.forEachIndexed { index, row ->
+                    Text(
+                        "${index + 1}. ${row.displayCode} — ${row.beneficiaryName}",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                Spacer(Modifier.height(16.dp))
+            }
             Text("متأخرون (${late.size})", style = MaterialTheme.typography.titleMedium)
             if (late.isEmpty()) {
                 Text(
@@ -357,7 +404,7 @@ fun CampaignDashboardScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
-                recent.take(15).forEach { row ->
+                recent.take(50).forEach { row ->
                     val recv = row.receivedByLabel?.takeIf { it.isNotBlank() }?.let { " — $it" }.orEmpty()
                     Text(
                         "${row.displayCode} — ${row.name} — ${ArabicFormat.formatDateTime(row.deliveredAt)}$recv",

@@ -146,8 +146,10 @@ fun CampaignListScreen(
                             repo.syncAllPending()
                                 .onSuccess { n ->
                                     showMsg(
-                                        if (n > 0) "تمت مزامنة $n تسليم بنجاح"
-                                        else "لا توجد تسليمات بانتظار المزامنة",
+                                        when {
+                                            n > 0 -> "تمت مزامنة $n تسليم بنجاح"
+                                            else -> "لم يُرفع أي تسليم معلّق. إذا بقي الشريط الأصفر: افتح العملية واضغط مزامنة واقرأ الرسالة"
+                                        },
                                     )
                                 }
                                 .onFailure { showMsg(it.message ?: "فشلت المزامنة") }
@@ -255,7 +257,7 @@ private fun ParcelCard(
 @Composable
 fun FeedbackSnackbar(data: androidx.compose.material3.SnackbarData) {
     val msg = data.visuals.message
-    val isError = listOf("فشل", "تعذّر", "خطأ", "انتهت", "لا يوجد", "غير", "مهلة", "اتصال")
+    val isError = listOf("فشل", "تعذّر", "خطأ", "انتهت", "لا يوجد", "غير", "مهلة", "اتصال", "بقي", "لم يُرفع")
         .any { msg.contains(it) }
     Snackbar(
         snackbarData = data,

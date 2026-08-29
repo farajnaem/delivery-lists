@@ -37,6 +37,13 @@ data class ConfirmDeliveryResult(
     val online: Boolean,
 )
 
+data class CampaignSyncResult(
+    val syncToken: String?,
+    val cleared: Int,
+    val remaining: Int,
+    val firstError: String?,
+)
+
 class DeliveryRepository(
     private val db: AppDatabase,
     private val session: SessionStore,
@@ -49,6 +56,12 @@ class DeliveryRepository(
 
     val campaignsFlow: Flow<List<CampaignEntity>> = campaignDao.observeAll()
     val pendingCountFlow: Flow<Int> = pendingDao.observePendingCount()
+
+    fun observePendingCount(campaignId: Int): Flow<Int> =
+        pendingDao.observePendingCountForCampaign(campaignId)
+
+    fun observePendingQueue(campaignId: Int): Flow<List<PendingDeliveryEntity>> =
+        pendingDao.observePendingForCampaign(campaignId)
 
     fun getTokenFlow() = session.tokenFlow
 
@@ -141,7 +154,7 @@ class DeliveryRepository(
     suspend fun syncCampaign(
         campaignId: Int,
         onProgress: ((Float, String) -> Unit)? = null,
-    ): Result<String?> = apiCall {
+    ): Result<CampaignSyncResult> = apiCall {
         requireToken()
         suspend fun report(fraction: Float, message: String) {
             if (onProgress == null) return
@@ -185,10 +198,21 @@ class DeliveryRepository(
                 downloadSnapshot(campaignId) { fraction, message ->
                     progressCb?.invoke(0.7f + fraction * 0.25f, message)
                 }.getOrThrow()
+                applySyncPayload(campaignId, res, pendingDao.pendingForCampaign(campaignId))
             }
 
+            val remaining = pendingDao.pendingForCampaign(campaignId)
+            val firstError = remaining.firstOrNull()?.let { left ->
+                res.upload?.results?.find { it.beneficiary_id == left.beneficiaryId }?.error
+            } ?: res.upload?.results?.firstOrNull { !it.ok && !it.already }?.error
+            val remainingCount = remaining.size
             report(1f, "اكتملت المزامنة")
-            res.sync_token
+            CampaignSyncResult(
+                syncToken = res.sync_token,
+                cleared = maxOf(0, pendingEntities.size - remainingCount),
+                remaining = remainingCount,
+                firstError = firstError,
+            )
         }
     }
 
@@ -204,11 +228,13 @@ class DeliveryRepository(
 
     suspend fun syncAllPending(): Result<Int> = apiCall {
         var synced = 0
-        val campaigns = campaignDao.observeAll().first().filter { it.snapshotComplete }
-        campaigns.forEach { c ->
-            val before = pendingDao.pendingForCampaign(c.id).size
-            syncCampaign(c.id).getOrThrow()
-            val after = pendingDao.pendingForCampaign(c.id).size
+        val pendingCampaignIds = pendingDao.allPending().map { it.campaignId }.distinct()
+        val snapshotIds = campaignDao.observeAll().first().filter { it.snapshotComplete }.map { it.id }
+        val ids = (pendingCampaignIds + snapshotIds).distinct()
+        ids.forEach { campaignId ->
+            val before = pendingDao.pendingForCampaign(campaignId).size
+            syncCampaign(campaignId).getOrThrow()
+            val after = pendingDao.pendingForCampaign(campaignId).size
             synced += maxOf(0, before - after)
         }
         synced
@@ -341,11 +367,11 @@ class DeliveryRepository(
             applySyncPayload(campaignId, res, pendingEntities)
 
             val match = res.upload?.results?.find { row ->
-                (row["beneficiary_id"] as? Number)?.toInt() == beneficiary.id
+                row.beneficiary_id == beneficiary.id
             }
-            val ok = match?.get("ok") as? Boolean ?: false
-            val already = match?.get("already") as? Boolean ?: false
-            val error = match?.get("error") as? String
+            val ok = match?.ok == true
+            val already = match?.already == true || isAlreadyDeliveredError(match?.error)
+            val error = match?.error
 
             when {
                 ok -> {
@@ -489,13 +515,25 @@ class DeliveryRepository(
             beneficiaryDao.upsertAll(res.updated_beneficiaries.map { it.toEntity() })
         }
 
-        pendingEntities.forEach { item ->
-            val match = res.upload?.results?.find {
-                (it["beneficiary_id"] as? Number)?.toInt() == item.beneficiaryId
+        val upload = res.upload
+        val acceptedIds = buildSet {
+            upload?.results.orEmpty().forEach { row ->
+                if (row.ok || row.already || isAlreadyDeliveredError(row.error)) {
+                    add(row.beneficiary_id)
+                }
             }
-            val ok = match?.get("ok") as? Boolean ?: false
-            val already = match?.get("already") as? Boolean ?: false
-            if (ok || already) {
+            res.updated_beneficiaries
+                .filter { it.receipt_status == STATUS_DELIVERED }
+                .forEach { add(it.id) }
+            res.recent_delivered.mapNotNull { it.id }.forEach { add(it) }
+        }
+        val allAccepted = pendingEntities.isNotEmpty() &&
+            upload != null &&
+            upload.failed == 0 &&
+            upload.synced >= pendingEntities.size
+
+        pendingEntities.forEach { item ->
+            if (allAccepted || item.beneficiaryId in acceptedIds) {
                 pendingDao.delete(item.clientId)
             }
         }
@@ -503,6 +541,11 @@ class DeliveryRepository(
         res.stock?.let { updateStockLocal(campaignId, it, res.campaign) }
         refreshCaches(campaignId, res.recent_delivered, res.late)
         campaignDao.updateSyncMeta(campaignId, res.sync_token, System.currentTimeMillis(), true)
+    }
+
+    private fun isAlreadyDeliveredError(error: String?): Boolean {
+        val text = error.orEmpty()
+        return text.contains("مسبقا") || text.contains("already", ignoreCase = true)
     }
 
     fun observeRecent(campaignId: Int) = cacheDao.observeRecent(campaignId)

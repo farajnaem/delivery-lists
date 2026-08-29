@@ -116,9 +116,16 @@ data class SyncRequest(
     val pending_deliveries: List<PendingDeliveryItem> = emptyList(),
 )
 
+data class SyncItemResult(
+    val beneficiary_id: Int = 0,
+    val ok: Boolean = false,
+    val already: Boolean = false,
+    val error: String? = null,
+)
+
 data class SyncUploadResult(
     val ok: Boolean = true,
-    val results: List<Map<String, Any?>> = emptyList(),
+    val results: List<SyncItemResult> = emptyList(),
     val synced: Int = 0,
     val failed: Int = 0,
 )

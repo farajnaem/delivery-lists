@@ -71,6 +71,15 @@ interface PendingDeliveryDao {
     @Query("SELECT * FROM pending_deliveries WHERE campaignId = :campaignId AND syncStatus = 'pending' ORDER BY queuedAt")
     suspend fun pendingForCampaign(campaignId: Int): List<PendingDeliveryEntity>
 
+    @Query("SELECT * FROM pending_deliveries WHERE syncStatus = 'pending' ORDER BY queuedAt")
+    suspend fun allPending(): List<PendingDeliveryEntity>
+
+    @Query("SELECT COUNT(*) FROM pending_deliveries WHERE campaignId = :campaignId AND syncStatus = 'pending'")
+    fun observePendingCountForCampaign(campaignId: Int): Flow<Int>
+
+    @Query("SELECT * FROM pending_deliveries WHERE campaignId = :campaignId AND syncStatus = 'pending' ORDER BY queuedAt")
+    fun observePendingForCampaign(campaignId: Int): Flow<List<PendingDeliveryEntity>>
+
     @Query("SELECT COUNT(*) FROM pending_deliveries WHERE syncStatus = 'pending'")
     fun observePendingCount(): Flow<Int>
 

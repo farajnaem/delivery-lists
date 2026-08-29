@@ -760,7 +760,12 @@ final class DeliveryService
             } else {
                 $failed++;
             }
-            $results[] = array_merge(['beneficiary_id' => $beneficiaryId], $result);
+            $results[] = [
+                'beneficiary_id' => $beneficiaryId,
+                'ok' => !empty($result['ok']),
+                'already' => !empty($result['already']),
+                'error' => isset($result['error']) ? (string) $result['error'] : null,
+            ];
         }
 
         return ['ok' => true, 'results' => $results, 'synced' => $synced, 'failed' => $failed];
@@ -811,6 +816,31 @@ final class DeliveryService
         ');
         $stmt->execute([$campaignId, self::STATUS_DELIVERED]);
         return (int) $stmt->fetchColumn();
+    }
+
+    /**
+     * الافتتاحي لا يُخفَّض بعد بدء التسليم: يبقى الأكبر بين القيمة الحالية،
+     * عدد الأسماء، عدد المستلمين، وأي قيمة مقترحة من دفعة جديدة.
+     */
+    public static function reconcileOpeningQuantity(int $campaignId, int $suggested = 0): int
+    {
+        $campaign = CampaignService::find($campaignId);
+        if (!$campaign) {
+            return 0;
+        }
+
+        $pdo = Database::getConnection();
+        $stmt = $pdo->prepare('SELECT COUNT(*) FROM beneficiaries WHERE campaign_id = ?');
+        $stmt->execute([$campaignId]);
+        $total = (int) $stmt->fetchColumn();
+        $delivered = self::deliveredCount($campaignId);
+        $current = (int) ($campaign['opening_quantity'] ?? 0);
+        $opening = max($current, $total, $delivered, max(0, $suggested));
+        if ($opening !== $current) {
+            CampaignService::updateOpeningQuantity($campaignId, $opening);
+        }
+
+        return $opening;
     }
 
     /**

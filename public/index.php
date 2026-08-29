@@ -227,6 +227,10 @@ if (str_starts_with($uri, '/api/integration')) {
             $campaignId = (int) ($stmt->fetchColumn() ?: 0);
         }
 
+        $existing = $campaignId > 0 ? CampaignService::find($campaignId) : null;
+        $previousOpening = (int) ($existing['opening_quantity'] ?? 0);
+        $suggestedOpening = max(0, (int) ($campaignData['opening_quantity'] ?? count($beneficiaries)));
+
         $fields = [
             'name' => (string) $campaignData['name'],
             'pipeline_name' => (string) ($campaignData['pipeline_name'] ?? ''),
@@ -242,9 +246,24 @@ if (str_starts_with($uri, '/api/integration')) {
             'work_end' => (string) ($campaignData['work_end'] ?? '16:00'),
             'per_window_capacity' => max(1, (int) ($campaignData['per_window_capacity'] ?? 50)),
             'num_windows' => max(1, (int) ($campaignData['num_windows'] ?? 4)),
-            'opening_quantity' => max(0, (int) ($campaignData['opening_quantity'] ?? count($beneficiaries))),
+            'opening_quantity' => $previousOpening,
             'message_extra' => CampaignService::normalizeMessageExtra((string) ($campaignData['message_extra'] ?? '')),
         ];
+
+        // لا نمسح شبابيك/دوام عملية مولَّدة بدفعة لاحقة من النظام الجديد
+        if ($existing && ($existing['status'] ?? '') === 'generated') {
+            $fields['num_windows'] = max(1, (int) ($existing['num_windows'] ?? $fields['num_windows']));
+            $fields['per_window_capacity'] = max(1, (int) ($existing['per_window_capacity'] ?? $fields['per_window_capacity']));
+            $fields['work_start'] = (string) ($existing['work_start'] ?: $fields['work_start']);
+            $fields['work_end'] = (string) ($existing['work_end'] ?: $fields['work_end']);
+            $fields['num_days'] = max(1, (int) ($existing['num_days'] ?? $fields['num_days']));
+            if (trim((string) ($existing['delivery_start'] ?? '')) !== '') {
+                $fields['delivery_start'] = (string) $existing['delivery_start'];
+            }
+            if (trim((string) ($existing['delivery_end'] ?? '')) !== '') {
+                $fields['delivery_end'] = (string) $existing['delivery_end'];
+            }
+        }
 
         try {
             if ($campaignId > 0) {
@@ -279,6 +298,8 @@ if (str_starts_with($uri, '/api/integration')) {
                 $result = ExcelImportService::appendBeneficiaries($campaignId, $normalized);
                 $count = (int) ($result['added'] ?? 0);
             }
+
+            DeliveryService::reconcileOpeningQuantity($campaignId, $suggestedOpening);
 
         json_response([
             'ok' => true,
