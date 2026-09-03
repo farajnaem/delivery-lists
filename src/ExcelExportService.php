@@ -451,16 +451,24 @@ final class ExcelExportService
 
         $delivered = array_values(array_filter(
             $all,
-            static fn (array $b): bool => ($b['receipt_status'] ?? '') === DeliveryService::STATUS_DELIVERED
+            static fn (array $b): bool => DeliveryService::isDeliveredStatus($b['receipt_status'] ?? null)
         ));
         $pending = array_values(array_filter(
             $all,
-            static fn (array $b): bool => ($b['receipt_status'] ?? '') !== DeliveryService::STATUS_DELIVERED
+            static fn (array $b): bool => !DeliveryService::isDeliveredStatus($b['receipt_status'] ?? null)
         ));
-        $deliveredUnassigned = array_values(array_filter(
-            $delivered,
-            static fn (array $b): bool => !self::isAssigned($b)
-        ));
+        $deliveredUnassigned = [];
+        $deliveredAssigned = [];
+        foreach ($delivered as $b) {
+            if (self::isAssigned($b)) {
+                $deliveredAssigned[] = $b;
+            } else {
+                $deliveredUnassigned[] = $b;
+            }
+        }
+        // بلا يوم أولاً حتى لا يُفقدون عند التصفّح، ثم المعيّنون
+        $deliveredOrdered = array_merge($deliveredUnassigned, $deliveredAssigned);
+
         // متأخرون لم يستلموا: موعدهم قبل اليوم وما زالوا بانتظار التسليم (ليسوا مستلمين)
         $latePending = array_values(array_filter(
             $pending,
@@ -473,10 +481,24 @@ final class ExcelExportService
         $spreadsheet = new Spreadsheet();
         $spreadsheet->getDefaultStyle()->getFont()->setName('Arial')->setSize(10);
 
-        self::buildDeliverySummarySheet($spreadsheet, $campaign, $stats, $all);
+        $deliveredCount = count($deliveredOrdered);
+        $unassignedCount = count($deliveredUnassigned);
+        self::buildDeliverySummarySheet($spreadsheet, $campaign, $stats, $all, $deliveredCount, $unassignedCount);
+        self::buildDeliveryDetailSheet(
+            $spreadsheet,
+            'مستلم_' . $deliveredCount,
+            $deliveredOrdered,
+            $campaign,
+            'كل المستلمين (' . self::ar($deliveredCount) . ') — منهم بلا يوم: ' . self::ar($unassignedCount)
+        );
+        self::buildDeliveryDetailSheet(
+            $spreadsheet,
+            'مستلم_بلا_يوم_' . $unassignedCount,
+            $deliveredUnassigned,
+            $campaign,
+            'مستلمون بلا يوم توزيع — يجب أن يساوي الفرق بين الملخص والكشف القديم'
+        );
         self::buildDeliveryDetailSheet($spreadsheet, 'كشف_التسليمات', $all, $campaign);
-        self::buildDeliveryDetailSheet($spreadsheet, 'مستلم', $delivered, $campaign);
-        self::buildDeliveryDetailSheet($spreadsheet, 'مستلم_بلا_يوم', $deliveredUnassigned, $campaign);
         self::buildDeliveryDetailSheet($spreadsheet, 'بانتظار_التسليم', $pending, $campaign);
         self::buildDeliveryDetailSheet($spreadsheet, 'متأخر_لم_يستلم', $latePending, $campaign);
         self::buildSmsOutboxSheet(
@@ -491,9 +513,17 @@ final class ExcelExportService
         return self::saveSpreadsheet($spreadsheet, $campaign, 'deliveries');
     }
 
-    /** @param list<array<string,mixed>> $all */
-    private static function buildDeliverySummarySheet(Spreadsheet $spreadsheet, array $campaign, array $stats, array $all): void
-    {
+    /**
+     * @param list<array<string,mixed>> $all
+     */
+    private static function buildDeliverySummarySheet(
+        Spreadsheet $spreadsheet,
+        array $campaign,
+        array $stats,
+        array $all,
+        ?int $exportedDeliveredCount = null,
+        ?int $exportedUnassignedDeliveredCount = null,
+    ): void {
         $sheet = $spreadsheet->getActiveSheet();
         $sheet->setTitle('ملخص_المخزن');
         $sheet->setRightToLeft(true);
@@ -502,24 +532,25 @@ final class ExcelExportService
         $sheet->mergeCells('A1:G1');
         self::styleSectionTitle($sheet, 'A1:G1');
 
-        $deliveredUnassignedCount = 0;
-        foreach ($all as $b) {
-            if (($b['receipt_status'] ?? '') === DeliveryService::STATUS_DELIVERED && !self::isAssigned($b)) {
-                $deliveredUnassignedCount++;
-            }
-        }
+        $dbDelivered = (int) ($stats['delivered'] ?? 0);
+        $opening = (int) ($stats['opening_quantity'] ?? 0);
+        $exportedDeliveredCount ??= $dbDelivered;
+        $exportedUnassignedDeliveredCount ??= 0;
+        $assignedDelivered = max(0, $exportedDeliveredCount - $exportedUnassignedDeliveredCount);
 
         $rows = [
             ['تاريخ التقرير', self::arDateTime(date('Y-m-d H:i:s'))],
             ['اسم الطرد', $campaign['parcel_name']],
             ['المخزن', $campaign['warehouse_name']],
             ['فترة التسليم', self::arDate((string) $campaign['delivery_start']) . ' — ' . self::arDate((string) $campaign['delivery_end'])],
-            ['الكمية الافتتاحية (مخزون)', self::ar((int) ($stats['opening_quantity'] ?? 0))],
-            ['إجمالي المستفيدين (كشف)', self::ar((int) ($stats['total_beneficiaries'] ?? 0))],
-            ['مُسلَّم (الكل)', self::ar((int) ($stats['delivered'] ?? 0))],
-            ['منها مستلم بلا يوم توزيع', self::ar($deliveredUnassignedCount)],
+            ['الكمية الافتتاحية = مخزون طرود (ليست عدد المستلمين)', self::ar($opening)],
+            ['إجمالي المرشحين في الكشف', self::ar((int) ($stats['total_beneficiaries'] ?? 0))],
+            ['عدد المستلمين (من قاعدة البيانات)', self::ar($dbDelivered)],
+            ['صفوف ورقة مستلم في هذا الملف', self::ar($exportedDeliveredCount)],
+            ['منها مستلم معيّن على يوم', self::ar($assignedDelivered)],
+            ['منها مستلم بلا يوم توزيع (هذا هو الفرق ' . self::ar($exportedUnassignedDeliveredCount) . ')', self::ar($exportedUnassignedDeliveredCount)],
             ['بانتظار التسليم (كشف)', self::ar((int) ($stats['pending'] ?? 0))],
-            ['رصيد المخزون المتبقي', self::ar((int) ($stats['balance'] ?? 0))],
+            ['رصيد المخزون المتبقي (افتتاحي − مُسلَّم)', self::ar((int) ($stats['balance'] ?? 0))],
             ['في الموعد', self::ar((int) ($stats['on_time'] ?? 0))],
             ['متأخر (استلم بعد الموعد/الشباك)', self::ar((int) ($stats['late'] ?? 0))],
             ['مخطط اليوم', self::ar((int) ($stats['planned_today'] ?? 0))],
@@ -713,9 +744,16 @@ final class ExcelExportService
     }
 
     /** @param list<array<string,mixed>> $items */
-    private static function buildDeliveryDetailSheet(Spreadsheet $spreadsheet, string $title, array $items, array $campaign): void
-    {
-        if (strlen($title) > 31) {
+    private static function buildDeliveryDetailSheet(
+        Spreadsheet $spreadsheet,
+        string $title,
+        array $items,
+        array $campaign,
+        string $subtitle = '',
+    ): void {
+        if (function_exists('mb_strlen') && mb_strlen($title) > 31) {
+            $title = mb_substr($title, 0, 31);
+        } elseif (strlen($title) > 31) {
             $title = substr($title, 0, 31);
         }
 
@@ -724,12 +762,18 @@ final class ExcelExportService
         $sheet->setRightToLeft(true);
 
         $sheet->setCellValue('A1', $title . ' — ' . $campaign['name']);
-        $sheet->mergeCells('A1:P1');
-        self::styleSectionTitle($sheet, 'A1:P1');
+        $sheet->mergeCells('A1:Q1');
+        self::styleSectionTitle($sheet, 'A1:Q1');
 
-        $headerRow = 3;
+        $note = $subtitle !== ''
+            ? $subtitle
+            : ('عدد الصفوف: ' . self::ar(count($items)));
+        $sheet->setCellValue('A2', $note . ' | عدد الصفوف: ' . self::ar(count($items)));
+        $sheet->mergeCells('A2:Q2');
+
+        $headerRow = 4;
         $headers = [
-            '#', 'الاسم', 'رقم الهوية', 'رقم الجوال', 'كود الصرف', 'حالة الاستلام',
+            '#', 'الاسم', 'رقم الهوية', 'رقم الجوال', 'كود الصرف', 'حالة الاستلام', 'تعيين اليوم',
             'موعد التسليم', 'شباك', 'من', 'إلى',
             'تاريخ التسليم', 'نوع التسليم', 'وقت التسجيل', 'أمين المخزن',
             'طريقة الاستلام', 'اسم المستلم',
@@ -751,6 +795,7 @@ final class ExcelExportService
                 DeliveryService::RECEIVED_BY_PROXY => 'غيره',
                 default => '',
             };
+            $assignedLabel = self::isAssigned($b) ? 'معيّن' : 'بلا يوم';
             $sheet->fromArray([
                 self::ar($i + 1),
                 $b['name'],
@@ -758,6 +803,7 @@ final class ExcelExportService
                 null,
                 null,
                 self::formatReceiptStatusForExport($b),
+                $assignedLabel,
                 self::arDate((string) $b['delivery_date']),
                 self::ar($b['window_num']),
                 self::arTime((string) $b['time_from']),
@@ -776,15 +822,18 @@ final class ExcelExportService
 
         $lastRow = max($headerRow, $row - 1);
         if ($row > $headerRow + 1) {
-            self::borderAll($sheet, 'A' . $headerRow . ':P' . $lastRow);
-            self::styleDataRows($sheet, 'A' . ($headerRow + 1) . ':P' . $lastRow);
+            self::borderAll($sheet, 'A' . $headerRow . ':Q' . $lastRow);
+            self::styleDataRows($sheet, 'A' . ($headerRow + 1) . ':Q' . $lastRow);
         }
 
-        $widths = ['A' => 5, 'B' => 22, 'C' => 14, 'D' => 12, 'E' => 13, 'F' => 12, 'G' => 12, 'H' => 6, 'I' => 7, 'J' => 7, 'K' => 12, 'L' => 10, 'M' => 18, 'N' => 16, 'O' => 12, 'P' => 18];
+        $widths = [
+            'A' => 5, 'B' => 22, 'C' => 14, 'D' => 12, 'E' => 13, 'F' => 12, 'G' => 10,
+            'H' => 12, 'I' => 6, 'J' => 7, 'K' => 7, 'L' => 12, 'M' => 10, 'N' => 18, 'O' => 16, 'P' => 12, 'Q' => 18,
+        ];
         foreach ($widths as $col => $w) {
             $sheet->getColumnDimension($col)->setWidth($w);
         }
-        self::applyPortraitPrint($sheet, $headerRow, $lastRow, 'P');
+        self::applyPortraitPrint($sheet, $headerRow, $lastRow, 'Q');
     }
 
     /** @param list<array<string,mixed>> $messages */

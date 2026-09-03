@@ -46,10 +46,15 @@ $latePending = (int) ($stock['late_pending'] ?? 0);
 
 <div class="grid-stats">
     <div class="stat-card">
-        <div class="stat-label">مُسلَّم / كمية افتتاحية</div>
-        <div class="stat-value"><?= ar_digits($delivered) ?> / <?= ar_digits($opening) ?></div>
+        <div class="stat-label">عدد المستلمين (أشخاص)</div>
+        <div class="stat-value"><?= ar_digits($delivered) ?></div>
         <div class="progress"><span style="width:<?= min(100, $delPct) ?>%"></span></div>
-        <div class="stat-meta">الافتتاحي = مخزون الطرود الذي أدخلته</div>
+        <div class="stat-meta">من لديهم حالة «مستلم» في النظام</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">كمية افتتاحية (مخزون)</div>
+        <div class="stat-value"><?= ar_digits($opening) ?></div>
+        <div class="stat-meta">طرود أدخلتها — ليست عدد المستلمين</div>
     </div>
     <div class="stat-card">
         <div class="stat-label">رصيد المخزون</div>
