@@ -440,14 +440,27 @@ final class ExcelExportService
             throw new \RuntimeException('العملية غير موجودة.');
         }
 
-        $all = self::assignedOnly(CampaignService::beneficiariesDetailed($campaignId));
-        self::assertHasAssigned($all);
+        // الكل: معيّنون + غير معيّنين + مستلمون بلا يوم — ليطابق عدّاد الشاشة
+        $all = CampaignService::beneficiariesDetailed($campaignId);
+        if ($all === []) {
+            throw new \RuntimeException('لا يوجد مرشحون في هذه العملية للتصدير.');
+        }
 
         $stats = DeliveryService::stockStats($campaignId);
         $today = date('Y-m-d');
 
-        $delivered = array_values(array_filter($all, fn ($b) => ($b['receipt_status'] ?? '') === DeliveryService::STATUS_DELIVERED));
-        $pending = array_values(array_filter($all, fn ($b) => ($b['receipt_status'] ?? '') !== DeliveryService::STATUS_DELIVERED));
+        $delivered = array_values(array_filter(
+            $all,
+            static fn (array $b): bool => ($b['receipt_status'] ?? '') === DeliveryService::STATUS_DELIVERED
+        ));
+        $pending = array_values(array_filter(
+            $all,
+            static fn (array $b): bool => ($b['receipt_status'] ?? '') !== DeliveryService::STATUS_DELIVERED
+        ));
+        $deliveredUnassigned = array_values(array_filter(
+            $delivered,
+            static fn (array $b): bool => !self::isAssigned($b)
+        ));
         // متأخرون لم يستلموا: موعدهم قبل اليوم وما زالوا بانتظار التسليم (ليسوا مستلمين)
         $latePending = array_values(array_filter(
             $pending,
@@ -463,6 +476,7 @@ final class ExcelExportService
         self::buildDeliverySummarySheet($spreadsheet, $campaign, $stats, $all);
         self::buildDeliveryDetailSheet($spreadsheet, 'كشف_التسليمات', $all, $campaign);
         self::buildDeliveryDetailSheet($spreadsheet, 'مستلم', $delivered, $campaign);
+        self::buildDeliveryDetailSheet($spreadsheet, 'مستلم_بلا_يوم', $deliveredUnassigned, $campaign);
         self::buildDeliveryDetailSheet($spreadsheet, 'بانتظار_التسليم', $pending, $campaign);
         self::buildDeliveryDetailSheet($spreadsheet, 'متأخر_لم_يستلم', $latePending, $campaign);
         self::buildSmsOutboxSheet(
@@ -488,6 +502,13 @@ final class ExcelExportService
         $sheet->mergeCells('A1:G1');
         self::styleSectionTitle($sheet, 'A1:G1');
 
+        $deliveredUnassignedCount = 0;
+        foreach ($all as $b) {
+            if (($b['receipt_status'] ?? '') === DeliveryService::STATUS_DELIVERED && !self::isAssigned($b)) {
+                $deliveredUnassignedCount++;
+            }
+        }
+
         $rows = [
             ['تاريخ التقرير', self::arDateTime(date('Y-m-d H:i:s'))],
             ['اسم الطرد', $campaign['parcel_name']],
@@ -495,7 +516,8 @@ final class ExcelExportService
             ['فترة التسليم', self::arDate((string) $campaign['delivery_start']) . ' — ' . self::arDate((string) $campaign['delivery_end'])],
             ['الكمية الافتتاحية (مخزون)', self::ar((int) ($stats['opening_quantity'] ?? 0))],
             ['إجمالي المستفيدين (كشف)', self::ar((int) ($stats['total_beneficiaries'] ?? 0))],
-            ['مُسلَّم', self::ar((int) ($stats['delivered'] ?? 0))],
+            ['مُسلَّم (الكل)', self::ar((int) ($stats['delivered'] ?? 0))],
+            ['منها مستلم بلا يوم توزيع', self::ar($deliveredUnassignedCount)],
             ['بانتظار التسليم (كشف)', self::ar((int) ($stats['pending'] ?? 0))],
             ['رصيد المخزون المتبقي', self::ar((int) ($stats['balance'] ?? 0))],
             ['في الموعد', self::ar((int) ($stats['on_time'] ?? 0))],
